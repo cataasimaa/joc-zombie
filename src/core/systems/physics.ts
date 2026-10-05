@@ -3,10 +3,22 @@ import { OBSTACLES } from "../map";
 import { type Vec2, clamp } from "../math";
 import type { GameState } from "../types";
 
-/** Împinge un cerc (pos, radius) afară din obstacole și din adăpost, și îl ține pe hartă. */
-export function resolveCollisions(state: GameState, pos: Vec2, radius: number): void {
+/**
+ * Împinge un cerc (pos, radius) afară din obstacole și din adăpost, și îl ține pe hartă.
+ * Baricadele blochează doar zombii (eroii trec printre ele).
+ */
+export function resolveCollisions(
+  state: GameState,
+  pos: Vec2,
+  radius: number,
+  blockedByBarricades = false,
+  ignoreObstacles = false,
+): void {
   pushOutOf(pos, radius, state.shelter.pos, state.shelter.radius);
-  for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
+  if (!ignoreObstacles) for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
+  if (blockedByBarricades) {
+    for (const b of state.barricades) pushOutOf(pos, radius, b.pos, CONFIG.barricade.radius);
+  }
   const limit = CONFIG.map.halfSize - radius;
   pos.x = clamp(pos.x, -limit, limit);
   pos.z = clamp(pos.z, -limit, limit);
@@ -30,9 +42,10 @@ function pushOutOf(pos: Vec2, radius: number, center: Vec2, centerRadius: number
 /** Ține zombii puțin depărtați unul de altul ca să nu stea toți într-un singur punct. */
 export function separateZombies(state: GameState): void {
   const zs = state.zombies;
-  const minDist = CONFIG.zombie.radius * 2;
   for (let i = 0; i < zs.length; i++) {
+    const ra = CONFIG.zombies[zs[i].type].radius;
     for (let j = i + 1; j < zs.length; j++) {
+      const minDist = ra + CONFIG.zombies[zs[j].type].radius;
       const a = zs[i].pos;
       const b = zs[j].pos;
       const dx = b.x - a.x;

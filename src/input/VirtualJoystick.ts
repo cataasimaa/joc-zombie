@@ -10,6 +10,10 @@ export class VirtualJoystick {
   private pointerId: number | null = null;
   private origin = { x: 0, y: 0 };
   private value = { x: 0, z: 0 };
+  private maxDrag = 0;
+  private downTime = 0;
+  /** Apelat la o atingere scurtă, fără tragere (folosit pentru construcție). */
+  onTap: ((x: number, y: number) => void) | null = null;
 
   constructor(zone: HTMLElement) {
     this.base = document.createElement("div");
@@ -24,6 +28,8 @@ export class VirtualJoystick {
       this.pointerId = e.pointerId;
       zone.setPointerCapture(e.pointerId);
       this.origin = { x: e.clientX, y: e.clientY };
+      this.maxDrag = 0;
+      this.downTime = performance.now();
       this.base.style.left = `${e.clientX}px`;
       this.base.style.top = `${e.clientY}px`;
       this.base.classList.add("active");
@@ -38,6 +44,9 @@ export class VirtualJoystick {
       this.value = { x: 0, z: 0 };
       this.base.classList.remove("active");
       this.knob.style.transform = "translate(-50%, -50%)";
+      if (e.type === "pointerup" && this.maxDrag < 12 && performance.now() - this.downTime < 400) {
+        this.onTap?.(e.clientX, e.clientY);
+      }
     };
     zone.addEventListener("pointerup", end);
     zone.addEventListener("pointercancel", end);
@@ -47,6 +56,7 @@ export class VirtualJoystick {
     let dx = px - this.origin.x;
     let dy = py - this.origin.y;
     const len = Math.hypot(dx, dy);
+    this.maxDrag = Math.max(this.maxDrag, len);
     if (len > MAX_DISTANCE) {
       dx = (dx / len) * MAX_DISTANCE;
       dy = (dy / len) * MAX_DISTANCE;

@@ -1,3 +1,18 @@
+:root {
+  --panel: rgba(20, 30, 45, 0.6);
+  --panel-strong: rgba(18, 26, 40, 0.92);
+  --accent: #f2a33a;
+  --accent-ink: #241405;
+  --good: #3bb36b;
+  --bad: #e2553d;
+  --text: #fff;
+  --muted: #b8c4d4;
+  --common: #b0b8c0;
+  --rare: #4aa3ff;
+  --epic: #b061ff;
+  --legendary: #ffb627;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -14,8 +29,13 @@ body {
   overflow: hidden;
   background: #c7d9ed;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #fff;
+  color: var(--text);
   overscroll-behavior: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
 }
 
 #game {
@@ -31,9 +51,6 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  /* Respectă „notch”-ul de pe iPhone. */
-  padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-    max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 
 #hud button {
@@ -41,8 +58,7 @@ body {
 }
 
 .panel {
-  position: absolute;
-  background: rgba(20, 30, 45, 0.55);
+  background: var(--panel);
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 14px;
@@ -50,30 +66,80 @@ body {
 }
 
 .top-left {
+  position: absolute;
   top: max(10px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
-  width: 210px;
+  width: 220px;
 }
 
 .top-center {
+  position: absolute;
   top: max(10px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.wave-panel {
   text-align: center;
   min-width: 180px;
 }
 
+.boss-panel {
+  width: 260px;
+}
+
 .top-right {
+  position: absolute;
   top: max(10px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.5;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.resources {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 14px;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.corner-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.round-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: var(--panel);
+  font-size: 20px;
+  color: var(--text);
+}
+
+#chest-btn.can-open {
+  background: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 #wave-text {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 #timer-text {
@@ -114,6 +180,9 @@ body {
 .fill.xp {
   background: #8fb8ff;
 }
+.fill.boss {
+  background: linear-gradient(90deg, #7b2fa0, #d04fd0);
+}
 
 .small-btn {
   margin-top: 4px;
@@ -122,48 +191,95 @@ body {
   padding: 6px 10px;
   font-size: 13px;
   font-weight: 700;
-  background: #f2a33a;
-  color: #241405;
+  background: var(--accent);
+  color: var(--accent-ink);
 }
+
+/* ---------- Abilități ---------- */
 
 .abilities {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.ability-grid {
   display: grid;
-  grid-template-columns: repeat(3, 58px);
-  grid-template-rows: repeat(2, 58px);
+  grid-template-columns: repeat(2, 60px);
+  grid-template-rows: repeat(2, 60px);
   gap: 10px;
 }
 
 .ability {
-  width: 58px;
-  height: 58px;
+  position: relative;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  background: rgba(20, 30, 45, 0.6);
-  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  background: var(--panel);
+  color: var(--text);
   font-size: 24px;
+  padding: 0;
+  overflow: hidden;
 }
 
-.ability:disabled {
-  opacity: 0.35;
+.ability .cd {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(rgba(0, 0, 0, 0.65) calc(var(--cd, 0) * 360deg), transparent 0);
+  pointer-events: none;
+}
+
+.ability .cd-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.ability .key {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .ability.ult {
-  border-color: #f2c94c;
+  border-color: var(--legendary);
+}
+
+.ability.blocked .icon {
+  opacity: 0.4;
+}
+
+.ability.locked .icon {
+  opacity: 0.25;
+}
+
+.ability.ready {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .ability.build {
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  height: 126px;
-  border-radius: 29px;
+  width: 64px;
+  height: 130px;
+  border-radius: 32px;
   background: rgba(242, 163, 58, 0.85);
 }
 
 .ability.build.active {
-  background: #3bb36b;
+  background: var(--good);
   box-shadow: 0 0 0 3px #fff;
 }
 
@@ -177,6 +293,7 @@ body {
   border-radius: 8px;
   font-weight: 600;
   font-size: 14px;
+  white-space: nowrap;
 }
 
 .build-menu {
@@ -184,28 +301,35 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(20, 30, 45, 0.85);
+  background: var(--panel-strong);
   padding: 8px;
   border-radius: 10px;
-  transform: translate(-50%, calc(-100% - 20px));
+  transform: translate(-50%, calc(-100% - 24px));
   pointer-events: auto;
-  min-width: 150px;
+  min-width: 170px;
 }
 
 .build-menu button {
   border: none;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   font-size: 15px;
   font-weight: 700;
-  background: #3bb36b;
+  background: var(--good);
   color: #fff;
   text-align: left;
 }
 
+.build-menu button small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 .build-menu button:disabled {
   background: #555;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 .build-menu button.cancel {
@@ -213,26 +337,42 @@ body {
   text-align: center;
 }
 
-.build-error {
-  font-size: 12px;
+.build-menu .reason {
   color: #ff9a8a;
-  min-height: 0;
 }
 
 .toast {
   position: absolute;
-  top: 32%;
+  top: 30%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 36px;
+  font-size: 34px;
   font-weight: 900;
   text-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
   opacity: 0;
   transition: opacity 0.3s;
   white-space: nowrap;
+  text-align: center;
 }
 
 .toast.show {
+  opacity: 1;
+}
+
+.hint {
+  position: absolute;
+  bottom: 170px;
+  right: max(16px, env(safe-area-inset-right));
+  background: var(--panel-strong);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  max-width: 260px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.hint.show {
   opacity: 1;
 }
 
@@ -272,31 +412,238 @@ body {
   transform: translate(-50%, -50%);
 }
 
-.end-screen {
+/* ---------- Ecrane peste joc ---------- */
+
+.overlay {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 15, 25, 0.75);
+  background: rgba(10, 15, 25, 0.78);
   text-align: center;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow-y: auto;
 }
 
-.end-screen h1 {
-  font-size: 40px;
-  margin: 0 0 8px;
+.overlay h1 {
+  font-size: 38px;
+  margin: 0 0 6px;
+  letter-spacing: 0.02em;
 }
 
-.end-screen button {
-  margin-top: 16px;
+.subtitle {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.primary-btn {
+  margin-top: 14px;
   border: none;
   border-radius: 12px;
-  padding: 14px 28px;
-  font-size: 20px;
+  padding: 13px 26px;
+  font-size: 19px;
   font-weight: 800;
-  background: #f2a33a;
-  color: #241405;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.primary-btn:disabled {
+  background: #666;
+  color: #ccc;
+}
+
+.hero-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 200px));
+  gap: 12px;
+  max-width: 100%;
+}
+
+.hero-card {
+  background: var(--panel-strong);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: left;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hero-card:hover,
+.hero-card:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.hero-card .hc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-card .hc-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex: none;
+}
+
+.hero-card .hc-name {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.hero-card .hc-role {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hero-card .hc-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.hero-card .hc-abilities {
+  display: flex;
+  gap: 4px;
+  font-size: 16px;
+}
+
+.hero-card .hc-abilities span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-card .hc-abilities span.ult {
+  box-shadow: inset 0 0 0 2px var(--legendary);
+}
+
+.hero-card .hc-stats {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.modal {
+  position: relative;
+  background: var(--panel-strong);
+  border-radius: 16px;
+  padding: 16px 20px;
+  width: min(420px, 100%);
+}
+
+.modal h2 {
+  margin: 0 0 10px;
+}
+
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 20px;
+}
+
+.odds {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.odds .odd {
+  border-radius: 8px;
+  padding: 6px 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 3px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.odds .odd b {
+  display: block;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.chest-result {
+  min-height: 64px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.chest-result .rarity {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.chest-result .reward {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.chest-result.pop {
+  animation: pop 0.45s ease-out;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.owned {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.r-common {
+  color: var(--common);
+}
+.r-rare {
+  color: var(--rare);
+}
+.r-epic {
+  color: var(--epic);
+}
+.r-legendary {
+  color: var(--legendary);
 }
 
 .hidden {
@@ -320,16 +667,64 @@ body {
   }
 }
 
-/* Ecrane mici (telefon landscape): HUD mai compact. */
+/* Ecrane mici (telefon landscape): totul mai compact. */
 @media (max-height: 450px) {
   .panel {
     font-size: 12px;
     padding: 6px 10px;
   }
   .top-left {
-    width: 170px;
+    width: 175px;
+  }
+  .resources {
+    font-size: 13px;
   }
   #timer-text {
     font-size: 18px;
+  }
+  .boss-panel {
+    width: 200px;
+  }
+  .ability-grid {
+    grid-template-columns: repeat(2, 52px);
+    grid-template-rows: repeat(2, 52px);
+    gap: 8px;
+  }
+  .ability {
+    width: 52px;
+    height: 52px;
+    font-size: 21px;
+  }
+  .ability.build {
+    width: 56px;
+    height: 112px;
+  }
+  .hint {
+    bottom: 140px;
+  }
+  .overlay h1 {
+    font-size: 26px;
+  }
+  .subtitle {
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .hero-card {
+    padding: 8px;
+    gap: 4px;
+  }
+  .hero-card .hc-desc {
+    font-size: 11px;
+  }
+  .round-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 700px) {
+  .hero-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

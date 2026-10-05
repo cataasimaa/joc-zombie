@@ -23,8 +23,8 @@ npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
 
-Controale în browser: **WASD / săgeți** mișcare, **B** mod construcție, **Esc** ieșire din
-construcție, **Enter** pornește valul imediat. În consola din dev: `game().state`.
+Controale în browser: **WASD / săgeți** mișcare, **1–4** abilități, **B** mod construcție,
+**Esc** ieșire din construcție, **C** cufere, **Enter** pornește valul imediat. În consola din dev: `game().state`.
 
 ## Arhitectură (REGULĂ IMPORTANTĂ)
 
@@ -37,14 +37,21 @@ src/
     Game.ts        GameSimulation: enqueue(command) → step(dt) → state + drainEvents()
     types.ts       GameState = doar date simple (serializabile JSON)
     commands.ts    Comenzile jucătorilor (singura cale de a modifica starea)
-    config.ts      TOATE numerele de echilibrare
-    map.ts         Harta (case, brazi) – generată determinist, folosită pentru coliziuni
+    config.ts      TOATE numerele de echilibrare (eroi, zombi, turnuri, economie, valuri, cufere)
+    heroDefs.ts    Clasele de eroi, abilitățile (nume, iconiță, cooldown, valori) și skin-urile
+    map.ts         Harta (case, brazi) – generată determinist, cu culoare lăsate pentru boss
+    navigation.ts  Flow field: drumul cel mai scurt spre adăpost, ocolind obstacolele
     math.ts        Vec2 pe planul solului (x, z), RNG determinist (seed în stare)
-    systems/       câte un fișier pe sistem: waves, heroes, zombies, towers, coins, physics
-  render/      Babylon.js — doar CITEȘTE starea și desenează (Renderer.sync)
+    systems/       câte un fișier pe sistem: waves, heroes, abilities, zombies, towers
+                   (turnuri + baricade), chests, coins, physics
+  render/      Babylon.js — doar CITEȘTE starea și desenează
+    Renderer.ts    entitățile (eroi, zombi, turnuri, baricade, monede, zone), camera, „fantoma”
+    World.ts       decorul static (zăpadă, adăpost, case, brazi, ninsoare)
+    Fx.ts          efecte scurte (trasoare, inele/explozii) cu pool-uri
+  audio/Sfx.ts Sunete generate din cod (Web Audio), declanșate de GameEvent
   input/       Tastatură + joystick virtual → produc comenzi
-  ui/          HUD în HTML/CSS peste canvas — citește starea, emite acțiuni prin callback-uri
-  main.ts      Leagă totul: input → comenzi → simulare (pas fix 30/s) → randare + HUD
+  ui/Hud.ts    HUD + ecrane (alegere erou, cufere, final) în HTML/CSS peste canvas
+  main.ts      Leagă totul: input → comenzi → simulare (pas fix 30/s) → randare + HUD + sunet
 ```
 
 Reguli:
@@ -100,6 +107,24 @@ Reguli:
 - Prototip: forme geometrice simple (capsule, cuburi, cilindri).
 - Mai târziu: asset-uri CC0 low-poly (Kenney, Quaternius).
 
+## Decizii de implementare
+
+- **Două resurse**: 🪵 *lemn* pentru construcții (start 70, primești la finalul fiecărui val)
+  și 🪙 *monede* pentru cufere (cad din zombi).
+- **Sloturi**: start 3 turnuri + 4 baricade; la fiecare 3 valuri +1 turn și +2 baricade.
+- **Abilitățile țintesc automat** (pe mobil nu ai cu ce ținti): cel mai apropiat zombie, zombiul
+  cu cel mai mult HP, aliatul cel mai rănit etc. Ultimate-ul se deblochează la nivelul 4.
+  Puterea abilităților crește cu nivelul (+15%/nivel).
+- **Baricadele** blochează doar zombii (eroii trec prin ele); zombii le atacă dacă le stau în
+  drum; eroii din apropiere le repară automat (Tank-ul de 3 ori mai repede).
+- **Turnurile** pornesc la tier 1; tier-urile 2–4 se deblochează din cufere, apoi faci upgrade
+  cu lemn (tap pe turnul tău în modul construcție).
+- **Cufere**: 30 monede; common 60%, rare 28%, epic 10%, legendary 2% (afișate în joc).
+  Recompense: bonus de damage la armă, tier de turn, skin, lemn. Momentan țin doar o rundă.
+- **Zombi**: walker, runner (rapid, din valul 3), brute (tanc, din valul 5), boss la valurile 5 și 10.
+  Navighează cu flow field; un zombie blocat peste 2 s poate trece prin obstacole (plasă de siguranță).
+- **10 valuri**. Fiecare jucător în plus: +50% zombi și +25% HP la zombi.
+
 ## Roadmap
 
 ### Pas 1 — prototip single-player ✅
@@ -107,19 +132,20 @@ Reguli:
 - [x] Teren alb cu adăpost în centru (are HP), case și brazi cu coliziuni
 - [x] Erou Assault Rifle: joystick virtual + tastatură, atac automat pe cel mai apropiat zombie
 - [x] Zombii apar la marginea hărții, merg spre adăpost (sau spre erou, dacă e aproape) și atacă
-- [x] Un tip de turn, plasat în mod construcție (cost, sloturi, validare loc)
-- [x] 3 valuri, pauză de 60 s cu cronometru (+ buton „Pornește acum”)
+- [x] Un tip de turn, plasat în mod construcție
+- [x] Valuri cu pauză de 60 s și cronometru (+ buton „Pornește acum”)
 - [x] Monede care cad din zombi și se colectează mergând peste ele
 - [x] Ecran de game over / victorie + „Joacă din nou”
-- [x] XP și nivel simplu (damage + HP crescute)
 
-### Pas 2 — gameplay complet single-player
-- Baricade (blochează / încetinesc zombii, au HP, pot fi reparate)
-- Abilitățile Assault Rifle (grenadă etc.) + ultimate
-- Celelalte 3 clase de eroi, ecran de alegere a eroului
-- Tier-uri de turnuri, cufere cu rarități și șanse afișate
-- Mai multe valuri, tipuri de zombi, scalare după numărul de jucători
-- Sunete, efecte, asset-uri low-poly CC0
+### Pas 2 — gameplay complet single-player ✅
+- [x] Ecran de alegere a eroului; 4 clase cu câte 3 abilități + ultimate, XP și nivel
+- [x] Baricade (blochează zombii, au HP, se repară)
+- [x] Tier-uri de turnuri 1–4 + upgrade
+- [x] Cufere cu rarități, șanse afișate, recompense (armă, tier, skin, lemn)
+- [x] 10 valuri, 4 tipuri de zombi (inclusiv boss), navigare cu flow field
+- [x] Sunete generate din cod, efecte vizuale (explozii, vindecări, trasoare, bare de HP)
+- [ ] Asset-uri low-poly CC0 (Kenney / Quaternius) în locul formelor simple
+- [ ] Progres între runde (skin-uri și deblocări păstrate)
 
 ### Pas 3 — multiplayer (Colyseus)
 - Mutăm `src/core` într-un pachet comun folosit de client și server

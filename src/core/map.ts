@@ -25,6 +25,9 @@ export interface GameMap {
   trees: Tree[];
 }
 
+/** Lățimea minimă a culoarelor dintre obstacole (diametrul boss-ului + o marjă). */
+const PASSAGE = CONFIG.zombies.boss.radius * 2 + 0.4;
+
 /** Seed fix: harta e mereu aceeași (și identică pe server și pe toți clienții). */
 const MAP_SEED = 1337;
 
@@ -53,7 +56,7 @@ function generateMap(): GameMap {
   // Brazi, mai deși spre marginea hărții.
   const trees: Tree[] = [];
   let attempts = 0;
-  while (trees.length < 70 && attempts < 2000) {
+  while (trees.length < 60 && attempts < 3000) {
     attempts++;
     const x = (rand() * 2 - 1) * (halfSize - 2);
     const z = (rand() * 2 - 1) * (halfSize - 2);
@@ -62,9 +65,10 @@ function generateMap(): GameMap {
     if (d < 28 && rand() < 0.6) continue; // mai puțini brazi în sat
     const scale = 0.8 + rand() * 0.7;
     const radius = 0.7 * scale;
+    // Lăsăm între obstacole un culoar destul de lat cât să treacă și boss-ul.
     const blocked =
-      houses.some((h) => Math.hypot(h.pos.x - x, h.pos.z - z) < h.radius + radius + 1.5) ||
-      trees.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + radius + 1.2);
+      houses.some((h) => Math.hypot(h.pos.x - x, h.pos.z - z) < h.radius + radius + PASSAGE) ||
+      trees.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + radius + PASSAGE);
     if (blocked) continue;
     trees.push({ pos: { x, z }, scale, radius });
   }

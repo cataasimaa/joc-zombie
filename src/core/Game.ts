@@ -1,19 +1,26 @@
 // GameSimulation = „creierul” jocului. Nu știe nimic despre ecran, Babylon sau tastatură.
 // Primește comenzi, avansează timpul cu step(dt) și produce stare + evenimente.
-// În faza 2 (multiplayer) exact această clasă va rula pe serverul Colyseus.
+// În faza 3 (multiplayer) exact această clasă va rula pe serverul Colyseus.
 
 import type { Command } from "./commands";
-import { CONFIG } from "./config";
+import { CONFIG, type HeroClass } from "./config";
 import { clamp } from "./math";
+import { updateZones, useAbility } from "./systems/abilities";
+import { openChest } from "./systems/chests";
 import { updateCoins } from "./systems/coins";
-import { updateHeroes } from "./systems/heroes";
-import { placeTower, updateTowers } from "./systems/towers";
+import { heroById, updateHeroes } from "./systems/heroes";
+import { build, updateTowers, upgradeTower } from "./systems/towers";
 import { startNextWave, updateWaves } from "./systems/waves";
 import { updateZombies } from "./systems/zombies";
 import type { GameEvent, GameState, PlayerId } from "./types";
 
+export interface PlayerSetup {
+  id: PlayerId;
+  heroClass: HeroClass;
+}
+
 export interface GameOptions {
-  playerIds: PlayerId[];
+  players: PlayerSetup[];
   seed?: number;
 }
 
@@ -34,16 +41,19 @@ export class GameSimulation {
   /** Avansează jocul cu `dt` secunde. */
   step(dt: number): void {
     const s = this.state;
+    if (s.phase === "gameover" || s.phase === "victory") {
+      this.commands.length = 0;
+      return;
+    }
     for (const cmd of this.commands) this.applyCommand(cmd);
     this.commands.length = 0;
-
-    if (s.phase === "gameover" || s.phase === "victory") return;
 
     s.time += dt;
     updateWaves(s, dt, this.events);
     updateHeroes(s, dt, this.events);
     updateTowers(s, dt, this.events);
     updateZombies(s, dt, this.events);
+    updateZones(s, dt);
     updateCoins(s, dt, this.events);
 
     if (s.shelter.hp <= 0) {
@@ -66,7 +76,7 @@ export class GameSimulation {
 
     switch (cmd.type) {
       case "move": {
-        const hero = s.heroes.find((h) => h.id === player.heroId);
+        const hero = heroById(s, player.heroId);
         if (!hero) return;
         // Nu avem încredere în client: limităm vectorul la lungimea 1.
         const len = Math.hypot(cmd.x, cmd.z);
@@ -74,8 +84,19 @@ export class GameSimulation {
         hero.moveInput = { x: clamp(cmd.x * scale, -1, 1), z: clamp(cmd.z * scale, -1, 1) };
         break;
       }
-      case "placeTower":
-        placeTower(s, cmd.playerId, { x: cmd.x, z: cmd.z }, this.events);
+      case "build":
+        build(s, cmd.playerId, cmd.kind, { x: cmd.x, z: cmd.z }, this.events);
+        break;
+      case "upgradeTower":
+        upgradeTower(s, cmd.playerId, cmd.towerId, this.events);
+        break;
+      case "useAbility": {
+        const hero = heroById(s, player.heroId);
+        if (hero) useAbility(s, hero, cmd.slot, this.events);
+        break;
+      }
+      case "openChest":
+        openChest(s, cmd.playerId, this.events);
         break;
       case "startWaveNow":
         startNextWave(s, this.events);
@@ -84,37 +105,49 @@ export class GameSimulation {
   }
 }
 
-function createInitialState({ playerIds, seed = Date.now() }: GameOptions): GameState {
+function createInitialState({ players, seed = Date.now() }: GameOptions): GameState {
   const state: GameState = {
     time: 0,
     phase: "build",
     wave: 0,
-    totalWaves: CONFIG.waves.list.length,
+    totalWaves: CONFIG.waves.count,
     wavesCompleted: 0,
     phaseTimer: CONFIG.waves.firstDelay,
-    zombiesToSpawn: 0,
+    spawnQueue: [],
     spawnTimer: 0,
+    spawnInterval: 1,
     shelter: { pos: { x: 0, z: 0 }, hp: CONFIG.shelter.maxHp, maxHp: CONFIG.shelter.maxHp, radius: CONFIG.shelter.radius },
     players: {},
     heroes: [],
     zombies: [],
     towers: [],
+    barricades: [],
     coins: [],
+    zones: [],
     nextId: 1,
     rngState: seed | 0,
   };
 
-  playerIds.forEach((playerId, i) => {
+  players.forEach(({ id, heroClass }, i) => {
     const heroId = state.nextId++;
-    const stats = CONFIG.heroes.assault;
+    const stats = CONFIG.heroes[heroClass];
     // Eroii pornesc în jurul adăpostului.
-    const angle = (i / playerIds.length) * Math.PI * 2 - Math.PI / 2;
+    const angle = (i / players.length) * Math.PI * 2 - Math.PI / 2;
     const r = CONFIG.shelter.radius + 2;
-    state.players[playerId] = { id: playerId, heroId, coins: CONFIG.economy.startCoins };
+    state.players[id] = {
+      id,
+      heroId,
+      coins: 0,
+      wood: CONFIG.economy.startWood,
+      weaponBonus: 0,
+      towerTier: 1,
+      skins: [],
+      skin: null,
+    };
     state.heroes.push({
       id: heroId,
-      playerId,
-      heroClass: "assault",
+      playerId: id,
+      heroClass,
       pos: { x: Math.cos(angle) * r, z: Math.sin(angle) * r },
       facing: 0,
       hp: stats.maxHp,
@@ -125,6 +158,8 @@ function createInitialState({ playerIds, seed = Date.now() }: GameOptions): Game
       level: 1,
       xp: 0,
       moveInput: { x: 0, z: 0 },
+      cooldowns: [0, 0, 0, 0],
+      buffs: { rapidFire: 0, focus: 0, shield: 0, invulnerable: 0 },
     });
   });
 
