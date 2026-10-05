@@ -34,6 +34,8 @@ export type { BuildingKind } from "./systems/survival";
 export {
   canBuildTower,
   canUpgradeTower,
+  effectiveTowerStats,
+  refundFactor,
   towerAt,
   towerCost,
   towerRefund,

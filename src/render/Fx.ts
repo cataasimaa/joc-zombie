@@ -17,7 +17,7 @@ import { rng } from "./noise";
 import { PAL, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
 
-export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom" | "stone" | "dust" | "smoke" | "plasma";
+export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom" | "stone" | "dust" | "smoke" | "plasma" | "plank";
 
 /** Particulele „care plutesc”: praf și fum (fără gravitație, cresc și se rarefiază). */
 const FLOATY: BurstKind[] = ["dust", "smoke"];
@@ -58,6 +58,7 @@ const BURST_COLORS: Record<BurstKind, Color3> = {
   bone: PAL.bone,
   venom: mix(PAL.ice, PAL.pineLight, 0.3),
   stone: PAL.stone,
+  plank: PAL.oldWood,
   dust: mix(PAL.snowShadow, PAL.snow, 0.55),
   smoke: mix(PAL.iron, PAL.snowShadow, 0.5),
   plasma: Color3.FromHexString("#5cffc8"),
@@ -126,6 +127,8 @@ export class Fx {
   private boltSource: Mesh;
   private bullets: Timed[] = [];
   private zPrintSource: Mesh;
+  private emberSource: Mesh;
+  private embers: Decal[] = [];
   private zPrints: Decal[] = [];
   private zPrintIndex = 0;
 
@@ -176,6 +179,16 @@ export class Fx {
     this.footSource.material = footMat;
     this.footSource.isVisible = false;
 
+    // Pata de jar a tunului: disc incandescent cu margini neregulate.
+    const ek = new ModelKit(scene, mats, 1250);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      ek.cyl(0.03, 0.55, 0.55, 6, { p: [Math.cos(a) * 0.35, 0, Math.sin(a) * 0.35] }, { color: i % 2 ? PAL.fire : mix(PAL.fire, PAL.blood, 0.5), mat: "glow" });
+    }
+    ek.cyl(0.04, 0.9, 0.9, 8, {}, { color: mix(PAL.fire, PAL.burntWood, 0.4), mat: "glow" });
+    this.emberSource = ek.buildOne("ember");
+    this.emberSource.isVisible = false;
+
     // Urmele zombilor: picior desculț cu gheare. Nu le acoperă ceața (la viscol vezi urma, nu corpul).
     const zMat = new StandardMaterial("zPrintMat", scene);
     zMat.diffuseTexture = footprintTexture(scene);
@@ -216,11 +229,13 @@ export class Fx {
       p.inst.position.copyFrom(pos);
       p.size = size * (0.5 + Math.random() * 0.9);
       p.inst.scaling.setAll(p.size);
+      // Scândurile sunt lungi și subțiri, zboară mai mult și cad greu.
+      if (kind === "plank") p.inst.scaling.set(p.size * 5, p.size * 0.5, p.size * 1.4);
       p.inst.setEnabled(true);
-      p.life = p.maxLife = 0.5 + Math.random() * 0.5;
+      p.life = p.maxLife = kind === "plank" ? 1.6 + Math.random() * 0.6 : 0.5 + Math.random() * 0.5;
       p.spin = (Math.random() - 0.5) * 12;
       if (FLOATY.includes(kind)) {
-        p.life = p.maxLife = 1.1 + Math.random() * 0.9;
+        p.life = p.maxLife = 0.9 + Math.random() * 0.4;
         p.spin = (Math.random() - 0.5) * 2;
       }
     }
@@ -403,6 +418,30 @@ export class Fx {
     this.updateRing(r);
   }
 
+  /** Rachetă: un cerc mic de zăpadă aruncată în sus (nu o minge de foc). */
+  snowBurst(pos: Vector3, radius: number): void {
+    this.ring(pos.add(new Vector3(0, 0.12, 0)), radius, PAL.snow, 0.35);
+    this.burst("snow", pos.add(new Vector3(0, 0.25, 0)), new Vector3(0, 1, 0), Math.round(10 + radius * 6), 5, 0.14);
+    this.burst("dust", pos.add(new Vector3(0, 0.3, 0)), null, 2, 1.5, 0.35 * radius);
+  }
+
+  /** Tun: praf + o pată de jar pe zăpadă care se stinge în ~2 secunde. */
+  ember(x: number, z: number, radius: number, life = 2): void {
+    let e = this.embers.find((d) => d.life <= 0);
+    if (!e) {
+      const inst = this.emberSource.createInstance("ember");
+      inst.isPickable = false;
+      e = { inst, life: 0, maxLife: life, size: 1 };
+      this.embers.push(e);
+    }
+    e.inst.position.set(x, terrainHeight(x, z) + 0.05, z);
+    e.inst.rotation.y = Math.random() * Math.PI * 2;
+    e.size = radius;
+    e.inst.scaling.set(radius, 1, radius);
+    e.inst.setEnabled(true);
+    e.life = e.maxLife = life;
+  }
+
   /** Explozie: lumină, inel, scântei și bulgări de zăpadă aruncați în sus. */
   explosion(pos: Vector3, radius: number): void {
     this.muzzle(pos.add(new Vector3(0, 0.6, 0)), PAL.fire, radius * 0.9, 0.18);
@@ -422,17 +461,17 @@ export class Fx {
   }
 
   /** Fulger (Tesla): o linie frântă din câteva trasoare scurte. */
-  lightning(from: Vector3, to: Vector3, color: Color3, width = 0.07, life = 0.12): void {
+  lightning(from: Vector3, to: Vector3, color: Color3, width = 0.07, life = 0.12, orb = true, jitterSize = 0.45): void {
     const segments = 6;
     let prev = from;
     for (let i = 1; i <= segments; i++) {
       const k = i / segments;
-      const jitter = i === segments ? 0 : 0.45;
+      const jitter = i === segments ? 0 : jitterSize;
       const next = Vector3.Lerp(from, to, k).add(new Vector3((Math.random() - 0.5) * jitter, (Math.random() - 0.5) * jitter, (Math.random() - 0.5) * jitter));
       this.tracer(prev, next, color, width, life);
       prev = next;
     }
-    this.muzzle(to, color, 0.5, life);
+    if (orb) this.muzzle(to, color, 0.5, life);
   }
 
   update(dt: number): void {
@@ -478,6 +517,7 @@ export class Fx {
       }
     };
     fade(this.decals, 4);
+    fade(this.embers, 1.5);
     fade(this.footprints, 6);
     for (const m of this.mists) {
       if (m.life <= 0) continue;

@@ -29,6 +29,7 @@ import {
   type TowerKind,
   type Vec2,
   type ZombieType,
+  effectiveTowerStats,
   segmentEnds,
 } from "../core";
 import { Fx } from "./Fx";
@@ -74,8 +75,8 @@ class HpBar {
       m.renderingGroupId = 1;
     }
   }
-  set(pos: Vec2, y: number, ratio: number): void {
-    const show = ratio < 0.999;
+  set(pos: Vec2, y: number, ratio: number, force = false): void {
+    const show = force || ratio < 0.999;
     this.bg.setEnabled(show);
     this.fg.setEnabled(show);
     if (!show) return;
@@ -135,6 +136,8 @@ interface TowerView {
   kind: TowerKind;
   kick: number;
   bar: HpBar;
+  /** Flăcări mici pe turnul aproape distrus (sub 25% viață). */
+  fire: TransformNode | null;
   dispose(): void;
 }
 
@@ -152,6 +155,10 @@ interface Collapse {
   tiltX: number;
   tiltZ: number;
   y0: number;
+  /** Bara de viață rămâne o clipă la zero înainte să dispară construcția. */
+  bar: HpBar | null;
+  barPos: Vec2;
+  barY: number;
 }
 
 interface BarricadeView {
@@ -204,6 +211,8 @@ export class Renderer {
   private destroyed = new Set<EntityId>();
   private killed = new Map<EntityId, boolean>();
   private shelterShake = 0;
+  /** Timpul de la căderea minei (pentru al doilea „crac” și praful la trântirea capacului). */
+  private mineCrack = -1;
 
   private ghostTower: TransformNode;
   private ghostWall: TransformNode;
@@ -212,6 +221,8 @@ export class Renderer {
   private footWall: Mesh;
   private rangeRing: Mesh;
   private selectRing: Mesh;
+  /** Construcția selectată (inel + bara de viață mereu vizibilă). */
+  selectedId: EntityId | null = null;
   private m: Record<string, StandardMaterial> = {};
 
   constructor(canvas: HTMLCanvasElement) {
@@ -341,12 +352,31 @@ export class Renderer {
     this.syncShells(state);
     this.syncFires(state);
     this.survival.sync(state, dt);
+    // Selecția: inelul pulsează ușor; dacă ținta a dispărut, selecția se șterge.
+    if (this.selectedId !== null) {
+      const id = this.selectedId;
+      const alive = state.towers.some((t) => t.id === id) || state.barricades.some((b) => b.id === id) ||
+        state.campfires.some((f) => f.id === id) || state.farms.some((f) => f.id === id);
+      if (!alive) this.setSelection(null);
+    }
+    if (this.selectRing.isEnabled()) this.selectRing.rotation.y = this.time * 0.8;
     this.updateDying(dt);
     this.updateCollapsing(dt);
     this.fx.update(dt);
 
     // Adăpostul tremură când e lovit.
     this.shelterShake = Math.max(0, this.shelterShake - dt * 4);
+    if (this.mineCrack >= 0) {
+      const before = this.mineCrack;
+      this.mineCrack += dt;
+      if (before < 1.6 && this.mineCrack >= 1.6) {
+        // Capacul s-a trântit: un nor de zăpadă și praf din jurul gurii puțului.
+        this.shelterShake = 1.5;
+        this.fx.dust(new Vector3(0, 1, 0), 2, 1);
+        this.fx.burst("snow", new Vector3(0, 1.2, 0), null, 24, 5, 0.16);
+      }
+      if (this.mineCrack > 3) this.mineCrack = -1;
+    }
     this.world.shelter.position.x = Math.sin(this.time * 60) * 0.06 * this.shelterShake;
 
     // Zi / noapte: amurgul începe în ultimele 12 secunde ale zilei.
@@ -372,6 +402,7 @@ export class Renderer {
     }
     if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.6, hero.pos.z);
     this.world.setWeather(state.weather);
+    this.world.setFogCloseIn(state.difficulty === "nightmare" ? 0.75 : state.difficulty === "hard" ? 0.5 : 0);
     this.world.update(dt, this.night, focus, this.camera.position);
   }
 
@@ -433,8 +464,8 @@ export class Renderer {
       case "towerDestroyed":
         this.destroyed.add(e.id);
         this.fx.dust(this.at(e.pos, 0.3), 1.8, 1.4);
-        this.fx.burst("stone", this.at(e.pos, 1.2), null, 16, 6, 0.18);
-        this.fx.burst("wood", this.at(e.pos, 1.5), null, 10, 5, 0.12);
+        this.fx.burst("stone", this.at(e.pos, 1.2), null, 10, 5, 0.16);
+        this.fx.burst("plank", this.at(e.pos, 1.8), null, 8, 5, 0.12);
         break;
       case "chestHit":
         this.fx.burst("wood", this.at(e.pos, 0.6), null, 5, 4, 0.08);
@@ -498,8 +529,8 @@ export class Renderer {
           this.fx.bullet(from, end, mix(PAL.fire, PAL.bone, 0.45), 0.05, 0.55, 95);
           this.fx.tracer(from, end, mix(PAL.fire, PAL.bone, 0.6), 0.015, 0.05);
         }
-        // Glonțul care se oprește în zăpadă ridică un pufuleț.
-        this.fx.burst("snow", this.at(e.to, 0.15), new Vector3(0, 1, 0), 2, 1.8, 0.06);
+        // Ratat: zăpada sare o dată, unde s-a oprit glonțul. (Lovit: zombiul tresare — vezi zombieHit.)
+        if (!e.hit) this.fx.burst("snow", this.at(e.to, 0.1), new Vector3(0, 1, 0), 5, 2.4, 0.08);
         this.fx.muzzle(from, weapon === "iceLance" ? PAL.ice : PAL.fire, cls === "tank" ? 0.45 : 0.3);
         break;
       }
@@ -564,11 +595,23 @@ export class Renderer {
       case "barricadeDestroyed":
         this.destroyed.add(e.id);
         this.fx.dust(this.at(e.pos, 0.2), 1.3, 0.9);
-        this.fx.burst("wood", this.at(e.pos, 0.8), null, 18, 6, 0.14);
+        this.fx.burst("plank", this.at(e.pos, 1), null, 7, 5, 0.12);
+        this.fx.burst("wood", this.at(e.pos, 0.8), null, 10, 6, 0.1);
         this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.18);
         break;
       case "mineExploded":
         this.fx.explosion(this.at(e.pos), e.radius);
+        break;
+      case "gameOver":
+        if (state.mode === "defend" && state.shelter.hp <= 0) {
+          // Mina cade: crapă (pietre + praf), plasma pâlpâie, capacul se trântește (vezi World).
+          this.world.mineFall();
+          this.shelterShake = 2;
+          this.fx.dust(new Vector3(0, 0.4, 0), 2.6, 1.2);
+          this.fx.burst("stone", new Vector3(0, 1.2, 0), null, 18, 6, 0.18);
+          this.fx.burst("plasma", new Vector3(0, 1.2, 0), new Vector3(0, 1, 0), 24, 5, 0.1);
+          this.mineCrack = 0;
+        }
         break;
       case "shelterHit":
         this.shelterShake = 1;
@@ -761,17 +804,24 @@ export class Renderer {
     return view;
   }
 
-  /** Înghețat de turnul de gheață: cristale în jurul lui. */
-  private setFrozen(view: ZombieView, frozen: boolean): void {
-    if (frozen && !view.ice) {
+  /**
+   * Gheața nu face nor: apare doar o crustă pe zombi. 1 = încetinit (crustă subțire, pe jumătate),
+   * 2 = înghețat (crustă întreagă). Când crusta se sparge, cad câteva cioburi.
+   */
+  private setFrozen(view: ZombieView, level: 0 | 1 | 2): void {
+    if (level > 0 && !view.ice) {
       const [ice] = this.iceShell.instance("zIce", view.root);
-      const big = view.type === "boss" ? 2.4 : view.type === "brute" ? 1.6 : view.type === "runner" ? 1.1 : 1;
-      ice.scaling.setAll(big);
       view.ice = ice;
-    } else if (!frozen && view.ice) {
+    }
+    if (view.ice && level > 0) {
+      const big = view.type === "boss" ? 2.4 : view.type === "brute" ? 1.6 : view.type === "runner" ? 1.1 : 1;
+      // Încetinit: crusta stă jos, pe picioare; înghețat: îl acoperă tot.
+      view.ice.scaling.set(big * (level === 2 ? 1 : 0.85), big * (level === 2 ? 1 : 0.45), big * (level === 2 ? 1 : 0.85));
+      view.ice.position.y = 0;
+    } else if (level === 0 && view.ice) {
       view.ice.dispose();
       view.ice = null;
-      this.fx.burst("ice", view.root.position.add(new Vector3(0, 1, 0)), null, 10, 4, 0.09);
+      this.fx.burst("ice", view.root.position.add(new Vector3(0, 0.6, 0)), null, 6, 3, 0.07);
     }
   }
 
@@ -790,7 +840,21 @@ export class Renderer {
     view.fire = fire;
   }
 
+  /**
+   * Nightmare: fugarii sunt invizibili în întuneric. Îi vezi doar în lumina unui foc aprins,
+   * în raza unui Tesla sau foarte aproape de un erou. (Urmele lor în zăpadă rămân.)
+   */
+  private revealers(state: GameState): { x: number; z: number; r2: number }[] | null {
+    if (state.difficulty !== "nightmare") return null;
+    const out: { x: number; z: number; r2: number }[] = [];
+    for (const f of state.campfires) if (f.fuel > 0) out.push({ x: f.pos.x, z: f.pos.z, r2: (CONFIG.survival.fireWarmRadius + 1.5) ** 2 });
+    for (const t of state.towers) if (t.kind === "tesla") out.push({ x: t.pos.x, z: t.pos.z, r2: effectiveTowerStats(state, t).range ** 2 });
+    for (const h of state.heroes) if (h.alive) out.push({ x: h.pos.x, z: h.pos.z, r2: 3.5 ** 2 });
+    return out;
+  }
+
   private syncZombies(state: GameState, dt: number): void {
+    const reveal = this.revealers(state);
     syncMap(this.zombieViews, state.zombies, (z) => this.createZombieView(z.type, z.id, z.pos), (view, z) => {
       const flying = CONFIG.zombies[z.type].flying;
       const y = terrainHeight(z.pos.x, z.pos.z) + (flying ? CONFIG.zombieCommon.flyHeight + Math.sin(this.time * 3 + z.id) * 0.25 : 0);
@@ -799,7 +863,7 @@ export class Renderer {
       const speed = moved / Math.max(dt, 0.001);
       const runner = z.type === "runner";
       const frozen = z.frozenTimer > 0;
-      this.setFrozen(view, frozen);
+      this.setFrozen(view, frozen ? 2 : z.chillTimer > 0 ? 1 : 0);
       // Urme în zăpadă (zburătorii nu lasă): la viscol îi vezi după urmă, nu după corp.
       if (!flying) {
         view.printDist += moved;
@@ -813,7 +877,6 @@ export class Renderer {
         }
       }
       if (!frozen) view.walk += speed * dt * (runner ? 3.2 : 2.2) + dt * 0.8;
-      if (z.chillTimer > 0 && !frozen && Math.random() < dt * 4) this.fx.burst("ice", this.at(z.pos, 1.2 + this.zombieY(z.type)), null, 1, 1.5, 0.06);
       const amp = Math.min(1, speed / 1.5);
       const w = view.walk;
 
@@ -821,12 +884,12 @@ export class Renderer {
       view.knock = Math.max(0, view.knock - dt * 6);
       view.attack = Math.max(0, view.attack - dt * 3);
       const lunge = Math.sin(view.attack * Math.PI) * 0.25;
-      const back = view.knock * 0.15 - lunge;
+      const back = view.knock * 0.28 - lunge;
       view.root.position.set(z.pos.x - Math.sin(z.facing) * back, y, z.pos.z - Math.cos(z.facing) * back);
       let diff = z.facing - view.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       view.root.rotation.y += diff * Math.min(1, dt * 8);
-      view.root.rotation.x = view.knock * -0.15 + lunge * 0.4;
+      view.root.rotation.x = view.knock * -0.3 + lunge * 0.4;
       view.root.rotation.z = Math.sin(w * 0.5) * 0.08;
 
       if (flying) {
@@ -862,9 +925,15 @@ export class Renderer {
         }
       }
       view.bar?.set(z.pos, y + (HP_BAR_Y[z.type] ?? 2), z.hp / z.maxHp);
+      if (reveal && runner) {
+        const seen = reveal.some((r) => (z.pos.x - r.x) ** 2 + (z.pos.z - r.z) ** 2 <= r.r2);
+        view.root.setEnabled(seen);
+        if (!seen) view.bar?.set(z.pos, y, 1);
+      } else if (!view.root.isEnabled()) view.root.setEnabled(true);
     }, (id, view) => {
       // Zombie omorât: cade și se scufundă în zăpadă, în loc să dispară brusc.
       if (!this.killed.has(id)) return false;
+      view.root.setEnabled(true);
       view.bar?.dispose();
       view.bar = null;
       this.dying.push({ view, t: 0, burned: this.killed.get(id)! });
@@ -900,7 +969,7 @@ export class Renderer {
       head.parent = root;
       const bar = new HpBar(this.scene, this.m.hpBg, this.m.hpWall, 1.8);
       return {
-        root, base: [], head, key: "", level: 0, kind: t.kind, kick: 0, bar,
+        root, base: [], head, key: "", level: 0, kind: t.kind, kick: 0, bar, fire: null,
         dispose: () => {
           root.dispose();
           bar.dispose();
@@ -930,16 +999,41 @@ export class Renderer {
       // Gheața plutește și se rotește încet; bobina Tesla vibrează.
       if (t.kind === "frost") view.head.rotation.y = this.time * 0.6;
       if (t.kind === "tesla") view.head.position.x = Math.sin(this.time * 40) * 0.01;
-      view.bar.set(t.pos, y + 3.6, t.hp / t.maxHp);
-    }, (id, view) => this.startCollapse(id, view.root, () => view.bar.dispose()));
+      const hp = t.hp / t.maxHp;
+      view.bar.set(t.pos, y + 3.6, hp, t.id === this.selectedId);
+      // Stricat: fum de la jumătate de viață, foc mic de la un sfert.
+      if (hp < 0.5 && Math.random() < dt * (hp < 0.25 ? 9 : 5)) {
+        this.fx.burst("smoke", this.at(t.pos, 2.4 + Math.random()), new Vector3(0, 1, 0), 1, 0.8, 0.3);
+      }
+      if (hp < 0.25 && !view.fire) {
+        const fire = new TransformNode("towerFire", this.scene);
+        fire.parent = view.root;
+        for (let i = 0; i < 3; i++) {
+          const n = new TransformNode("tf", this.scene);
+          n.parent = fire;
+          n.position.set(Math.cos(i * 2.1) * 0.5, 1.6 + i * 0.35, Math.sin(i * 2.1) * 0.5);
+          this.flame.instance("towerFlame", n);
+        }
+        view.fire = fire;
+      } else if (hp >= 0.25 && view.fire) {
+        view.fire.dispose();
+        view.fire = null;
+      }
+      if (view.fire) {
+        for (const [i, c] of view.fire.getChildren().entries()) {
+          (c as TransformNode).scaling.set(0.55, 0.5 + Math.abs(Math.sin(this.time * 9 + i * 1.9)) * 0.45, 0.55);
+        }
+      }
+    }, (id, view) => this.startCollapse(id, view.root, view.bar, 3.6));
   }
 
   /** Construcție distrusă: n-o ștergem brusc, ci o lăsăm să se prăbușească. */
-  private startCollapse(id: EntityId, root: TransformNode, cleanup: () => void): boolean {
+  private startCollapse(id: EntityId, root: TransformNode, bar: HpBar, barY: number): boolean {
     if (!this.destroyed.has(id)) return false;
-    cleanup();
     const a = Math.random() * Math.PI * 2;
-    this.collapsing.push({ root, t: 0, tiltX: Math.cos(a) * 1.2, tiltZ: Math.sin(a) * 1.2, y0: root.position.y });
+    const barPos = { x: root.position.x, z: root.position.z };
+    bar.set(barPos, root.position.y + barY, 0);
+    this.collapsing.push({ root, t: 0, tiltX: Math.cos(a) * 1.2, tiltZ: Math.sin(a) * 1.2, y0: root.position.y, bar, barPos, barY });
     return true;
   }
 
@@ -953,8 +1047,16 @@ export class Renderer {
       c.root.rotation.x = c.tiltX * fall + wobble;
       c.root.rotation.z = c.tiltZ * fall;
       c.root.position.y = c.y0 - fall * 0.6 - Math.max(0, c.t - 1.2) * 1.2;
+      // Scândurile se desprind cât se clatină; praful se ridică la impact și stă ~1 s.
+      if (c.t < 0.6 && Math.random() < dt * 10) this.fx.burst("plank", c.root.position.add(new Vector3(0, 1.5 + Math.random(), 0)), null, 1, 3, 0.1);
       if (c.t > 0.85 && c.t - dt <= 0.85) this.fx.dust(c.root.position.clone(), 1.5, 0.8);
+      // Bara stă goală (0) până se culcă turnul, apoi dispare.
+      if (c.bar && c.t > 0.9) {
+        c.bar.dispose();
+        c.bar = null;
+      }
       if (c.t > 2.6) {
+        c.bar?.dispose();
         c.root.dispose();
         this.collapsing.splice(i, 1);
       }
@@ -985,23 +1087,27 @@ export class Renderer {
     const from = this.towerMuzzle(state, towerId);
     if (!from) return;
     switch (kind) {
-      case "tesla":
-        this.fx.lightning(from, this.targetPoint(state, to), TOWER_COLORS.tesla, 0.08, 0.14);
-        this.fx.lightning(from, this.targetPoint(state, to), PAL.snow, 0.03, 0.08);
+      case "tesla": {
+        // O linie subțire alb-albăstruie care pâlpâie doar cât atinge ținta (fără bile de lumină).
+        const end = this.targetPoint(state, to);
+        this.fx.lightning(from, end, mix(TOWER_COLORS.tesla, PAL.snow, 0.5), 0.025, 0.07, false, 0.25);
+        this.fx.lightning(from, end, PAL.snow, 0.015, 0.05, false, 0.35);
         break;
+      }
       case "cannon":
-        this.fx.muzzle(from, PAL.fire, 1.1, 0.12);
+        // Tunul e singurul cu fum la gură.
+        this.fx.muzzle(from, PAL.fire, 0.7, 0.08);
         this.fx.burst("smoke", from, null, 6, 2, 0.35);
         break;
       case "rocket":
-        this.fx.muzzle(from, PAL.fire, special === "big" ? 1.2 : 0.7, 0.1);
-        this.fx.burst("smoke", from, null, special === "big" ? 8 : 4, 1.5, 0.3);
+        this.fx.burst("smoke", from, null, special === "big" ? 6 : 3, 1.2, 0.25);
         break;
       case "frost":
-        this.fx.muzzle(from, PAL.ice, 0.6, 0.1);
+        // Gheața nu „trage” nimic vizibil: doar crusta apare pe zombi.
         break;
       default:
-        this.fx.muzzle(from, special === "heavy" ? PAL.fire : PAL.bone, special === "heavy" ? 0.7 : 0.3, 0.06);
+        // Arbaleta: niciun fulger, doar săgeata care se vede zburând.
+        break;
     }
   }
 
@@ -1009,45 +1115,34 @@ export class Renderer {
     const view = this.towerViews.get(towerId);
     if (view) view.kick = 1;
     if (kind === "tesla") {
-      // Laser gros care trece prin tot.
+      // Laserul: aceeași linie subțire, dar prin toată linia și pâlpâind de câteva ori.
       const from = this.towerMuzzle(state, towerId) ?? this.at(pos, 2.5);
       const end = this.at(to, 1.2);
-      this.fx.tracer(from, end, TOWER_COLORS.tesla, 0.4, 0.35);
-      this.fx.tracer(from, end, PAL.snow, 0.14, 0.35);
-      this.fx.lightning(from, end, TOWER_COLORS.tesla, 0.06, 0.3);
-      this.fx.muzzle(from, TOWER_COLORS.tesla, 1.4, 0.3);
-    } else if (kind === "frost") {
-      const t = state.towers.find((x) => x.id === towerId);
-      const range = t ? CONFIG.tower.kinds.frost.range * (1 + (t.level - 1) * CONFIG.tower.rangePerLevel) : 9;
-      this.fx.ring(this.at(pos, 0.2), range, PAL.ice, 0.7);
-      this.fx.ring(this.at(pos, 0.4), range * 0.6, PAL.snow, 0.5);
-      this.fx.burst("ice", this.at(pos, 2.5), null, 30, 8, 0.12);
+      this.fx.tracer(from, end, mix(TOWER_COLORS.tesla, PAL.snow, 0.6), 0.06, 0.3, true);
+      for (let i = 0; i < 3; i++) this.fx.lightning(from, end, PAL.snow, 0.02, 0.1 + i * 0.08, false, 0.3);
     }
+    // Gheața: nova nu are nor sau inel — crusta apare direct pe zombii înghețați.
   }
 
   private onShellHit(kind: TowerKind, special: Shell["special"], pos: Vec2, splash: number): void {
     const at = this.at(pos, 0.9);
     switch (kind) {
       case "crossbow":
-        this.fx.burst("wood", at, null, special === "heavy" ? 8 : 3, 3, 0.07);
-        if (special === "heavy") this.fx.burst("spark", at, null, 10, 5, 0.07);
+        this.fx.burst("wood", at, null, special === "heavy" ? 5 : 2, 2.5, 0.05);
         break;
       case "rocket": {
-        const r = special === "big" ? splash : special === "mini" ? 0.9 : splash + 0.3;
-        this.fx.explosion(this.at(pos), r);
-        this.fx.burst("smoke", at, null, special === "big" ? 12 : 4, 2, 0.4);
+        // Racheta: un cerc mic de zăpadă aruncată, nu o minge de foc.
+        const r = special === "big" ? splash : special === "mini" ? 0.7 : splash * 0.8;
+        this.fx.snowBurst(this.at(pos), r);
         break;
       }
       case "cannon":
-        // Ghiuleaua bubuie: explozie, pământ și zăpadă aruncate, fum negru.
-        this.fx.explosion(this.at(pos), splash);
-        this.fx.burst("stone", at, null, 10, 7, 0.14);
-        this.fx.burst("smoke", at, null, 10, 2.5, 0.45);
-        this.fx.decal(pos.x, pos.z, 1.2);
+        // Tunul e singurul cu praf; lasă o pată de jar care se stinge în ~2 s.
+        this.fx.dust(this.at(pos, 0.2), splash * 0.6, 0.7);
+        this.fx.burst("stone", at, null, 8, 6, 0.12);
+        this.fx.ember(pos.x, pos.z, splash * 0.55, CONFIG.tower.abilities.fireDuration);
         break;
       case "frost":
-        this.fx.burst("ice", at, null, 8, 3, 0.08);
-        this.fx.ring(this.at(pos, 0.15), 0.9, PAL.ice, 0.3);
         break;
       default:
         break;
@@ -1066,6 +1161,8 @@ export class Renderer {
       const [mesh] = this.shellPrefabs[this.shellModel(s)].instance("shell");
       const scale = s.special === "mini" ? 0.55 : s.special === "big" ? 1.6 : 1;
       mesh.scaling.setAll(scale);
+      // Gheața nu are proiectil vizibil.
+      if (s.kind === "frost") mesh.setEnabled(false);
       return { mesh, last: null, trail: 0, dispose: () => mesh.dispose() };
     }, (view, s) => {
       // Arc de zbor: ghiulelele urcă sus, săgețile aproape drept.
@@ -1084,16 +1181,8 @@ export class Renderer {
       view.mesh.position.copyFrom(pos);
       // Dâre: fum la rachete, scântei la ghiulelele cu foc, gheață la cristale.
       view.trail++;
-      if (s.kind === "rocket") {
-        this.fx.burst("smoke", pos, null, 1, 0.3, s.special === "mini" ? 0.15 : 0.25);
-        if (view.trail % 2 === 0) this.fx.burst("spark", pos, null, 1, 1, 0.06);
-      } else if (s.kind === "cannon" && view.trail % 2 === 0) {
-        this.fx.burst(s.special === "fire" ? "spark" : "smoke", pos, null, 1, 0.4, 0.15);
-      } else if (s.kind === "frost" && view.trail % 2 === 0) {
-        this.fx.burst("ice", pos, null, 1, 0.5, 0.05);
-      } else if (s.special === "heavy") {
-        this.fx.burst("spark", pos, null, 1, 0.5, 0.05);
-      }
+      // Doar racheta lasă o dâră de fum; restul zboară curat.
+      if (s.kind === "rocket") this.fx.burst("smoke", pos, null, 1, 0.25, s.special === "mini" ? 0.18 : 0.3);
     });
   }
 
@@ -1102,11 +1191,12 @@ export class Renderer {
     syncMap(this.fireViews, state.fires, (f) => {
       const root = new TransformNode("firePatch", this.scene);
       const flames: TransformNode[] = [];
-      for (let i = 0; i < 7; i++) {
+      // Jar pe zăpadă: limbi mici și joase de flacără (pata de jar e în Fx.ember).
+      for (let i = 0; i < 4; i++) {
         const node = new TransformNode("fp", this.scene);
         node.parent = root;
-        const a = (i / 7) * Math.PI * 2;
-        const r = i === 0 ? 0 : f.radius * 0.55;
+        const a = (i / 4) * Math.PI * 2 + f.id;
+        const r = i === 0 ? 0 : f.radius * 0.45;
         node.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
         this.flame.instance("fpFlame", node);
         flames.push(node);
@@ -1116,10 +1206,9 @@ export class Renderer {
       view.root.position.set(f.pos.x, terrainHeight(f.pos.x, f.pos.z), f.pos.z);
       const fade = Math.min(1, f.life * 1.5);
       view.flames.forEach((n, i) => {
-        const k = (1.2 + Math.abs(Math.sin(this.time * 9 + i * 1.3)) * 0.9) * fade;
-        n.scaling.set(1.3 * fade, k, 1.3 * fade);
+        const k = (0.35 + Math.abs(Math.sin(this.time * 9 + i * 1.3)) * 0.3) * fade;
+        n.scaling.set(0.6 * fade, k, 0.6 * fade);
       });
-      if (Math.random() < 0.3) this.fx.burst("smoke", this.at(f.pos, 1.2), null, 1, 0.5, 0.3);
     });
   }
 
@@ -1159,7 +1248,7 @@ export class Renderer {
       view.root.position.set(b.pos.x, y - 0.05, b.pos.z);
       view.root.rotation.y = b.rotation;
       // Dărâmat: bara arată cât mai trebuie reparat ca să se ridice la loc.
-      view.bar.set(b.pos, y + (b.broken ? 1.2 : 2.6), b.broken ? Math.min(0.998, b.hp / (b.maxHp * CONFIG.barricade.rebuildAt)) : b.hp / b.maxHp);
+      view.bar.set(b.pos, y + (b.broken ? 1.2 : 2.6), b.broken ? Math.min(0.998, b.hp / (b.maxHp * CONFIG.barricade.rebuildAt)) : b.hp / b.maxHp, b.id === this.selectedId);
     });
   }
 
@@ -1247,8 +1336,9 @@ export class Renderer {
   }
 
   /** Inel auriu sub construcția selectată (pentru editare). */
-  setSelection(pos: Vec2 | null, radius = 1.6): void {
+  setSelection(pos: Vec2 | null, radius = 1.6, id: EntityId | null = null): void {
     this.selectRing.setEnabled(!!pos);
+    this.selectedId = pos ? id : null;
     if (!pos) return;
     this.selectRing.position.set(pos.x, terrainHeight(pos.x, pos.z) + 0.12, pos.z);
     this.selectRing.scaling.set(radius, 1, radius);
@@ -1256,6 +1346,8 @@ export class Renderer {
 
   /** Șterge toate entitățile (pentru „Joacă din nou”). */
   reset(): void {
+    this.world.resetMine();
+    this.mineCrack = -1;
     const maps: Map<EntityId, { dispose(): void }>[] = [
       this.heroViews, this.zombieViews, this.towerViews, this.barricadeViews, this.coinViews, this.mineViews, this.projectileViews,
       this.shellViews, this.fireViews,
@@ -1266,7 +1358,10 @@ export class Renderer {
     }
     for (const d of this.dying) d.view.dispose();
     this.dying = [];
-    for (const c of this.collapsing) c.root.dispose();
+    for (const c of this.collapsing) {
+      c.root.dispose();
+      c.bar?.dispose();
+    }
     this.collapsing = [];
     this.survival.reset();
     this.hideGhost();

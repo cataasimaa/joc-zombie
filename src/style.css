@@ -119,6 +119,7 @@ button {
 }
 
 .round-btn {
+  position: relative;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -1825,4 +1826,18 @@ i.coin {
     width: min(460px, 92vw);
     text-align: center;
   }
+}
+
+/* Sunet oprit: o linie oblică peste ☰ (în joc nu există buton de sunet). */
+#menu-btn.muted::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 50%;
+  height: 3px;
+  border-radius: 2px;
+  background: #ff6b5a;
+  transform: rotate(-40deg);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
 }

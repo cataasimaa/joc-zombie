@@ -9,6 +9,7 @@ import type { Animal, Campfire, Drop, EntityId, GameEvent, GameState, Hero, Play
 import { distToBarricade } from "./barricades";
 import { damageHero, gunStats, heroById } from "./heroes";
 import { resolveCollisions } from "./physics";
+import { refundFactor } from "./towers";
 
 const S = CONFIG.survival;
 
@@ -74,7 +75,7 @@ export function demolishBuilding(state: GameState, playerId: PlayerId, id: Entit
   if (ri < 0) return false;
   const farm = state.farms[ri];
   state.farms.splice(ri, 1);
-  state.players[playerId].wood += Math.floor(S.farmCost * CONFIG.barricade.refund);
+  state.players[playerId].wood += Math.floor(S.farmCost * refundFactor(state));
   // Animalele fermei devin „sălbatice” (rămân pe hartă, le poți vâna).
   for (const a of state.animals) if (a.farmId === farm.id) a.farmId = null;
   events.push({ type: "structureRemoved", id: farm.id, pos: { ...farm.pos } });

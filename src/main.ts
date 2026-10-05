@@ -34,6 +34,7 @@ import {
   snapBarricade,
   towerAt,
   towerRefund,
+  refundFactor,
   towerStats,
   towerUpgradeCost,
 } from "./core";
@@ -226,15 +227,19 @@ function pick(kind: PickKind): void {
 }
 
 /** Construcția ta din punctul dat (turn, zid, foc, fermă) — pentru selectare directă. */
-function ownStructureAt(pos: Vec2): boolean {
-  if (!sim) return false;
+function ownStructure(pos: Vec2): { id: EntityId; pos: Vec2; radius: number } | null {
+  if (!sim) return null;
   const s = sim.state;
   const t = towerAt(s, pos);
-  if (t && t.ownerId === LOCAL_PLAYER) return true;
+  if (t && t.ownerId === LOCAL_PLAYER) return { id: t.id, pos: t.pos, radius: 1.6 };
   const b = barricadeAt(s, pos);
-  if (b && b.ownerId === LOCAL_PLAYER) return true;
+  if (b && b.ownerId === LOCAL_PLAYER) return { id: b.id, pos: b.pos, radius: 1.7 };
   const f = buildingAt(s, pos);
-  return !!f && (("fuel" in f) || f.ownerId === LOCAL_PLAYER);
+  if (f && ("fuel" in f || f.ownerId === LOCAL_PLAYER)) return { id: f.id, pos: f.pos, radius: "fuel" in f ? 1.2 : 2.4 };
+  return null;
+}
+function ownStructureAt(pos: Vec2): boolean {
+  return ownStructure(pos) !== null;
 }
 
 /** Tap pe o construcție de-a ta (oricând, nu doar cu ciocanul) → meniul ei. */
@@ -279,14 +284,14 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
       }
     }
     options.push({
-      label: "🔨 Demolează",
-      detail: `+${towerRefund(tower)} 🪵`,
+      label: s.phase === "night" ? "🔨 Vinde (noaptea: jumătate)" : "🔨 Demolează",
+      detail: `+${towerRefund(s, tower)} 🪵`,
       className: "kind-demolish",
       full: tower.kind !== "crossbow",
       onClick: act({ type: "demolishTower", playerId: LOCAL_PLAYER, towerId: tower.id }),
     });
     options.push(cancel);
-    renderer.setSelection(tower.pos, 1.6);
+    renderer.setSelection(tower.pos, 1.6, tower.id);
     const info = TOWER_INFO[tower.kind];
     hud.showBuildMenu(screenX, screenY, options, `${info.icon} ${stats.name} · nivel ${tower.level} · ❤ ${Math.ceil(tower.hp)}/${tower.maxHp}<br><small>★ ${info.ability}</small>`);
     return;
@@ -295,7 +300,7 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
   if (b && b.ownerId === LOCAL_PLAYER) {
     const refund = Math.floor(
       (CONFIG.barricade.levels.slice(0, b.level).reduce((a, l) => a + l.cost, 0) + (b.door ? CONFIG.barricade.doorCost : 0)) *
-        CONFIG.barricade.refund,
+        refundFactor(s),
     );
     const options: MenuOption[] = [
       { label: "↔ Mută", detail: "gratis", onClick: () => { hud.hideBuildMenu(); startPlacing("wall", "move", b.pos, b.rotation, b.id); } },
@@ -324,7 +329,7 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
     }
     options.push({ label: "🔨 Demolează", detail: `+${refund} 🪵`, onClick: act({ type: "demolish", playerId: LOCAL_PLAYER, barricadeId: b.id }) });
     options.push(cancel);
-    renderer.setSelection(b.pos, 1.7);
+    renderer.setSelection(b.pos, 1.7, b.id);
     const state = b.broken ? "dărâmat — stai lângă el ca să-l repari" : b.hp < b.maxHp * 0.6 ? "crăpat" : "întreg";
     hud.showBuildMenu(screenX, screenY, options, `🧱 Zid ${b.level >= 2 ? "întărit" : "de pari"}${b.door ? " (ușă)" : ""} · ${state}<br><small>❤ ${Math.ceil(b.hp)}/${b.maxHp}</small>`);
     return;
@@ -350,15 +355,15 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
       options.push({ label: "🔨 Demolează", onClick: act({ type: "demolishBuilding", playerId: LOCAL_PLAYER, buildingId: f.id }) });
     }
     options.push(cancel);
-    renderer.setSelection(f.pos, 1.2);
+    renderer.setSelection(f.pos, 1.2, f.id);
     const cooking = f.cooking.length ? ` · 🍖 gata în ${Math.ceil(Math.min(...f.cooking))} s` : "";
     hud.showBuildMenu(screenX, screenY, options, `🔥 Foc · ${f.fuel > 0 ? `${Math.ceil(f.fuel)}% lemn` : "stins"}${cooking}`);
     return;
   }
   if (f && f.ownerId === LOCAL_PLAYER) {
-    renderer.setSelection(f.pos, 2.4);
+    renderer.setSelection(f.pos, 2.4, f.id);
     hud.showBuildMenu(screenX, screenY, [
-      { label: "🔨 Demolează", detail: `+${Math.floor(buildingCost("farmPig") * CONFIG.barricade.refund)} 🪵`, onClick: act({ type: "demolishBuilding", playerId: LOCAL_PLAYER, buildingId: f.id }) },
+      { label: "🔨 Demolează", detail: `+${Math.floor(buildingCost("farmPig") * refundFactor(s))} 🪵`, onClick: act({ type: "demolishBuilding", playerId: LOCAL_PLAYER, buildingId: f.id }) },
       cancel,
     ], `${"kind" in f && f.kind === "chicken" ? "🐔 Coteț de găini" : "🐖 Țarc de porci"}`);
     return;
@@ -442,16 +447,36 @@ let touchAim: { id: number; x: number; y: number } | null = null;
 /** Apăsarea a început pe o construcție de-a ta: e o selectare, nu o tragere. */
 let downOnStructure = false;
 
+/** Apăsare lungă (telefon) pe o construcție: deschide meniul ei. */
+let longPress: { timer: number; fired: boolean } | null = null;
+const LONG_PRESS_MS = 450;
+
+/**
+ * Fără ciocan: un tap scurt pe o construcție de-a ta doar o SELECTEAZĂ (inel + viață);
+ * meniul se deschide la apăsare lungă sau la un al doilea tap pe aceeași construcție.
+ * Tap pe zăpadă = deselectezi. `menu` = deschide meniul direct (apăsare lungă).
+ */
+function selectAt(x: number, y: number, menu: boolean): void {
+  const pos = renderer.pickGround(x, y);
+  const target = pos ? ownStructure(pos) : null;
+  if (!pos || !target) {
+    hud.hideBuildMenu();
+    renderer.setSelection(null);
+    return;
+  }
+  if (menu || renderer.selectedId === target.id) {
+    onBuildTap(pos, x, y);
+    return;
+  }
+  hud.hideBuildMenu();
+  renderer.setSelection(target.pos, target.radius, target.id);
+}
+
 function tapAt(x: number, y: number, mouse: boolean): void {
   const pos = renderer.pickGround(x, y);
   if (!pos) return;
-  // Fără ciocan: un tap pe un turn / zid / foc de-al tău îl selectează direct.
   if (buildMode === "off") {
-    if (ownStructureAt(pos)) onBuildTap(pos, x, y);
-    else {
-      hud.hideBuildMenu();
-      renderer.setSelection(null);
-    }
+    selectAt(x, y, false);
     return;
   }
   // Cu mouse-ul, click în modul de plasare pune direct (fantoma urmărește deja cursorul).
@@ -467,7 +492,20 @@ canvas.addEventListener("pointerdown", (e) => {
   if (buildMode !== "off" || !sim) return;
   const ground = renderer.pickGround(e.clientX, e.clientY);
   downOnStructure = !!ground && ownStructureAt(ground);
-  if (downOnStructure) return;
+  if (downOnStructure) {
+    if (e.pointerType !== "mouse") {
+      const x = e.clientX, y = e.clientY;
+      const lp = { timer: 0, fired: false };
+      lp.timer = window.setTimeout(() => {
+        if (longPress !== lp || !downAt || Math.hypot(downAt.x - x, downAt.y - y) > 12) return;
+        lp.fired = true;
+        navigator.vibrate?.(15);
+        selectAt(x, y, true);
+      }, LONG_PRESS_MS);
+      longPress = lp;
+    }
+    return;
+  }
   // Calculator: click ținut = trage spre cursor. Telefon: ții degetul pe ecran = trage acolo.
   if (e.pointerType === "mouse") {
     if (e.button === 0) mouseFiring = true;
@@ -487,10 +525,33 @@ canvas.addEventListener("pointerup", (e) => {
   if (!downAt) return;
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
   downAt = null;
+  const lp = longPress;
+  if (lp) {
+    clearTimeout(lp.timer);
+    longPress = null;
+    if (lp.fired) return;
+  }
   if (moved <= 12) tapAt(e.clientX, e.clientY, e.pointerType === "mouse");
 });
-// Zona joystick-ului acoperă stânga-jos; o atingere scurtă acolo contează tot ca tap de construcție.
-joystick.onTap = (x, y) => tapAt(x, y, false);
+canvas.addEventListener("pointermove", (e) => {
+  if (longPress && downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 12) {
+    clearTimeout(longPress.timer);
+    longPress = null;
+  }
+});
+// Zona joystick-ului: degetul de mers nu deschide niciodată meniuri. Un tap scurt acolo doar
+// selectează (sau, cu ciocanul, alege locul de construcție).
+joystick.onTap = (x, y) => {
+  if (buildMode === "off") {
+    const pos = renderer.pickGround(x, y);
+    const target = pos ? ownStructure(pos) : null;
+    hud.hideBuildMenu();
+    if (target && renderer.selectedId !== target.id) renderer.setSelection(target.pos, target.radius, target.id);
+    else if (!target) renderer.setSelection(null);
+    return;
+  }
+  tapAt(x, y, false);
+};
 canvas.addEventListener("pointermove", (e) => {
   if (touchAim?.id === e.pointerId) {
     touchAim.x = e.clientX;
@@ -501,6 +562,15 @@ canvas.addEventListener("pointermove", (e) => {
   const ground = renderer.pickGround(e.clientX, e.clientY);
   if (placing && ground) setPlacePos(ground);
 });
+
+// Telefonul sună / treci în altă aplicație: jocul intră singur pe pauză (noaptea și păcănelele stau).
+function autoPause(): void {
+  if (sim && (sim.state.phase === "day" || sim.state.phase === "night") && !hud.paused) hud.setPaused(true);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) autoPause();
+});
+window.addEventListener("pagehide", autoPause);
 
 keyboard.onPress("KeyB", () => sim && !paused && setBuildMode(buildMode === "off" ? "palette" : "off"));
 keyboard.onPress("Escape", () => {
@@ -548,6 +618,14 @@ function aimCommand(state: GameState): Command | null {
 }
 
 /** Cât de periculos e momentul (0..1) — muzica trece de la liniște la teroare. */
+/** Distanța de la eroul local la cel mai apropiat zombi (pentru gemetele care se apropie). */
+function nearestZombie(state: GameState): number {
+  const hero = localHero(state);
+  let best = Infinity;
+  for (const z of state.zombies) if (!z.burning) best = Math.min(best, Math.hypot(z.pos.x - hero.pos.x, z.pos.z - hero.pos.z));
+  return best;
+}
+
 function danger(state: GameState): number {
   if (state.phase !== "night") return state.phase === "day" && state.phaseTimer < 10 ? 0.15 : 0;
   const hero = localHero(state);
@@ -588,7 +666,7 @@ function startMenuScene(): void {
 function spawnZombieAt(s: GameState, type: "walker" | "runner" | "brute" | "boss", x: number, z: number, facing: number): void {
   s.zombies.push({
     id: s.nextId++, type, pos: { x, z }, facing, hp: 1, maxHp: 1, attackTimer: 9, slowTimer: 0, stuckTime: 0,
-    burning: false, aggroTowerId: null, lastHitBy: null, chillTimer: 0, frozenTimer: 0,
+    burning: false, aggroTowerId: null, lastHitBy: null, chillTimer: 0, frozenTimer: 0, freezeImmune: 0,
   });
 }
 
@@ -670,6 +748,9 @@ renderer.engine.runRenderLoop(() => {
       steps: renderer.drainSteps(),
       weaponOf: (heroId) => state.players[heroById(state, heroId)?.playerId ?? LOCAL_PLAYER]?.weapon ?? "rusty",
       dt,
+      boss: state.phase === "night" && state.zombies.some((z) => z.type === "boss" && !z.burning),
+      nearestZombie: nearestZombie(state),
+      running: state.phase === "day" || state.phase === "night",
     });
     if (placing) refreshPlacing();
   } else if (menuScene) {

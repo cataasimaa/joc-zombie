@@ -120,17 +120,17 @@ export function upgradeTower(state: GameState, playerId: PlayerId, towerId: Enti
   return true;
 }
 
-/** Lemnul primit înapoi la demolare (50% din cât ai investit). */
-export function towerRefund(tower: Tower): number {
+/** Lemnul primit înapoi la demolare (vezi `refundFactor`: mai puțin noaptea). */
+export function towerRefund(state: GameState, tower: Tower): number {
   let spent = towerCost() + (tower.kind !== "crossbow" ? T.kinds[tower.kind].cost : 0);
   for (let l = 1; l < tower.level; l++) spent += T.levelCost[l];
-  return Math.floor(spent * CONFIG.barricade.refund);
+  return Math.floor(spent * refundFactor(state));
 }
 
 export function demolishTower(state: GameState, playerId: PlayerId, towerId: EntityId, events: GameEvent[]): boolean {
   const tower = towerById(state, towerId);
   if (!tower || tower.ownerId !== playerId) return false;
-  state.players[playerId].wood += towerRefund(tower);
+  state.players[playerId].wood += towerRefund(state, tower);
   removeTower(state, tower, events);
   return true;
 }
@@ -189,9 +189,25 @@ function zombiesOnLine(state: GameState, from: Vec2, dir: Vec2, length: number, 
   return out.sort((a, b) => a.t - b.t).map((o) => o.z);
 }
 
+/**
+ * Statisticile „din teren”: dificultatea scade damage-ul (pe Nightmare turnurile nu mai duc
+ * singure valul), iar viscolul scurtează raza tuturor turnurilor, în afară de Tesla.
+ */
+export function effectiveTowerStats(state: GameState, tower: Tower): TowerStats {
+  const base = towerStats(tower.kind, tower.level);
+  const range = tower.kind === "tesla" ? 1 : CONFIG.weather[state.weather].towerRange;
+  return { ...base, damage: base.damage * CONFIG.difficulty[state.difficulty].towerDamage, range: base.range * range };
+}
+
+/** Cât din lemnul investit primești înapoi: ziua `refund`, noaptea (în timpul valului) jumătate din el. */
+export function refundFactor(state: GameState): number {
+  const B = CONFIG.barricade;
+  return B.refund * (state.phase === "night" ? B.nightRefundFactor : 1);
+}
+
 export function updateTowers(state: GameState, dt: number, events: GameEvent[]): void {
   for (const tower of [...state.towers]) {
-    const stats = towerStats(tower.kind, tower.level);
+    const stats = effectiveTowerStats(state, tower);
     tower.fireTimer -= dt;
     tower.abilityTimer -= dt;
 
@@ -247,7 +263,15 @@ function useAbility(state: GameState, tower: Tower, stats: TowerStats, target: Z
     }
     case "frost":
       events.push({ type: "towerAbility", towerId: tower.id, kind: "frost", pos: { ...tower.pos }, to: { ...target.pos } });
-      for (const z of zombiesInRadius(state, tower.pos, stats.range)) z.frozenTimer = Math.max(z.frozenTimer, A.freezeDuration);
+      // Înghețarea nu se adună: un zombie abia dezghețat e imun câteva secunde (și la alt turn).
+      let frozen = 0;
+      for (const z of zombiesInRadius(state, tower.pos, stats.range)) {
+        if (z.frozenTimer > 0 || z.freezeImmune > 0) continue;
+        z.frozenTimer = A.freezeDuration;
+        z.freezeImmune = A.freezeDuration + A.freezeImmunity;
+        frozen++;
+      }
+      if (frozen > 0) events.push({ type: "frozen", pos: { ...tower.pos }, count: frozen });
       break;
   }
 }

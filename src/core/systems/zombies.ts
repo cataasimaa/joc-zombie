@@ -45,6 +45,7 @@ export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | nul
     lastHitBy: null,
     chillTimer: 0,
     frozenTimer: 0,
+    freezeImmune: 0,
   };
   state.zombies.push(zombie);
   return zombie;
@@ -66,6 +67,7 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
     const chilled = zombie.chillTimer > 0;
     zombie.chillTimer = Math.max(0, zombie.chillTimer - dt);
     zombie.slowTimer = Math.max(0, zombie.slowTimer - dt);
+    zombie.freezeImmune = Math.max(0, zombie.freezeImmune - dt);
 
     // În zori: arde și moare încet (fără monede).
     if (zombie.burning) {
@@ -140,7 +142,7 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
       if (zombie.attackTimer <= 0) {
         zombie.attackTimer = stats.attackInterval;
         damageBarricade(state, blocking, damage, events);
-        events.push({ type: "zombieAttack", id: zombie.id, zombieType: zombie.type, pos: { ...zombie.pos } });
+        events.push({ type: "zombieAttack", id: zombie.id, zombieType: zombie.type, pos: { ...zombie.pos }, wall: true });
       }
     } else if (d > reach) {
       // 4. Merge spre țintă.

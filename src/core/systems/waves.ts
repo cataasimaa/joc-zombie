@@ -38,7 +38,7 @@ export function waveComposition(wave: number, playerCount: number, difficulty: D
 
 /** Câți zombi vin deodată, din același loc. Hoardele cresc de la o noapte la alta. */
 export function hordeSize(wave: number): number {
-  return 2 + Math.floor(wave / 2);
+  return 3 + Math.floor(wave / 2);
 }
 
 export function nightDuration(wave: number): number {

@@ -6,7 +6,7 @@ import { segmentEnds } from "./math";
 import { barricadeSpotProblem, nextInChain, snapBarricade } from "./systems/barricades";
 import { gunStats } from "./systems/heroes";
 import { rollRarity } from "./systems/shop";
-import { canBuildTower, towerSlots, towerStats } from "./systems/towers";
+import { canBuildTower, effectiveTowerStats, towerRefund, towerSlots, towerStats } from "./systems/towers";
 import { nightDuration, waveComposition } from "./systems/waves";
 import { spawnZombie } from "./systems/zombies";
 
@@ -280,6 +280,42 @@ describe("turnuri", () => {
     sim.step(DT);
     expect(z.chillTimer).toBeGreaterThan(0);
     expect(z.frozenTimer).toBeGreaterThan(0);
+  });
+
+  it("două turnuri de gheață nu țin un zombie înghețat la nesfârșit", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    s.towers.push({ ...tower(800, 10, 10, "frost"), abilityTimer: 0 });
+    const z = dummy(sim, "walker", 12, 10);
+    sim.step(DT);
+    expect(z.frozenTimer).toBeGreaterThan(0);
+    // Al doilea turn de gheață își folosește nova chiar când primul îngheț se termină: e imun.
+    run(sim, CONFIG.tower.abilities.freezeDuration + 0.1);
+    expect(z.frozenTimer).toBeLessThanOrEqual(0);
+    s.towers.push({ ...tower(801, 14, 10, "frost"), abilityTimer: 0 });
+    sim.step(DT);
+    expect(z.frozenTimer).toBeLessThanOrEqual(0);
+  });
+
+  it("noaptea, vânzarea unui turn dă doar jumătate; viscolul scurtează raza (nu și la Tesla)", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const t = tower(800, 8, 8);
+    s.towers.push(t);
+    s.phase = "day";
+    const day = towerRefund(s, t);
+    s.phase = "night";
+    expect(towerRefund(s, t)).toBe(Math.floor(day / 2));
+    s.weather = "blizzard";
+    expect(effectiveTowerStats(s, t).range).toBeLessThan(towerStats("crossbow", 1).range);
+    const tesla = tower(801, -8, -8, "tesla");
+    expect(effectiveTowerStats(s, tesla).range).toBe(towerStats("tesla", 1).range);
+  });
+
+  it("pe Nightmare turnurile fac mai puțin damage", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 1, difficulty: "nightmare" });
+    expect(effectiveTowerStats(sim.state, tower(800, 8, 8)).damage).toBeLessThan(towerStats("crossbow", 1).damage);
   });
 
   it("tunul lasă foc pe jos, Tesla trage laser prin mai mulți zombi", () => {

@@ -98,6 +98,8 @@ export interface Zombie {
   chillTimer: number;
   /** Înghețat complet (secunde rămase). */
   frozenTimer: number;
+  /** Secunde în care nu mai poate fi înghețat din nou (două înghețări nu se adună). */
+  freezeImmune: number;
 }
 
 /** Scuipat de zombie (proiectil care zboară spre țintă). */
@@ -285,12 +287,13 @@ export interface GameState {
 
 /** Evenimente unice („s-a întâmplat ceva”), folosite de randare, sunet și UI pentru efecte. */
 export type GameEvent =
-  | { type: "shot"; from: Vec2; to: Vec2; source: "hero"; crit?: boolean; heroId?: EntityId }
+  | { type: "shot"; from: Vec2; to: Vec2; source: "hero"; crit?: boolean; heroId?: EntityId; hit?: boolean }
   /** Un turn a tras (proiectilul zboară ca `Shell`; laserul Tesla lovește instant). */
   | { type: "towerFired"; towerId: EntityId; kind: TowerKind; from: Vec2; to: Vec2; special: Shell["special"] }
   /** Abilitatea unui turn (pentru efecte: laser lung, nova de gheață etc.). */
   | { type: "towerAbility"; towerId: EntityId; kind: TowerKind; pos: Vec2; to: Vec2 }
   /** Proiectilul de turn a lovit / a explodat. */
+  | { type: "frozen"; pos: Vec2; count: number }
   | { type: "shellHit"; kind: TowerKind; special: Shell["special"]; pos: Vec2; splash: number }
   | { type: "towerHit"; id: EntityId; pos: Vec2 }
   | { type: "towerDestroyed"; id: EntityId; pos: Vec2; kind: TowerKind }
@@ -299,7 +302,7 @@ export type GameEvent =
   | { type: "reloadDone"; heroId: EntityId }
   | { type: "zombieHit"; id: EntityId; pos: Vec2; from: Vec2 }
   | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType; burned: boolean; killerHeroId: EntityId | null }
-  | { type: "zombieAttack"; id: EntityId; zombieType: ZombieType; pos: Vec2 }
+  | { type: "zombieAttack"; id: EntityId; zombieType: ZombieType; pos: Vec2; wall?: boolean }
   | { type: "spit"; id: EntityId; from: Vec2; to: Vec2 }
   | { type: "projectileHit"; pos: Vec2 }
   | { type: "coinPicked"; playerId: PlayerId; value: number }

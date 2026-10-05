@@ -1,20 +1,24 @@
 // Muzica jocului, compusă „din mers” cu Web Audio (fără fișiere).
 //
-// Două straturi care se amestecă după cât de mare e pericolul (setDanger 0..1):
-//  - LINIȘTE: acorduri lente, melancolice, și o melodie rară ca de pian / cutie muzicală (re minor).
-//  - TEROARE: un vuiet jos și disonant, viori tremurate, tobe grele și bătăi de inimă.
+// Două straturi, ca să nu acopere sunetele importante (arbaleta se aude și pe telefon):
+//  - ÎNTRE VALURI: un drone jos ca de vânt + un acord rar (re minor).
+//  - ÎN VAL (noaptea): același drone + un puls ritmic JOS și energic: tobă mare pe fiecare timp,
+//    bas în optimi (în șaisprezecimi la pericol mare), tom-uri sincopate și un „BRAAM” la 8 măsuri.
+//    Fără melodie și fără sunete înalte. Tempo-ul crește cu pericolul.
+//  - O tobă mare rară când o brută lovește un zid (accent()).
+//  - Boss: vântul tace și rămâne o notă joasă ținută; când moare boss-ul, vântul revine.
+//  - Victorie / game over: muzica se oprește (stinger-ele sunt în Sfx), apoi liniște.
 // Un „planificator” programează notele puțin în avans, pe un tempo fix.
 
 const NOTE = (n: number) => 440 * Math.pow(2, (n - 69) / 12); // număr MIDI → frecvență
 
-// Re minor: acordurile (note MIDI) și scara pentru melodie.
+// Re minor: acordurile rare dintre valuri (note MIDI).
 const CHORDS = [
   [50, 57, 62, 65], // Dm
   [46, 53, 58, 62], // Bb
   [43, 50, 55, 58], // Gm
   [45, 52, 57, 61], // A
 ];
-const MELODY = [62, 64, 65, 67, 69, 72, 74, 76, 77];
 
 // Tema din meniu (eroică, rece): Dm – Bb – F – C, cor + alămuri + tobe de război.
 const EPIC_CHORDS = [
@@ -30,25 +34,34 @@ const EPIC_THEME: [number, number][] = [
   [70, 2], [69, 1], [67, 1], [65, 2], [67, 1], [69, 1],
   [67, 2], [64, 1], [60, 1], [62, 4],
 ];
-/** Ostinato de noapte (corzi joase, optimi): rădăcina acordului curent. */
-const OSTINATO = [0, 0, 12, 0, 3, 0, 12, 7];
+/** Basul de noapte, pe optimi (semitonuri peste rădăcină): galop care împinge înainte. */
+const BASS = [0, 0, 12, 0, 0, 10, 0, 7];
+/** Tom-uri sincopate pe 16 șaisprezecimi (1 = lovitură). */
+const TOMS = [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0];
 
 export class Music {
+  /** Stratul dintre valuri (drone + acord rar). */
   private calm: GainNode;
+  /** Stratul de val (pulsul ritmic). */
   private terror: GainNode;
   private danger = 0;
   private nextBeat = 0;
   private beat = 0;
   private timer: number;
-  private droneGain: GainNode;
-  private tremGain: GainNode;
+  private windGain: GainNode;
+  private windBand: BiquadFilterNode;
+  private bossGain: GainNode;
   private heartbeatAt = 0;
   private epic: GainNode;
   private menu = false;
   private themeAt = 0;
   private themeIndex = 0;
+  private boss = false;
+  /** După victorie / game over: liniște până la jocul următor. */
+  private silent = false;
+  private accentAt = 0;
 
-  constructor(private ctx: AudioContext, out: AudioNode, private reverb: AudioNode, private noise: AudioBuffer) {
+  constructor(private ctx: AudioContext, private out: AudioNode, private reverb: AudioNode, private noise: AudioBuffer) {
     this.calm = ctx.createGain();
     this.terror = ctx.createGain();
     this.calm.gain.value = 0.5;
@@ -57,51 +70,54 @@ export class Music {
     this.terror.connect(out);
     this.calm.connect(reverb);
 
-    // Vuietul de fond al terorii: două tonuri foarte joase, puțin dezacordate (disonanță).
-    this.droneGain = ctx.createGain();
-    this.droneGain.gain.value = 0.18;
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 220;
-    for (const f of [NOTE(26), NOTE(27) * 1.003, NOTE(38)]) {
+    // Drone-ul de vânt: zgomot filtrat îngust, care urcă și coboară încet (se aude în ambele straturi).
+    const wind = ctx.createBufferSource();
+    wind.buffer = noise;
+    wind.loop = true;
+    wind.playbackRate.value = 0.35;
+    this.windBand = ctx.createBiquadFilter();
+    this.windBand.type = "bandpass";
+    this.windBand.frequency.value = 320;
+    this.windBand.Q.value = 3;
+    const sweep = ctx.createOscillator();
+    sweep.frequency.value = 0.07;
+    const sweepDepth = ctx.createGain();
+    sweepDepth.gain.value = 140;
+    sweep.connect(sweepDepth).connect(this.windBand.frequency);
+    sweep.start();
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0.5;
+    wind.connect(this.windBand).connect(this.windGain).connect(out);
+    this.windGain.connect(reverb);
+    wind.start();
+    // Sub vânt: o cvintă foarte joasă (re), abia simțită.
+    const hum = ctx.createGain();
+    hum.gain.value = 0.05;
+    for (const f of [NOTE(38), NOTE(45)]) {
       const o = ctx.createOscillator();
-      o.type = "sawtooth";
+      o.type = "triangle";
       o.frequency.value = f;
-      o.connect(lp);
+      o.connect(hum);
       o.start();
     }
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.08;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 120;
-    lfo.connect(lfoGain).connect(lp.frequency);
-    lfo.start();
-    lp.connect(this.droneGain).connect(this.terror);
+    hum.connect(this.windGain);
 
-    // Viori „tremurate”: un cluster sus, cu volumul care pulsează rapid.
-    this.tremGain = ctx.createGain();
-    this.tremGain.gain.value = 0;
-    const strings = ctx.createGain();
-    strings.gain.value = 0.035;
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 1100;
-    bp.Q.value = 0.8;
-    for (const f of [NOTE(69), NOTE(70), NOTE(76) * 1.004]) {
+    // Nota ținută a boss-ului: re foarte jos + o octavă, aspre și filtrate (pornește doar la boss).
+    this.bossGain = ctx.createGain();
+    this.bossGain.gain.value = 0;
+    const bossLp = ctx.createBiquadFilter();
+    bossLp.type = "lowpass";
+    bossLp.frequency.value = 420;
+    for (const [f, d] of [[NOTE(26), -6], [NOTE(38), 5], [NOTE(45), 0]] as const) {
       const o = ctx.createOscillator();
       o.type = "sawtooth";
       o.frequency.value = f;
-      o.connect(bp);
+      o.detune.value = d;
+      o.connect(bossLp);
       o.start();
     }
-    const trem = ctx.createOscillator();
-    trem.frequency.value = 9;
-    const tremDepth = ctx.createGain();
-    tremDepth.gain.value = 0.5;
-    trem.connect(tremDepth).connect(strings.gain);
-    trem.start();
-    bp.connect(strings).connect(this.tremGain).connect(this.terror);
-    this.tremGain.connect(reverb);
+    bossLp.connect(this.bossGain).connect(out);
+    this.bossGain.connect(reverb);
 
     this.epic = ctx.createGain();
     this.epic.gain.value = 0;
@@ -119,8 +135,11 @@ export class Music {
     const t = this.ctx.currentTime;
     this.epic.gain.setTargetAtTime(on ? 0.75 : 0, t, 0.8);
     if (on) {
+      this.silent = false;
+      this.setBoss(false);
       this.calm.gain.setTargetAtTime(0, t, 0.5);
       this.terror.gain.setTargetAtTime(0, t, 0.5);
+      this.windGain.gain.setTargetAtTime(0.25, t, 1);
       this.themeAt = this.nextBeat;
       this.themeIndex = 0;
     }
@@ -128,13 +147,47 @@ export class Music {
 
   /** 0 = liniște deplină, 1 = groază maximă. Tranziția e lină. */
   setDanger(d: number): void {
-    if (this.menu) return;
+    if (this.menu || this.silent) return;
     const t = this.ctx.currentTime;
     this.danger += (d - this.danger) * 0.05;
     const k = this.danger;
     this.calm.gain.setTargetAtTime(0.5 * Math.pow(1 - k, 1.5), t, 0.5);
-    this.terror.gain.setTargetAtTime(Math.min(1, k * 1.2), t, 0.5);
-    this.tremGain.gain.setTargetAtTime(Math.max(0, k - 0.45) * 1.6, t, 0.8);
+    this.terror.gain.setTargetAtTime(Math.min(1, 0.25 + k * 0.9) * (k > 0.2 ? 1 : k * 5), t, 0.5);
+    if (!this.boss) this.windGain.gain.setTargetAtTime(0.45 + k * 0.2, t, 1);
+  }
+
+  /** Boss pe hartă: vântul tace, rămâne o notă joasă ținută. Boss mort: vântul revine. */
+  setBoss(on: boolean): void {
+    if (this.boss === on) return;
+    this.boss = on;
+    const t = this.ctx.currentTime;
+    this.windGain.gain.setTargetAtTime(on ? 0 : 0.5, t, on ? 0.15 : 1.5);
+    this.bossGain.gain.setTargetAtTime(on && !this.silent ? 0.16 : 0, t, on ? 0.6 : 0.4);
+  }
+
+  /** O tobă mare, rară (o brută a lovit un zid). */
+  accent(): void {
+    if (this.menu || this.silent) return;
+    const t = this.ctx.currentTime;
+    if (t < this.accentAt) return;
+    this.accentAt = t + 2.5;
+    this.drum(t + 0.02, 1.3, this.out);
+    this.drum(t + 0.2, 0.6, this.out);
+  }
+
+  /** Victorie / game over: muzica se taie, rămâne liniștea (stinger-ul îl cântă Sfx). */
+  end(): void {
+    this.silent = true;
+    const t = this.ctx.currentTime;
+    for (const g of [this.calm, this.terror, this.windGain, this.bossGain]) g.gain.setTargetAtTime(0, t, 0.25);
+  }
+
+  /** Joc nou: muzica revine. */
+  resume(): void {
+    if (!this.silent) return;
+    this.silent = false;
+    this.boss = false;
+    this.windGain.gain.setTargetAtTime(0.5, this.ctx.currentTime, 1.5);
   }
 
   stop(): void {
@@ -143,9 +196,9 @@ export class Music {
 
   private schedule(): void {
     const ctx = this.ctx;
-    const beatLen = this.menu ? 60 / 76 : 60 / (70 + this.danger * 45); // tempo crește cu pericolul
+    const beatLen = this.menu ? 60 / 76 : 60 / (112 + this.danger * 26); // tempo crește cu pericolul
     while (this.nextBeat < ctx.currentTime + 0.25) {
-      this.playBeat(this.nextBeat, beatLen);
+      if (!this.silent) this.playBeat(this.nextBeat, beatLen);
       this.nextBeat += beatLen;
       this.beat++;
     }
@@ -159,38 +212,38 @@ export class Music {
       this.playMenuBeat(t, beatLen, b);
       return;
     }
+    const k = this.danger;
+    const root = CHORDS[Math.floor(bar / 4) % CHORDS.length][0] - 24;
 
-    // NOAPTE: ostinato de corzi joase pe optimi și tobe de război — muzica e alertă de la început.
-    if (this.danger > 0.4) {
-      const root = CHORDS[Math.floor(bar / 2) % CHORDS.length][0];
-      for (const half of [0, 0.5]) {
-        const step = OSTINATO[(inBar * 2 + (half ? 1 : 0)) % OSTINATO.length];
-        this.lowString(NOTE(root - 12 + step), t + half * beatLen, beatLen * 0.45, 0.05 + this.danger * 0.04);
+    // ÎNTRE VALURI: un acord rar, lung, care se pierde în vânt.
+    if (b % 16 === 0 && (Math.random() < 0.5 || b === 0)) {
+      const chord = CHORDS[Math.floor(bar / 4) % CHORDS.length];
+      for (const n of chord) this.pad(NOTE(n), t, beatLen * 14);
+    }
+
+    // ÎN VAL: pulsul. Toba mare pe fiecare timp, basul pe optimi, tom-uri sincopate.
+    if (k > 0.2) {
+      this.kick(t, 0.55 + k * 0.45);
+      const sixteenth = k > 0.65;
+      for (let i = 0; i < (sixteenth ? 4 : 2); i++) {
+        const step = BASS[(inBar * 2 + Math.floor(i / (sixteenth ? 2 : 1))) % BASS.length];
+        const at = t + (i * beatLen) / (sixteenth ? 4 : 2);
+        this.lowString(NOTE(root + 12 + step), at, beatLen * (sixteenth ? 0.22 : 0.42), 0.07 + k * 0.05);
       }
-      if (inBar === 1 || inBar === 3) this.snare(t, 0.25 + this.danger * 0.25);
-      if (inBar === 3) this.snare(t + beatLen * 0.5, 0.18);
-    }
-
-    // LINIȘTE: un acord nou la fiecare 2 măsuri, melodie rară.
-    if (b % 8 === 0) {
-      const chord = CHORDS[Math.floor(bar / 2) % CHORDS.length];
-      for (const n of chord) this.pad(NOTE(n), t, beatLen * 8.5);
-    }
-    if (Math.random() < 0.35) {
-      const n = MELODY[Math.floor(Math.random() * MELODY.length)];
-      this.pianoNote(NOTE(n), t + (Math.random() < 0.3 ? beatLen / 2 : 0));
-    }
-
-    // TEROARE: tobe grele pe timpii 1 și 3 (și mai dese la pericol mare).
-    if (this.danger > 0.25) {
-      if (inBar === 0 || inBar === 2 || (this.danger > 0.7 && Math.random() < 0.4)) this.drum(t, 0.5 + this.danger * 0.5);
-      if (this.danger > 0.6 && Math.random() < 0.15) this.screech(t);
+      if (k > 0.4) {
+        for (let i = 0; i < 4; i++) {
+          if (TOMS[inBar * 4 + i]) this.tom(t + (i * beatLen) / 4, 0.35 + k * 0.4, inBar % 2 ? 105 : 82);
+        }
+      }
+      // „BRAAM”: o lovitură de alămuri joase, înfundate, la început de frază (8 măsuri).
+      if (b % 32 === 0) this.braam(NOTE(root + 12), t, beatLen * 6, 0.12 + k * 0.08);
+      // Tobe care se rostogolesc la sfârșit de frază.
+      if (k > 0.55 && b % 16 === 15) for (let i = 0; i < 4; i++) this.tom(t + (i * beatLen) / 4, 0.3 + i * 0.12, 120 - i * 10);
     }
     // Bătăi de inimă când zombii sunt foarte aproape.
-    if (this.danger > 0.55 && t >= this.heartbeatAt) {
-      const gap = 0.9 - this.danger * 0.4;
+    if (k > 0.6 && t >= this.heartbeatAt) {
       this.heartbeat(t);
-      this.heartbeatAt = t + gap;
+      this.heartbeatAt = t + 0.9 - k * 0.35;
     }
   }
 
@@ -293,23 +346,6 @@ export class Music {
     lp.connect(g).connect(bus);
   }
 
-  /** Tobă mică de război (pocnet scurt). */
-  private snare(t: number, vol: number): void {
-    const ctx = this.ctx;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 1800;
-    bp.Q.value = 0.7;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.18 * vol, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-    src.connect(bp).connect(g).connect(this.terror);
-    src.start(t, Math.random());
-    src.stop(t + 0.2);
-  }
-
   private pad(freq: number, t: number, dur: number): void {
     const ctx = this.ctx;
     const g = ctx.createGain();
@@ -332,27 +368,7 @@ export class Music {
     lp.connect(g).connect(this.calm);
   }
 
-  /** O notă de „pian”: atac rapid, se stinge încet, cu o armonică discretă. */
-  private pianoNote(freq: number, t: number): void {
-    const ctx = this.ctx;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
-    for (const [mult, vol] of [[1, 1], [2, 0.25], [3, 0.08]] as const) {
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.value = freq * mult;
-      const og = ctx.createGain();
-      og.gain.value = vol;
-      o.connect(og).connect(g);
-      o.start(t);
-      o.stop(t + 2.5);
-    }
-    g.connect(this.calm);
-  }
-
-  private drum(t: number, vol: number, bus: GainNode = this.terror): void {
+  private drum(t: number, vol: number, bus: AudioNode = this.terror): void {
     const ctx = this.ctx;
     const o = ctx.createOscillator();
     o.frequency.setValueAtTime(90, t);
@@ -391,22 +407,56 @@ export class Music {
     }
   }
 
-  /** Un scârțâit de vioară care urcă: tensiune. */
-  private screech(t: number): void {
+  /** Toba mare de noapte: un „bum” jos și scurt, fără pocnitură (nu acoperă arbaleta). */
+  private kick(t: number, vol: number): void {
     const o = this.ctx.createOscillator();
-    o.type = "sawtooth";
-    o.frequency.setValueAtTime(NOTE(84), t);
-    o.frequency.exponentialRampToValueAtTime(NOTE(88), t + 1.5);
-    const bp = this.ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 2400;
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.03, t + 0.6);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
-    o.connect(bp).connect(g).connect(this.terror);
+    g.gain.exponentialRampToValueAtTime(0.42 * vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    o.connect(g).connect(this.terror);
+    o.start(t);
+    o.stop(t + 0.32);
+  }
+
+  /** Tom de război (taiko mic): ton care coboară + puțin zgomot jos. */
+  private tom(t: number, vol: number, freq: number): void {
+    const o = this.ctx.createOscillator();
+    o.frequency.setValueAtTime(freq * 1.6, t);
+    o.frequency.exponentialRampToValueAtTime(freq, t + 0.08);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.3 * vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(this.terror);
     g.connect(this.reverb);
     o.start(t);
-    o.stop(t + 1.7);
+    o.stop(t + 0.37);
+  }
+
+  /** „BRAAM”: alămuri joase, înfundate, care se umflă și se sting. */
+  private braam(freq: number, t: number, dur: number, vol: number): void {
+    const ctx = this.ctx;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(200, t);
+    lp.frequency.exponentialRampToValueAtTime(650, t + 0.25);
+    lp.frequency.exponentialRampToValueAtTime(180, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const [mult, detune] of [[1, -7], [1, 6], [1.5, 0], [0.5, 0]] as const) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = freq * mult;
+      o.detune.value = detune;
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+    lp.connect(g).connect(this.terror);
+    g.connect(this.reverb);
   }
 }

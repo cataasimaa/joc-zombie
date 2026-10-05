@@ -27,6 +27,8 @@ export interface WeatherStats {
   fuel: number;
   /** Ceața (doar vizual): 1 = normal. */
   fog: number;
+  /** Raza turnurilor (în afară de Tesla, care trece prin viscol). */
+  towerRange: number;
   /** Șansa (pondere) să vină vremea asta. */
   weight: number;
 }
@@ -68,6 +70,8 @@ export interface DifficultyStats {
   zombieDamage: number;
   /** Lemnul de start și venitul din zori. */
   wood: number;
+  /** Damage-ul turnurilor (pe dificultăți mari, turnurile nu mai duc singure valul). */
+  towerDamage: number;
 }
 
 export interface HeroStats {
@@ -116,7 +120,7 @@ export const CONFIG = {
 
   /** Mina de plasmă (ce apărăm). Mai mică decât fosta casă: se înconjoară ușor cu ziduri. */
   shelter: {
-    maxHp: 1200,
+    maxHp: 3000,
     radius: 2.2,
   },
 
@@ -131,8 +135,8 @@ export const CONFIG = {
     /** Câte încărcătoare ai în rezervă la start. */
     startMagazines: 4,
     /** Șansa ca un zombie să lase o cutie de gloanțe și cât din încărcător conține. */
-    dropChance: 0.55,
-    dropMagazine: 0.7,
+    dropChance: 0.3,
+    dropMagazine: 0.6,
     /** În fiecare zori primești o „aprovizionare” (atâtea încărcătoare). */
     dawnMagazines: 2,
     /** Cel mult atâtea încărcătoare în rezervă. */
@@ -182,12 +186,12 @@ export const CONFIG = {
 
   /** Vremea: se schimbă la fiecare zi / noapte și face ceva mai greu. */
   weather: {
-    clear: { name: "Senin", icon: "☀", effect: "Liniște. Profită.", heroSpeed: 1, zombieSpeed: 1, cold: 0.8, fuel: 1, fog: 0.8, weight: 3 },
-    snow: { name: "Ninsoare", icon: "❄", effect: "Zombii se aud mai greu", heroSpeed: 1, zombieSpeed: 1.05, cold: 1, fuel: 1, fog: 1.2, weight: 4 },
-    blizzard: { name: "Viscol", icon: "🌨", effect: "Nu vezi departe · urmele îi trădează", heroSpeed: 0.85, zombieSpeed: 1.1, cold: 1.4, fuel: 1.3, fog: 3, weight: 2 },
-    frost: { name: "Ger", icon: "🥶", effect: "Stai mai des lângă foc", heroSpeed: 1, zombieSpeed: 0.9, cold: 2.2, fuel: 1.3, fog: 0.9, weight: 2 },
-    rain: { name: "Lapoviță", icon: "🌧", effect: "Focul se stinge de 2× mai repede", heroSpeed: 0.95, zombieSpeed: 1, cold: 1.2, fuel: 2, fog: 1.4, weight: 2 },
-    wind: { name: "Vânt", icon: "🌬", effect: "Mergi mai greu, focul arde repede", heroSpeed: 0.88, zombieSpeed: 1.05, cold: 1.5, fuel: 1.6, fog: 1, weight: 2 },
+    clear: { name: "Senin", icon: "☀", effect: "Liniște. Profită.", heroSpeed: 1, zombieSpeed: 1, cold: 0.8, fuel: 1, fog: 0.8, towerRange: 1, weight: 3 },
+    snow: { name: "Ninsoare", icon: "❄", effect: "Zombii se aud mai greu", heroSpeed: 1, zombieSpeed: 1.05, cold: 1, fuel: 1, fog: 1.2, towerRange: 1, weight: 4 },
+    blizzard: { name: "Viscol", icon: "🌨", effect: "Turnurile bat mai aproape (Tesla nu) · urmele îi trădează", heroSpeed: 0.85, zombieSpeed: 1.1, cold: 1.4, fuel: 1.3, fog: 1.15, towerRange: 0.7, weight: 2 },
+    frost: { name: "Ger", icon: "🥶", effect: "Stai mai des lângă foc", heroSpeed: 1, zombieSpeed: 0.9, cold: 2.2, fuel: 1.3, fog: 0.9, towerRange: 1, weight: 2 },
+    rain: { name: "Lapoviță", icon: "🌧", effect: "Focul se stinge de 2× mai repede", heroSpeed: 0.95, zombieSpeed: 1, cold: 1.2, fuel: 2, fog: 1.4, towerRange: 1, weight: 2 },
+    wind: { name: "Vânt", icon: "🌬", effect: "Mergi mai greu, focul arde repede", heroSpeed: 0.88, zombieSpeed: 1.05, cold: 1.5, fuel: 1.6, fog: 1, towerRange: 1, weight: 2 },
   } satisfies Record<Weather, WeatherStats>,
 
   /** Cufărul boss-ului: îl împuști ca să-l deschizi. */
@@ -202,10 +206,10 @@ export const CONFIG = {
   },
 
   difficulty: {
-    easy: { name: "Easy", zombieHp: 1, zombieCount: 1, zombieDamage: 1, wood: 1 },
-    medium: { name: "Medium", zombieHp: 1.12, zombieCount: 1.1, zombieDamage: 1.1, wood: 1 },
-    hard: { name: "Hard", zombieHp: 1.3, zombieCount: 1.25, zombieDamage: 1.2, wood: 0.9 },
-    nightmare: { name: "Nightmare", zombieHp: 1.6, zombieCount: 1.45, zombieDamage: 1.4, wood: 0.8 },
+    easy: { name: "Easy", zombieHp: 0.9, zombieCount: 0.9, zombieDamage: 1, wood: 1, towerDamage: 1 },
+    medium: { name: "Medium", zombieHp: 1.1, zombieCount: 1.08, zombieDamage: 1.08, wood: 1, towerDamage: 0.85 },
+    hard: { name: "Hard", zombieHp: 1.12, zombieCount: 1.1, zombieDamage: 1.1, wood: 0.9, towerDamage: 0.8 },
+    nightmare: { name: "Nightmare", zombieHp: 1.22, zombieCount: 1.15, zombieDamage: 1.2, wood: 0.85, towerDamage: 0.65 },
   } satisfies Record<Difficulty, DifficultyStats>,
 
   heroes: {
@@ -236,12 +240,12 @@ export const CONFIG = {
   },
 
   zombies: {
-    walker: { hp: 48, speed: 2.4, radius: 0.6, damage: 11, attackInterval: 1, coinChance: 0.5, coins: 5, xp: 10, rangedRange: 0, flying: false },
-    runner: { hp: 26, speed: 5.6, radius: 0.5, damage: 7, attackInterval: 0.7, coinChance: 0.4, coins: 4, xp: 8, rangedRange: 0, flying: false },
-    spitter: { hp: 40, speed: 2.0, radius: 0.6, damage: 12, attackInterval: 2.2, coinChance: 0.6, coins: 6, xp: 14, rangedRange: 9, flying: false },
-    flyer: { hp: 30, speed: 4.0, radius: 0.55, damage: 8, attackInterval: 1, coinChance: 0.4, coins: 5, xp: 12, rangedRange: 0, flying: true },
-    brute: { hp: 216, speed: 1.6, radius: 0.95, damage: 32, attackInterval: 1.4, coinChance: 1, coins: 10, xp: 30, rangedRange: 0, flying: false },
-    boss: { hp: 1700, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 150, rangedRange: 0, flying: false },
+    walker: { hp: 40, speed: 2.4, radius: 0.6, damage: 10, attackInterval: 1, coinChance: 0.16, coins: 5, xp: 4, rangedRange: 0, flying: false },
+    runner: { hp: 24, speed: 5.6, radius: 0.5, damage: 7, attackInterval: 0.7, coinChance: 0.14, coins: 4, xp: 4, rangedRange: 0, flying: false },
+    spitter: { hp: 36, speed: 2.0, radius: 0.6, damage: 11, attackInterval: 2.2, coinChance: 0.2, coins: 6, xp: 6, rangedRange: 9, flying: false },
+    flyer: { hp: 28, speed: 4.0, radius: 0.55, damage: 8, attackInterval: 1, coinChance: 0.15, coins: 5, xp: 5, rangedRange: 0, flying: true },
+    brute: { hp: 200, speed: 1.6, radius: 0.95, damage: 30, attackInterval: 1.4, coinChance: 0.5, coins: 10, xp: 14, rangedRange: 0, flying: false },
+    boss: { hp: 1700, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 100, rangedRange: 0, flying: false },
   } satisfies Record<ZombieType, ZombieStats>,
 
   zombieCommon: {
@@ -249,8 +253,8 @@ export const CONFIG = {
     towerAggroRange: 12,
     /** Răcit de turnul de gheață: -30% viteză și -30% viteză de atac. */
     chillSlow: 0.3,
-    /** HP-ul crește cu 33% la fiecare noapte. */
-    hpGrowthPerWave: 0.33,
+    /** HP-ul crește cu 22% la fiecare noapte (numărul de zombi crește și el). */
+    hpGrowthPerWave: 0.22,
     /** Dacă un erou e mai aproape de atât, zombiul îl atacă pe el în loc de adăpost. */
     aggroRadius: 5,
     /** Fiecare jucător în plus: +25% HP la zombi. */
@@ -276,11 +280,11 @@ export const CONFIG = {
     /** Eroii din apropiere repară și turnurile (HP/s) — doar ziua. */
     repairRate: 10,
     kinds: {
-      crossbow: { name: "Arbaletă", cost: 30, damage: 14, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 120 },
-      rocket: { name: "Rachete", cost: 50, damage: 34, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 132 },
-      cannon: { name: "Tun", cost: 55, damage: 24, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 168 },
-      tesla: { name: "Tesla", cost: 60, damage: 25, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 114 },
-      frost: { name: "Gheață", cost: 45, damage: 7, range: 9, fireInterval: 1.0, shellSpeed: 22, splash: 0, abilityCooldown: 10, hp: 138 },
+      crossbow: { name: "Arbaletă", cost: 30, damage: 8, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 120 },
+      rocket: { name: "Rachete", cost: 50, damage: 20, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 132 },
+      cannon: { name: "Tun", cost: 55, damage: 13, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 168 },
+      tesla: { name: "Tesla", cost: 60, damage: 14, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 114 },
+      frost: { name: "Gheață", cost: 45, damage: 4, range: 9, fireInterval: 1.0, shellSpeed: 22, splash: 0, abilityCooldown: 10, hp: 138 },
     } satisfies Record<TowerKind, TowerStats>,
     /** Abilitățile turnurilor (se declanșează singure). */
     abilities: {
@@ -295,13 +299,15 @@ export const CONFIG = {
       miniRocketRange: 6,
       /** Tun: ghiuleaua lasă foc pe jos. */
       fireRadius: 2.4,
-      fireDuration: 4,
+      fireDuration: 2,
       fireDps: 0.3,
       /** Tesla: laser care trece prin toți zombii de pe linie. */
       laserMultiplier: 2,
       laserWidth: 0.6,
       /** Gheață: înghețare completă a zombilor din rază. */
       freezeDuration: 1.6,
+      /** După o înghețare, zombiul nu mai poate fi înghețat din nou atâtea secunde (nu se adună). */
+      freezeImmunity: 3,
     },
   },
 
@@ -318,8 +324,9 @@ export const CONFIG = {
     doorCost: 10,
     /** Un zid dărâmat se ridică la loc când e reparat până la atât din viață. */
     rebuildAt: 0.4,
-    /** Cât lemn primești înapoi când demolezi. */
-    refund: 0.5,
+    /** Cât lemn primești înapoi când demolezi (ziua). Noaptea, în timpul valului: jumătate din asta. */
+    refund: 0.7,
+    nightRefundFactor: 0.5,
     /** Capetele aflate la mai puțin de atât se „lipesc” automat. */
     snapDistance: 1.4,
   },
@@ -370,14 +377,14 @@ export const CONFIG = {
     /** Ziua: timp de construit. */
     day: 60,
     /** Noaptea: atacă zombii. Devine tot mai lungă cu fiecare noapte. */
-    nightBase: 75,
+    nightBase: 120,
     nightPerWave: 15,
     /** Zombii apar în primele 75% din noapte. */
     spawnWindow: 0.75,
     /** Fiecare jucător în plus adaugă +50% zombi. */
     extraPerPlayer: 0.5,
-    baseCount: 14,
-    countPerWave: 8,
+    baseCount: 50,
+    countPerWave: 10,
     runnersFromWave: 2,
     runnerShare: 0.2,
     spittersFromWave: 3,

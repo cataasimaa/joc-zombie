@@ -26,8 +26,11 @@ npm run build      # typecheck + build de producție în dist/
 
 Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică): nume, mod de joc,
 dificultate Easy/Medium/Hard/Nightmare, sunet, muzică, 🏆 clasament; apoi alegerea eroului.
-Sunetul se schimbă doar din meniu (☰ / Esc = pauză). Atingi/clic pe o construcție de-a ta (turn,
-zid, foc, fermă) = meniul ei, oricând (ciocanul e doar pentru construcții noi).
+Sunetul se schimbă doar din meniu (☰ / Esc = pauză; sunet oprit = o linie roșie peste ☰). Tap / clic
+scurt pe o construcție de-a ta (turn, zid, foc, fermă) o **selectează** (inel + bara de viață);
+**apăsare lungă** (~0,45 s) sau al doilea tap pe ea = meniul ei. Tap pe zăpadă = deselectezi.
+Degetul de pe joystick nu deschide niciodată meniuri. Telefonul sună / aplicația trece în fundal =
+pauză automată (noaptea și păcănelele stau pe loc).
 Controale în browser: **WASD / săgeți** mișcare, **click ținut** trage spre cursor,
 **Space** trage (spre cursor sau automat), **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
 (**1/2/3/4** turn / zid / mină / foc), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
@@ -79,7 +82,10 @@ src/
                  explozii, dărâmare, pași, reîncărcare, atac zombi, păcănele (clopote, sirenă,
                  monede), vânt, foc
   audio/Music.ts Muzică procedurală: temă eroică în meniu (cor, alămuri, tobe de război);
-                 în joc strat calm + strat de teroare, noaptea cu ostinato de corzi și tobe
+                 în joc 2 straturi fără melodie (nu acoperă arbaleta): între valuri drone de vânt +
+                 acord rar; în val puls jos și energic (tobă mare, bas în optimi/șaisprezecimi,
+                 tom-uri, „BRAAM”); tobă rară când o brută lovește un zid; boss = vântul tace +
+                 notă ținută; victorie / game over = stinger, apoi liniște
   input/       Tastatură, joystick virtual (mișcare), FireStick (buton de tras + ochire) → comenzi
   ui/Hud.ts    HUD + ecrane (meniu, pauză, alegere erou, magazin, clasament, final) în HTML/CSS
   ui/leaderboard.ts  Clasamentul (localStorage): cei mai buni 5 și ultimele 5, pe mod și dificultate
@@ -174,7 +180,7 @@ sau texturi din acele jocuri.
 ## Decizii de implementare
 
 - **Zi și noapte**: ziua (60 s; prima 45 s) construiești, noaptea atacă zombii. Noaptea durează
-  75 s + 15 s pe fiecare noapte (noaptea 10 ≈ 3,5 min). Zombii vin în **hoarde** (2 + noapte/2),
+  120 s + 15 s pe fiecare noapte (noaptea 10 ≈ 4,3 min). Zombii vin în **hoarde** (3 + noapte/2),
   răspândite în primele 75% din noapte. În zori, zombii rămași ard. 10 nopți = victorie.
 - **Meniu**: nume (apare în HUD), mod, dificultate, sunet și muzică (salvate în localStorage). Pauză cu ☰ / Esc.
 - **Moduri**: *Apără mina* (mina cade = pierzi) și *Supraviețuire* (zombii te vânează pe tine oriunde,
@@ -184,12 +190,17 @@ sau texturi din acele jocuri.
   +30%), gătește carnea în 15 s (apare pe jos). Căprioare (fug), urși (atacă), coteț / țarc (40 lemn,
   max 2, max 3 animale fiecare). Carne crudă: +12 foame, −6 HP; friptă: +45 foame, +10 HP.
 - **Muniție** (`CONFIG.ammo`): încărcător + rezervă (4 încărcătoare la start, max 8). Zombii lasă
-  cutii (55%, 0,7 încărcător), plus 2 încărcătoare în fiecare zori și din cufărul boss-ului.
-- **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ceață, urmele zombilor se văd),
+  cutii (30%, 0,6 încărcător), plus 2 încărcătoare în fiecare zori și din cufărul boss-ului.
+- **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe
+  ecran; turnurile bat la 70% din rază, Tesla nu; urmele zombilor se văd),
   ger (frigul ×2,2), lapoviță (focul arde ×2), vânt (mergi mai greu). Afișată sub cronometru.
 - **Clasament**: la final de rundă se salvează nume, mod, dificultate, nopți, kill-uri.
-- **Dificultate** (`CONFIG.difficulty`): Easy = jocul de bază; Medium ×1,12 HP / ×1,1 zombi /
-  ×1,1 damage; Hard ×1,3 / ×1,25 / ×1,2 și 90% lemn; Nightmare ×1,6 / ×1,45 / ×1,4 și 80% lemn.
+- **Dificultate** (`CONFIG.difficulty`, HP / număr / damage zombi, lemn, damage turnuri): Easy ×0,9 /
+  ×0,9 / ×1, 100% lemn, turnuri ×1; Medium ×1,1 / ×1,08 / ×1,08, turnuri ×0,85; Hard ×1,12 / ×1,1 /
+  ×1,1, 90% lemn, turnuri ×0,8; Nightmare ×1,22 / ×1,15 / ×1,2, 85% lemn, turnuri ×0,65.
+  Turnurile singure NU țin o noapte de la Medium în sus: trebuie să tragi și tu. Hard: noaptea ceața
+  se strânge spre mină. Nightmare: fugarii sunt invizibili în întuneric (îi vezi doar lângă un foc
+  aprins, în raza unui Tesla sau la 3,5 m de un erou; urmele lor se văd).
 - **Două resurse**: 🪵 *lemn* pentru construcții (start 70 + venit în fiecare zori) și
   🪙 *monede* pentru magazin (cad din zombi).
 - **Magazinul norocului** (păcănele, 30 monede) — riscant, dar merită: Nimic 38%, Comun 40%,
@@ -222,13 +233,22 @@ sau texturi din acele jocuri.
   Arbaletă (o țintă; abilitate: săgeată grea prin 3 zombi), Rachete (damage mare; racheta mare
   se sparge în mini-rachete), Tun (explozie pe zonă, lent; ghiuleaua lasă foc), Tesla (fulger;
   laser prin toată linia), Gheață (pasiv -30% viteză și -30% viteză de atac în rază; nova care
-  îngheață). Proiectilele zboară cu adevărat (`state.shells`) și lovesc la sosire.
+  îngheață; înghețul nu se adună: un zombie dezghețat e imun 3 s, și la alt turn). Proiectilele
+  zboară cu adevărat (`state.shells`) și lovesc la sosire. Damage: arbaletă 8, rachete 20, tun 13,
+  Tesla 14, gheață 4. Efecte sobre: arbaleta = săgeată + „toc” de lemn; racheta = dâră de fum,
+  cerc mic de zăpadă și șuierat; tunul = singurul cu praf + pată de jar 2 s și bubuit înfundat;
+  Tesla = linie subțire alb-albastră și țiuit doar cât atinge; gheața = doar crusta pe zombi și
+  un trosnet. Turn sub 50% viață = fum; sub 25% = foc mic. Vânzarea unui turn noaptea dă jumătate.
   Turnurile au HP: zombii loviți de un turn îl atacă întâi (dacă e la < 12 m), apoi merg spre
   mină și sparg zidurile din drum. Turnurile se repară doar ziua. Nimeni nu trece prin ele.
-  Construcțiile distruse se prăbușesc cu praf. Turnurile au cu 40% mai puțină viață decât înainte.
+  Construcțiile distruse se prăbușesc: scândurile se desprind, praful stă ~1 s, bara de viață
+  rămâne la zero până cade. Turnurile au cu 40% mai puțină viață decât înainte.
+- **Mina cade**: crapă, plasma pâlpâie și se stinge, capacul de fier se trântește; ecranul final
+  apare după 3 s (sunet: plasma care se stinge, apoi un singur trosnet). Victorie: scârțâit de
+  capac care se deschide, apoi liniște.
 - **Ziduri = segmente** (2,6 m) care se lipesc cap la cap; pot fi mutate, rotite (45°), întărite
   (palisadă pe piatră) sau transformate în **ușă** (eroii trec, zombii nu). Zidurile opresc și
-  eroii. Demolarea dă înapoi 50% din lemn. Zombii sparg zidul din drumul lor; eroii din
+  eroii. Demolarea dă înapoi 70% din lemn ziua, jumătate din asta noaptea. Zombii sparg zidul din drumul lor; eroii din
   apropiere îl repară automat (Tank ×3, plus bonusul din magazin).
 - **Mine**: din magazin; le pui unde stai (M / 💣); explodează când trece un zombie.
 - **Sloturi**: 3 turnuri + 8 ziduri; la fiecare 3 nopți +1 turn și +4 ziduri.
@@ -237,8 +257,10 @@ sau texturi din acele jocuri.
   Navighează cu flow field; un zombie blocat > 2 s poate trece prin obstacole.
 - **Zori**: zombii rămași iau foc și mor încet (fără monede), inclusiv boss-ul.
 - **Monede**: cad doar uneori (șansă pe tip de zombie) și dispar după 30 s (clipesc la final).
-- Zombii: +33% HP pe noapte, 14 + 8/noapte (×dificultate). Botul de test câștigă ~4/6 pe Easy,
-  ajunge la noaptea ~6 pe Medium, ~5 pe Hard, ~4–5 pe Nightmare.
+- Zombii: +22% HP pe noapte, 50 + 10/noapte (×dificultate); mina are 3000 HP. Zombii gem tot mai
+  des și mai tare cu cât se apropie de tine și mârâie când atacă. Botul de test (stă lângă mină,
+  fără ziduri) ajunge la noaptea ~4 pe Easy/Medium/Hard și ~2–3 pe Nightmare; doar cu turnuri
+  cade în noaptea 3 pe Easy și în prima noapte pe Nightmare.
 - Fiecare jucător în plus: +50% zombi și +25% HP la zombi.
 
 ## Roadmap

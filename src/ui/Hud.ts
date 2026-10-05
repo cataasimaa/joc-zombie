@@ -368,6 +368,8 @@ export class Hud {
   /** Etichetele butoanelor de sunet și muzică (null = nu se schimbă). */
   setAudioLabels(sound: boolean | null, music: boolean | null): void {
     if (sound !== null) for (const id of ["menu-sound", "pause-sound"]) $(id).textContent = sound ? "🔊 Sunet: pornit" : "🔇 Sunet: oprit";
+    // În joc nu e buton de sunet: doar o linie peste ☰ arată că sunetul e oprit (se schimbă din meniu).
+    if (sound !== null) $("menu-btn").classList.toggle("muted", !sound);
     if (music !== null) for (const id of ["menu-music", "pause-music"]) $(id).textContent = music ? "🎵 Muzică: pornită" : "🎵 Muzică: oprită";
   }
 
@@ -377,6 +379,7 @@ export class Hud {
     this.el.heroSelect.classList.add("hidden");
     this.el.hud.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
+    clearTimeout(this.endTimer);
     this.el.pauseMenu.classList.add("hidden");
     this.setShopOpen(false);
   }
@@ -419,6 +422,7 @@ export class Hud {
     this.el.heroSubtitle.textContent = `${name ? `${name}, alege` : "Alege"}-ți eroul · dificultate ${d}`;
     this.el.hud.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
+    clearTimeout(this.endTimer);
     this.setShopOpen(false);
   }
 
@@ -427,6 +431,7 @@ export class Hud {
     this.cache.clear();
     this.el.heroSelect.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
+    clearTimeout(this.endTimer);
     this.el.hud.classList.remove("hidden");
     this.el.heroName.dataset.icon = HERO_DEFS[heroClass].icon;
     this.el.shopResult.innerHTML = "";
@@ -587,12 +592,13 @@ export class Hud {
       case "shopRoll":
         if (e.playerId === playerId) this.landSpin(e.rarity, e.reward);
         break;
+      // Ecranul final vine după câteva secunde: întâi vezi mina căzând (sau zorii victoriei).
       case "gameOver":
-        if (state.mode === "survival") this.showEnd("Ai murit", `Iarna te-a înghițit. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`);
-        else this.showEnd("Mina a căzut", `Zombii au ajuns la plasmă. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`);
+        if (state.mode === "survival") this.showEnd("Ai murit", `Iarna te-a înghițit. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`, 1800);
+        else this.showEnd("Mina a căzut", `Zombii au ajuns la plasmă. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`, 3000);
         break;
       case "victory":
-        this.showEnd("Ați supraviețuit iernii", `Toate cele ${state.totalWaves} nopți au trecut · 🧟 ${state.players[playerId].kills}`);
+        this.showEnd("Ați supraviețuit iernii", `Toate cele ${state.totalWaves} nopți au trecut · 🧟 ${state.players[playerId].kills}`, 2000);
         break;
     }
   }
@@ -741,11 +747,20 @@ export class Hud {
     this.pendingResult = null;
     this.el.shopResult.innerHTML = "";
     this.el.shopResult.className = "shop-result";
-    const start = performance.now();
+    // Timpul rolelor curge doar cât jocul nu e pe pauză (un apel nu-ți „consumă” păcăneaua).
+    let elapsed = 0;
+    let last = performance.now();
     const stopped = [false, false, false];
     let delay = 45;
     const tick = () => {
-      const elapsed = performance.now() - start;
+      const now = performance.now();
+      if (this.paused) {
+        last = now;
+        window.setTimeout(tick, 120);
+        return;
+      }
+      elapsed += now - last;
+      last = now;
       const res = this.pendingResult;
       this.el.reels.forEach((r, i) => {
         if (stopped[i]) return;
@@ -827,11 +842,15 @@ export class Hud {
     el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px) translate(-50%, -100%)`;
   }
 
-  private showEnd(title: string, text: string): void {
-    this.el.endTitle.textContent = title;
-    this.el.endText.textContent = text;
-    this.el.endScreen.classList.remove("hidden");
+  private endTimer = 0;
+  private showEnd(title: string, text: string, delayMs = 0): void {
     this.setShopOpen(false);
+    clearTimeout(this.endTimer);
+    this.endTimer = window.setTimeout(() => {
+      this.el.endTitle.textContent = title;
+      this.el.endText.textContent = text;
+      this.el.endScreen.classList.remove("hidden");
+    }, delayMs);
   }
 
   // Scriem în DOM doar când valoarea chiar se schimbă (DOM-ul e lent).

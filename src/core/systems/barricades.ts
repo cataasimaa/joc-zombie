@@ -5,6 +5,7 @@ import { CONFIG } from "../config";
 import { OBSTACLES } from "../map";
 import { type Vec2, dist, distToSegment, segmentDistance, segmentEnds } from "../math";
 import type { Barricade, EntityId, GameEvent, GameState, PlayerId } from "../types";
+import { refundFactor } from "./towers";
 
 const B = CONFIG.barricade;
 
@@ -183,7 +184,7 @@ export function demolishBarricade(state: GameState, playerId: PlayerId, id: Enti
   const b = barricadeById(state, id);
   if (!b || b.ownerId !== playerId) return false;
   const spent = B.levels.slice(0, b.level).reduce((a, l) => a + l.cost, 0) + (b.door ? B.doorCost : 0);
-  state.players[playerId].wood += Math.floor(spent * B.refund);
+  state.players[playerId].wood += Math.floor(spent * refundFactor(state));
   state.barricades.splice(state.barricades.indexOf(b), 1);
   events.push({ type: "structureRemoved", id, pos: { ...b.pos } });
   return true;

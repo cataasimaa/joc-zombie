@@ -48,6 +48,9 @@ export class Prefab {
 const SKY_DAY = hex("#c9d6e0");
 const SKY_DUSK = hex("#6b6f86");
 const SKY_NIGHT = hex("#0c1422");
+/** Capacul minei: deschis (rotit pe spate) și momentul în care se trântește la cădere. */
+const HATCH_OPEN = 2.85;
+const HATCH_AT = 1.3;
 
 export class World {
   readonly shadows: ShadowGenerator;
@@ -59,6 +62,9 @@ export class World {
   private sun: DirectionalLight;
   private plasmaLight: PointLight;
   private crystals: Mesh[] = [];
+  private hatch: Mesh;
+  /** Secunde de la căderea minei (-1 = mina e întreagă). */
+  private mineDead = -1;
   private rain: ParticleSystem;
   private flames: Mesh[];
   private snow: ParticleSystem;
@@ -129,6 +135,11 @@ export class World {
     this.flames = shelter.flames;
     this.crystals = shelter.crystals;
     for (const c of this.crystals) c.parent = this.shelter;
+    this.hatch = shelter.hatch;
+    this.hatch.parent = this.shelter;
+    this.hatch.position.set(0, 1.12, 1.02);
+    this.hatch.rotation.x = HATCH_OPEN;
+    this.shadows.addShadowCaster(this.hatch);
     // Lumina rece a plasmei din mină (al doilea accent, lângă focul cald).
     this.plasmaLight = new PointLight("plasma", new Vector3(...shelter.plasmaPos), scene);
     this.plasmaLight.diffuse = PLASMA;
@@ -188,6 +199,13 @@ export class World {
   /** Vremea curentă (o schimbăm lin, nu brusc). */
   setWeather(w: Weather): void {
     this.weatherKind = w;
+  }
+
+  /** Cât de mult se strânge ceața spre mină noaptea (0 = deloc; Hard / Nightmare mai mult). */
+  private fogCloseIn = 0;
+  private fogClose = 0;
+  setFogCloseIn(k: number): void {
+    this.fogCloseIn = k;
   }
 
   // ---------- Decor ----------
@@ -382,6 +400,41 @@ export class World {
    * @param night 0 = zi senină, 1 = noapte deplină (valorile intermediare = amurg/zori)
    * @param focus punctul urmărit de cameră (eroul)
    */
+  /** Mina a căzut: plasma pâlpâie și se stinge, capacul se trântește, cristalele se sting. */
+  mineFall(): void {
+    if (this.mineDead < 0) this.mineDead = 0;
+  }
+
+  /** Mina din nou întreagă (joc nou). */
+  resetMine(): void {
+    this.mineDead = -1;
+    this.hatch.rotation.x = HATCH_OPEN;
+    for (const c of this.crystals) c.setEnabled(true);
+    this.plasmaLight.setEnabled(true);
+  }
+
+  /** Mina e închisă (capacul trântit) — după cădere. */
+  get mineClosed(): boolean {
+    return this.mineDead >= HATCH_AT + 0.3;
+  }
+
+  private updateMineFall(dt: number): void {
+    this.mineDead += dt;
+    const t = this.mineDead;
+    // 0 – 1,3 s: plasma pâlpâie tot mai rar; cristalele clipesc.
+    const flicker = t < 1.3 ? (Math.sin(t * 47) * Math.sin(t * 13.7) > (t / 1.3) * 0.6 - 0.2 ? 1 : 0.05) : Math.max(0, 1 - (t - 1.3) * 2) * 0.1;
+    this.plasmaLight.intensity *= flicker;
+    this.crystals.forEach((c, i) => {
+      c.setEnabled(t < 1.6 && Math.sin(t * (31 + i * 7) + i) > t / 1.6 - 0.4);
+      c.scaling.scaleInPlace(Math.max(0.5, 1 - t * 0.3));
+    });
+    // ~1,3 s: capacul cade și se trântește, cu un mic recul.
+    const k = Math.min(1, Math.max(0, (t - HATCH_AT) / 0.35));
+    const bounce = k >= 1 ? Math.sin(Math.min(1, (t - HATCH_AT - 0.35) / 0.35) * Math.PI) * 0.08 * Math.max(0, 1 - (t - HATCH_AT - 0.35) * 3) : 0;
+    this.hatch.rotation.x = HATCH_OPEN * (1 - k * k) + bounce;
+    if (t > 2) this.plasmaLight.setEnabled(false);
+  }
+
   update(dt: number, night: number, focus: Vector3, cameraPos: Vector3): void {
     this.time += dt;
     const t = this.time;
@@ -395,7 +448,7 @@ export class World {
     const W = CONFIG.weather[this.weatherKind];
     const target = {
       fog: W.fog,
-      snow: this.weatherKind === "rain" ? 0 : this.weatherKind === "blizzard" ? 4 : this.weatherKind === "clear" ? 0.25 : this.weatherKind === "frost" ? 0.35 : this.weatherKind === "wind" ? 1.6 : 1,
+      snow: this.weatherKind === "rain" ? 0 : this.weatherKind === "blizzard" ? 5.5 : this.weatherKind === "clear" ? 0.25 : this.weatherKind === "frost" ? 0.35 : this.weatherKind === "wind" ? 1.6 : 1,
       rain: this.weatherKind === "rain" ? 1 : 0,
       wind: this.weatherKind === "blizzard" ? 1 : this.weatherKind === "wind" ? 0.8 : 0,
       frost: this.weatherKind === "frost" ? 1 : 0,
@@ -403,7 +456,9 @@ export class World {
     const lerp = Math.min(1, dt * 0.5);
     for (const key of Object.keys(target) as (keyof typeof target)[]) this.weatherMix[key] += (target[key] - this.weatherMix[key]) * lerp;
     const wm = this.weatherMix;
-    this.scene.fogDensity = (0.011 + night * 0.012) * wm.fog;
+    // Pe Hard / Nightmare ceața se strânge noaptea în jurul minei (încet, nu brusc).
+    this.fogClose += (this.fogCloseIn * night - this.fogClose) * Math.min(1, dt * 0.3);
+    this.scene.fogDensity = (0.011 + night * 0.012) * wm.fog * (1 + this.fogClose * 1.2);
     this.snow.emitRate = 230 * wm.snow;
     this.rain.emitRate = 900 * wm.rain;
     const side = 1.2 + wm.wind * 5;
@@ -439,6 +494,7 @@ export class World {
       const k = 0.92 + Math.sin(t * 2.2 + i * 0.9) * 0.08;
       c.scaling.set(k, 0.95 + Math.sin(t * 2.2 + i) * 0.07, k);
     });
+    if (this.mineDead >= 0) this.updateMineFall(dt);
     this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
     // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.
     this.pipeline.bloomWeight = 0.25 + night * 0.45;
@@ -454,8 +510,9 @@ export class World {
     this.fogMat.alpha = 0.75 - night * 0.15;
     for (const p of this.fogPlanes) {
       const { phase, base } = p.metadata as { phase: number; base: Vector3 };
-      p.position.x = base.x + Math.sin(t * 0.15 + phase) * 2;
-      p.position.z = base.z + Math.cos(t * 0.12 + phase) * 2;
+      const pull = 1 - this.fogClose * 0.5;
+      p.position.x = base.x * pull + Math.sin(t * 0.15 + phase) * 2;
+      p.position.z = base.z * pull + Math.cos(t * 0.12 + phase) * 2;
     }
 
     // Ninsoare în jurul camerei. Noaptea fulgii „prind” lumina (amestec aditiv).

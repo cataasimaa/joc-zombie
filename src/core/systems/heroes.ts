@@ -163,7 +163,7 @@ function fire(state: GameState, hero: Hero, gun: GunStats, events: GameEvent[]):
     // Ochire manuală: glonțul se oprește la punctul ochit (dacă nu lovește nimic înainte).
     const range = !hero.autoAim && hero.aimDist > 0 ? Math.min(gun.range, hero.aimDist + 0.4) : gun.range;
     const { hits, animals, chest, end } = traceBullet(state, hero.pos, dir, range, gun.pierce + 1, gun.pellets === 1);
-    events.push({ type: "shot", from: { ...hero.pos }, to: end, source: "hero", crit, heroId: hero.id });
+    events.push({ type: "shot", from: { ...hero.pos }, to: end, source: "hero", crit, heroId: hero.id, hit: hits.length > 0 });
     for (const z of hits) {
       if (gun.slow > 0) z.slowTimer = Math.max(z.slowTimer, gun.slow);
       damageZombie(state, z, damage, events, hero.id, hero.pos);

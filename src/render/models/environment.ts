@@ -258,6 +258,8 @@ export interface ShelterParts {
   /** Piese animate: flăcările focului și cristalele de plasmă care pulsează. */
   flames: Mesh[];
   crystals: Mesh[];
+  /** Capacul greu de fier al puțului: stă deschis, se trântește când mina cade. Balamaua e în origine. */
+  hatch: Mesh;
   firePos: [number, number, number];
   plasmaPos: [number, number, number];
 }
@@ -316,7 +318,12 @@ export function buildShelter(scene: Scene, mats: Materials): ShelterParts {
     c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
     crystals.push(c);
   }
-  return { meshes, flames, crystals, firePos: [1.6, 1, -3.7], plasmaPos: [0, 1.6, 0] };
+  const hk = new ModelKit(scene, mats, 91);
+  hk.cyl(0.12, 2.05, 2.05, 12, { p: [0, 0, -1.02] }, { color: PAL.iron, mat: "metal", wear: 0.45, frost: 0.3 });
+  for (const x of [-0.5, 0.5]) hk.box(0.16, 0.08, 1.9, { p: [x, 0.08, -1.02] }, { color: PAL.rust, mat: "metal", wear: 0.4 });
+  hk.cyl(0.22, 0.14, 0.14, 6, { p: [0, 0, 0], r: [0, 0, Math.PI / 2] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
+  const hatch = hk.build("hatch")[0];
+  return { meshes, flames, crystals, hatch, firePos: [1.6, 1, -3.7], plasmaPos: [0, 1.6, 0] };
 }
 
 /** Plasma extraterestră din mină: verde-cyan rece. */
