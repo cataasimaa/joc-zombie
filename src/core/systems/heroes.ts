@@ -235,6 +235,14 @@ function repairNearbyBarricades(state: GameState, hero: Hero, player: Player, dt
       b.hp = Math.min(b.maxHp, b.hp + rate * dt);
     }
   }
+  // Și turnurile — dar doar ziua (noaptea n-ai timp să cari pietre).
+  if (state.phase !== "day") return;
+  const towerRate = CONFIG.tower.repairRate * (rate / c.repairRate);
+  for (const t of state.towers) {
+    if (t.hp < t.maxHp && dist(hero.pos, t.pos) <= c.repairRadius + CONFIG.tower.radius) {
+      t.hp = Math.min(t.maxHp, t.hp + towerRate * dt);
+    }
+  }
 }
 
 /** Cel mai apropiat zombie (care nu arde) din rază, în afară de cei excluși. */

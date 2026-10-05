@@ -4,6 +4,7 @@
 import {
   CONFIG,
   DEFAULT_SKIN_COLOR,
+  type Difficulty,
   type GameEvent,
   type GameState,
   HERO_DEFS,
@@ -25,12 +26,18 @@ import {
 } from "../core";
 
 export interface HudCallbacks {
+  /** Meniul principal: Start cu numele și dificultatea alese. */
+  onMenuStart(name: string, difficulty: Difficulty): void;
   onPickHero(heroClass: HeroClass): void;
+  /** Sunetul și muzica (doar din meniu). Returnează noua stare (true = pornit). */
+  onToggleSound(): boolean;
+  onToggleMusic(): boolean;
+  onPause(paused: boolean): void;
+  onQuitToMenu(): void;
   onToggleBuild(): void;
   onPick(kind: "tower" | "wall" | "mine"): void;
   onStartNight(): void;
   onShopRoll(): void;
-  onToggleMute(): boolean;
   onReload(): void;
   onWallRotate(): void;
   onWallPlace(): void;
@@ -48,6 +55,9 @@ export interface MenuOption {
   /** Dacă e setat, butonul e dezactivat și arată motivul. */
   blocked?: string | null;
   cancel?: boolean;
+  /** Ocupă tot rândul (în meniul pe două coloane). */
+  full?: boolean;
+  className?: string;
   onClick(): void;
 }
 
@@ -63,7 +73,11 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export function rewardIcon(r: ShopReward): string {
-  return { nothing: "💨", wood: "🪵", mines: "💣", maxHp: "❤️", speed: "👟", regen: "✚", repair: "🔧", towerSlot: "🗼", towerTier: "🏰", weapon: "🔫", skin: "🎨" }[r.kind];
+  const icons: Record<ShopReward["kind"], string> = {
+    nothing: "💨", wood: "🪵", coins: "🪙", mines: "💣", maxHp: "❤️", speed: "👟", regen: "✚", repair: "🔧",
+    towerSlot: "🗼", towerTier: "🏰", weapon: "🔫", skin: "🎨",
+  };
+  return icons[r.kind];
 }
 
 export function describeReward(r: ShopReward): string {
@@ -72,6 +86,8 @@ export function describeReward(r: ShopReward): string {
       return "Nimic. Ghinion!";
     case "wood":
       return `+${r.amount} lemn`;
+    case "coins":
+      return `+${r.amount} monede`;
     case "mines":
       return `+${r.count} mine`;
     case "maxHp":
@@ -85,7 +101,7 @@ export function describeReward(r: ShopReward): string {
     case "towerSlot":
       return "+1 loc pentru turn";
     case "towerTier":
-      return `Turnuri tier ${r.tier}`;
+      return `Turnuri nivel ${r.tier}`;
     case "weapon":
       return WEAPONS[r.weaponId].name;
     case "skin":
@@ -98,7 +114,14 @@ const fmtTime = (t: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-const REEL_ICONS = ["💨", "🪵", "💣", "❤️", "👟", "✚", "🔧", "🗼", "🏰", "🔫", "🎨", "💎"];
+const REEL_ICONS = ["💨", "🪵", "🪙", "💣", "❤️", "👟", "✚", "🔧", "🗼", "🏰", "🔫", "🎨", "💎"];
+
+const DIFFICULTY_TEXT: Record<Difficulty, string> = {
+  easy: "Jocul de bază",
+  medium: "Mai mulți zombi, mai rezistenți",
+  hard: "Hoarde mari, mai puțin lemn",
+  nightmare: "Doar pentru nebuni",
+};
 const SPIN_TIME = 3000;
 const REEL_STOPS = [1500, 2250, 3000];
 
@@ -111,16 +134,24 @@ export class Hud {
   private pendingResult: { rarity: ShopRarity; reward: ShopReward } | null = null;
   private lastState: GameState | null = null;
   private playerId: PlayerId = "p1";
+  private difficulty: Difficulty = "easy";
 
   private el = {
     hud: $("hud"),
-    shelterText: $("shelter-text"),
-    shelterBar: $("shelter-bar"),
+    mineHp: $("mine-hp"),
+    mineText: $("mine-text"),
+    mineFill: $("mine-fill"),
     heroName: $("hero-name"),
     heroText: $("hero-text"),
     heroLevel: $("hero-level"),
     heroBar: $("hero-bar"),
     xpBar: $("xp-bar"),
+    xpText: $("xp-text"),
+    mainMenu: $("main-menu"),
+    pauseMenu: $("pause-menu"),
+    nameInput: $<HTMLInputElement>("player-name"),
+    difficulty: $("difficulty"),
+    heroSubtitle: $("hero-subtitle"),
     waveText: $("wave-text"),
     timerText: $("timer-text"),
     phaseBar: $("phase-bar"),
@@ -132,7 +163,6 @@ export class Hud {
     towers: $("towers-text"),
     barricades: $("barricades-text"),
     shopBtn: $<HTMLButtonElement>("shop-btn"),
-    muteBtn: $<HTMLButtonElement>("mute-btn"),
     buildBtn: $<HTMLButtonElement>("build-btn"),
     fireStick: $("fire-stick"),
     ammo: $("ammo-text"),
@@ -156,7 +186,7 @@ export class Hud {
     shopModal: $("shop-modal"),
     shopCoins: $("shop-coins"),
     reels: [$("reel-0"), $("reel-1"), $("reel-2")],
-    shopOdds: $("shop-odds"),
+    shopOdds: $("shop-odds-mini"),
     shopResult: $("shop-result"),
     shopRoll: $<HTMLButtonElement>("shop-roll"),
     shopRemaining: $("shop-remaining"),
@@ -181,9 +211,38 @@ export class Hud {
       this.startSpin();
       cb.onShopRoll();
     });
-    this.el.muteBtn.addEventListener("click", () => {
-      this.el.muteBtn.textContent = cb.onToggleMute() ? "🔇" : "🔊";
+    // Meniul principal și pauza.
+    $("menu-start").addEventListener("click", () => {
+      const name = this.el.nameInput.value.trim();
+      try {
+        localStorage.setItem("im.name", name);
+        localStorage.setItem("im.difficulty", this.difficulty);
+      } catch {
+        // fără salvare (mod privat) — nu e grav
+      }
+      cb.onMenuStart(name, this.difficulty);
     });
+    const sound = () => this.setAudioLabels(cb.onToggleSound(), null);
+    const music = () => this.setAudioLabels(null, cb.onToggleMusic());
+    $("menu-sound").addEventListener("click", sound);
+    $("pause-sound").addEventListener("click", sound);
+    $("menu-music").addEventListener("click", music);
+    $("pause-music").addEventListener("click", music);
+    $("menu-btn").addEventListener("click", () => this.setPaused(true));
+    $("pause-resume").addEventListener("click", () => this.setPaused(false));
+    $("pause-quit").addEventListener("click", () => {
+      this.setPaused(false);
+      cb.onQuitToMenu();
+    });
+    $("end-menu-btn").addEventListener("click", () => cb.onQuitToMenu());
+    try {
+      this.el.nameInput.value = localStorage.getItem("im.name") ?? "";
+      const d = localStorage.getItem("im.difficulty") as Difficulty | null;
+      if (d && d in CONFIG.difficulty) this.difficulty = d;
+    } catch {
+      // ignorăm
+    }
+    this.renderDifficulty();
     this.el.wallRotate.addEventListener("click", () => cb.onWallRotate());
     this.el.wallPlace.addEventListener("click", () => cb.onWallPlace());
     $("wall-done").addEventListener("click", () => cb.onWallDone());
@@ -192,6 +251,46 @@ export class Hud {
     $("wall-cost").textContent = `🪵 ${CONFIG.barricade.levels[0].cost}`;
     this.renderHeroCards();
     this.renderOdds();
+  }
+
+  // ---------- Meniu ----------
+
+  private renderDifficulty(): void {
+    this.el.difficulty.innerHTML = "";
+    for (const [id, d] of Object.entries(CONFIG.difficulty) as [Difficulty, (typeof CONFIG.difficulty)[Difficulty]][]) {
+      const b = document.createElement("button");
+      b.className = `diff-btn diff-${id}${id === this.difficulty ? " selected" : ""}`;
+      b.innerHTML = `<b>${d.name}</b><small>${DIFFICULTY_TEXT[id]}</small>`;
+      b.addEventListener("click", () => {
+        this.difficulty = id;
+        this.renderDifficulty();
+      });
+      this.el.difficulty.appendChild(b);
+    }
+  }
+
+  /** Etichetele butoanelor de sunet și muzică (null = nu se schimbă). */
+  setAudioLabels(sound: boolean | null, music: boolean | null): void {
+    if (sound !== null) for (const id of ["menu-sound", "pause-sound"]) $(id).textContent = sound ? "🔊 Sunet: pornit" : "🔇 Sunet: oprit";
+    if (music !== null) for (const id of ["menu-music", "pause-music"]) $(id).textContent = music ? "🎵 Muzică: pornită" : "🎵 Muzică: oprită";
+  }
+
+  showMainMenu(): void {
+    this.el.mainMenu.classList.remove("hidden");
+    this.el.heroSelect.classList.add("hidden");
+    this.el.hud.classList.add("hidden");
+    this.el.endScreen.classList.add("hidden");
+    this.el.pauseMenu.classList.add("hidden");
+    this.setShopOpen(false);
+  }
+
+  setPaused(paused: boolean): void {
+    this.el.pauseMenu.classList.toggle("hidden", !paused);
+    this.cb.onPause(paused);
+  }
+
+  get paused(): boolean {
+    return !this.el.pauseMenu.classList.contains("hidden");
   }
 
   // ---------- Alegerea eroului ----------
@@ -216,8 +315,11 @@ export class Hud {
     }
   }
 
-  showHeroSelect(): void {
+  showHeroSelect(name = ""): void {
+    this.el.mainMenu.classList.add("hidden");
     this.el.heroSelect.classList.remove("hidden");
+    const d = CONFIG.difficulty[this.difficulty].name;
+    this.el.heroSubtitle.textContent = `${name ? `${name}, alege` : "Alege"}-ți eroul · dificultate ${d}`;
     this.el.hud.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
     this.setShopOpen(false);
@@ -229,8 +331,7 @@ export class Hud {
     this.el.heroSelect.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
     this.el.hud.classList.remove("hidden");
-    const def = HERO_DEFS[heroClass];
-    this.el.heroName.textContent = `${def.icon} ${def.name}`;
+    this.el.heroName.dataset.icon = HERO_DEFS[heroClass].icon;
     this.el.shopResult.innerHTML = "";
     for (const r of this.el.reels) r.textContent = "🎰";
   }
@@ -243,14 +344,20 @@ export class Hud {
     const player = state.players[playerId];
     const hero = state.heroes.find((h) => h.id === player.heroId)!;
 
-    // Bare de viață
-    const sh = state.shelter;
-    this.text(this.el.shelterText, `${Math.ceil(sh.hp)}/${sh.maxHp}`);
-    this.width(this.el.shelterBar, sh.hp / sh.maxHp);
-    this.text(this.el.heroLevel, `Nv. ${hero.level}`);
-    this.text(this.el.heroText, hero.alive ? `${Math.ceil(hero.hp)}/${hero.maxHp}` : `căzut · ${Math.ceil(hero.respawnTimer)}s`);
+    // Personajul: nume, nivel, viață (roșu) și experiență (galben).
+    this.text(this.el.heroName, `${this.el.heroName.dataset.icon ?? ""} ${player.name}`);
+    this.text(this.el.heroLevel, String(hero.level));
+    this.text(this.el.heroText, hero.alive ? `❤ ${Math.ceil(hero.hp)} / ${hero.maxHp}` : `căzut · ${Math.ceil(hero.respawnTimer)}s`);
     this.width(this.el.heroBar, hero.hp / hero.maxHp);
-    this.width(this.el.xpBar, hero.xp / xpToNextLevel(hero.level));
+    const need = xpToNextLevel(hero.level);
+    this.text(this.el.xpText, `XP ${Math.floor(hero.xp)} / ${need} → nv. ${hero.level + 1}`);
+    this.width(this.el.xpBar, hero.xp / need);
+
+    // Mina de plasmă.
+    const sh = state.shelter;
+    this.text(this.el.mineText, `${Math.ceil(sh.hp)}/${sh.maxHp}`);
+    this.width(this.el.mineFill, sh.hp / sh.maxHp);
+    this.el.mineHp.classList.toggle("low", sh.hp / sh.maxHp < 0.35);
 
     // Muniție + cercul de reîncărcare de pe butonul de tras.
     const gun = gunStats(state, hero);
@@ -310,7 +417,18 @@ export class Hud {
   private handleEvent(state: GameState, heroId: number, playerId: PlayerId, e: GameEvent): void {
     switch (e.type) {
       case "nightStarted":
-        this.toast(e.boss ? `🌙 Noaptea ${e.wave} · ☠ vine Abominația` : `🌙 Se lasă noaptea… (${e.wave})`);
+        this.toast(e.boss ? `🌙 Noaptea ${e.wave} · ☠ vine Lich-ul de gheață` : `🌙 Se lasă noaptea… (${e.wave})`);
+        break;
+      case "chestDropped":
+        this.toast("🎁 Lich-ul a lăsat un cufăr! Ia-l!");
+        break;
+      case "chestOpened":
+        if (e.playerId === playerId) {
+          this.toast(`🎁 ${RARITY_NAMES[e.rarity]}: ${rewardIcon(e.reward)} ${describeReward(e.reward)}`, 4);
+        }
+        break;
+      case "towerDestroyed":
+        if (state.players[playerId] && !state.towers.some((t) => t.id === e.id)) this.hint("💥 Un turn a fost dărâmat!");
         break;
       case "dawn":
         if (e.wave < state.totalWaves) this.toast(`☀ Zorii! Zombii ard · +${e.wood} 🪵`);
@@ -328,10 +446,10 @@ export class Hud {
         if (e.playerId === playerId) this.landSpin(e.rarity, e.reward);
         break;
       case "gameOver":
-        this.showEnd("Adăpostul a căzut", `Familia nu a mai văzut dimineața. Ai rezistat ${state.wave} nopți din ${state.totalWaves}.`);
+        this.showEnd("Mina a căzut", `Zombii au ajuns la plasmă. Ai rezistat ${state.wave} nopți din ${state.totalWaves}.`);
         break;
       case "victory":
-        this.showEnd("Ați supraviețuit iernii", `Toate cele ${state.totalWaves} nopți au trecut. Familia e în siguranță.`);
+        this.showEnd("Ați supraviețuit iernii", `Toate cele ${state.totalWaves} nopți au trecut. Mina e în siguranță.`);
         break;
     }
   }
@@ -348,22 +466,32 @@ export class Hud {
   }
 
   /** Meniul care apare după tap pe o construcție de-a ta (upgrade, mută, ușă…). */
-  showBuildMenu(screenX: number, screenY: number, options: MenuOption[]): void {
+  showBuildMenu(screenX: number, screenY: number, options: MenuOption[], title?: string): void {
     const m = this.el.buildMenu;
     m.innerHTML = "";
+    m.classList.toggle("wide", options.length > 4);
+    if (title) {
+      const t = document.createElement("div");
+      t.className = "menu-title";
+      t.innerHTML = title;
+      m.appendChild(t);
+    }
     for (const opt of options) {
       const b = document.createElement("button");
-      if (opt.cancel) b.className = "cancel";
+      b.className = [opt.cancel ? "cancel" : "", opt.full ? "full" : "", opt.className ?? ""].join(" ").trim();
       b.disabled = !!opt.blocked;
       b.innerHTML = opt.label + (opt.blocked ? `<small class="reason">${opt.blocked}</small>` : opt.detail ? `<small>${opt.detail}</small>` : "");
       b.addEventListener("click", () => opt.onClick());
       m.appendChild(b);
     }
     m.classList.remove("hidden");
-    const x = Math.min(Math.max(screenX, 100), window.innerWidth - 100);
-    const y = Math.max(screenY, m.offsetHeight + 34);
+    // Deasupra punctului atins, dar mereu în întregime pe ecran.
+    const w = m.offsetWidth;
+    const h = m.offsetHeight;
+    const x = Math.min(Math.max(screenX, w / 2 + 8), window.innerWidth - w / 2 - 8);
+    const top = Math.min(Math.max(screenY - 24 - h, 8), window.innerHeight - h - 8);
     m.style.left = `${x}px`;
-    m.style.top = `${y}px`;
+    m.style.top = `${top}px`;
   }
 
   hideBuildMenu(): void {
@@ -435,9 +563,16 @@ export class Hud {
       ["✚", "Regenerare", `${player.regenPerSec} HP/s`],
       ["🔧", "Reparat", `+${pct(player.repairBonus)}`],
       ["💣", "Mine", `${player.mines}`],
-      ["🏰", "Turnuri", `tier ${player.towerTier}`],
+      ["🏰", "Turnuri", `până la nivel ${player.towerTier}`],
+      ["🗼", "Locuri turn", `+${player.extraTowerSlots}`],
     ];
-    const statsHtml = stats.map(([i, l, v]) => `<div class="stat"><span>${i} ${l}</span><b>${v}</b></div>`).join("");
+    // Ce ai câștigat iese în evidență; ce e încă la zero e estompat.
+    const statsHtml = stats
+      .map(([i, l, v]) => {
+        const zero = /^\+?0(%| HP\/s)?$/.test(v) || v === "0";
+        return `<div class="stat${zero ? " zero" : " gained"}"><span>${i} ${l}</span><b>${v}</b></div>`;
+      })
+      .join("");
     if (force || this.cache.get(this.el.shopStats) !== statsHtml) {
       this.cache.set(this.el.shopStats, statsHtml);
       this.el.shopStats.innerHTML = statsHtml;
@@ -522,10 +657,21 @@ export class Hud {
     this.hintTimer = 1.8;
   }
 
-  private toast(msg: string): void {
+  private toast(msg: string, time = 2.4): void {
     this.el.toast.textContent = msg;
     this.el.toast.classList.add("show");
-    this.toastTimer = 2.4;
+    this.toastTimer = time;
+  }
+
+  /** Poziția pe ecran a barei minei (deasupra ei). null = nu se vede. */
+  setMineScreen(pos: { x: number; y: number } | null): void {
+    const el = this.el.mineHp;
+    if (!pos) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px) translate(0, -50%)`;
   }
 
   private showEnd(title: string, text: string): void {

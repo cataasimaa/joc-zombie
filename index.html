@@ -15,13 +15,20 @@
     <canvas id="game"></canvas>
 
     <div id="hud" class="hidden">
-      <!-- Stânga sus: adăpost + erou -->
-      <div class="panel top-left">
-        <div class="bar-label">🏠 Adăpost <span id="shelter-text"></span></div>
-        <div class="bar"><div id="shelter-bar" class="fill shelter"></div></div>
-        <div class="bar-label"><span id="hero-name"></span> <span id="hero-level"></span> <span id="hero-text"></span></div>
-        <div class="bar"><div id="hero-bar" class="fill hero"></div></div>
-        <div class="bar thin"><div id="xp-bar" class="fill xp"></div></div>
+      <!-- Stânga sus: doar personajul (nume, nivel, viață, experiență) -->
+      <div class="panel top-left hero-panel">
+        <div class="hero-row">
+          <span id="hero-level" class="lvl">1</span>
+          <span id="hero-name" class="hero-name"></span>
+        </div>
+        <div class="bar big"><div id="hero-bar" class="fill hero"></div><span id="hero-text" class="bar-text"></span></div>
+        <div class="bar big"><div id="xp-bar" class="fill xp"></div><span id="xp-text" class="bar-text"></span></div>
+      </div>
+
+      <!-- Bara de viață a minei de plasmă (plutește deasupra ei) -->
+      <div id="mine-hp" class="world-bar">
+        <div class="wb-label">⚡ Mina de plasmă <b id="mine-text"></b></div>
+        <div class="bar"><div id="mine-fill" class="fill plasma"></div></div>
       </div>
 
       <!-- Sus centru: zi/noapte și cronometrul -->
@@ -33,23 +40,23 @@
           <button id="start-wave" class="small-btn">🌙 Începe noaptea</button>
         </div>
         <div id="boss-panel" class="panel boss-panel hidden">
-          <div class="bar-label">☠ Abominația</div>
+          <div class="bar-label">☠ Lich-ul de gheață</div>
           <div class="bar"><div id="boss-bar" class="fill boss"></div></div>
         </div>
       </div>
 
-      <!-- Dreapta sus: resurse + magazin + sunet -->
+      <!-- Dreapta sus: magazin + meniu -->
       <div class="top-right">
-        <div class="panel resources">
-          <div title="Lemn (pentru construcții)">🪵 <span id="wood-text">0</span></div>
-          <div title="Monede (pentru magazin)">🪙 <span id="coins-text">0</span></div>
-          <div title="Turnuri">🗼 <span id="towers-text">0/0</span></div>
-          <div title="Ziduri">🧱 <span id="barricades-text">0/0</span></div>
-        </div>
-        <div class="corner-buttons">
-          <button id="shop-btn" class="round-btn" title="Magazin">🎲</button>
-          <button id="mute-btn" class="round-btn" title="Sunet">🔊</button>
-        </div>
+        <button id="shop-btn" class="round-btn" title="Magazin (C)">🎲</button>
+        <button id="menu-btn" class="round-btn" title="Meniu (Esc)">☰</button>
+      </div>
+
+      <!-- Jos: resursele -->
+      <div class="panel resources bottom-res">
+        <div title="Lemn (pentru construcții)">🪵 <span id="wood-text">0</span></div>
+        <div title="Monede (pentru magazin)">🪙 <span id="coins-text">0</span></div>
+        <div title="Turnuri">🗼 <span id="towers-text">0/0</span></div>
+        <div title="Ziduri">🧱 <span id="barricades-text">0/0</span></div>
       </div>
 
       <!-- Dreapta jos: doar două butoane — trage (și ochește) și construiește -->
@@ -90,10 +97,40 @@
       <div id="joystick-zone"></div>
     </div>
 
+    <!-- Meniul principal -->
+    <div id="main-menu" class="overlay menu">
+      <h1 class="game-title">Iarna Morților</h1>
+      <p class="subtitle">Zombii vor plasma din mină. Nu-i lăsa să intre.</p>
+      <div class="menu-card">
+        <label class="menu-label" for="player-name">Numele tău</label>
+        <input id="player-name" class="name-input" maxlength="16" placeholder="Supraviețuitor" autocomplete="off" />
+        <div class="menu-label">Dificultate</div>
+        <div id="difficulty" class="difficulty"></div>
+        <div class="menu-row">
+          <button id="menu-sound" class="toggle-btn"></button>
+          <button id="menu-music" class="toggle-btn"></button>
+        </div>
+        <button id="menu-start" class="primary-btn">▶ Start</button>
+      </div>
+    </div>
+
+    <!-- Pauză (meniul din joc) -->
+    <div id="pause-menu" class="overlay hidden">
+      <div class="menu-card">
+        <h2>Pauză</h2>
+        <button id="pause-resume" class="primary-btn">▶ Continuă</button>
+        <div class="menu-row">
+          <button id="pause-sound" class="toggle-btn"></button>
+          <button id="pause-music" class="toggle-btn"></button>
+        </div>
+        <button id="pause-quit" class="secondary-btn">⟵ Ieși în meniu</button>
+      </div>
+    </div>
+
     <!-- Alegerea eroului -->
-    <div id="hero-select" class="overlay">
-      <h1>Iarna Morților</h1>
-      <p class="subtitle">Alege-ți eroul. Apără adăpostul: familia ta e înăuntru.</p>
+    <div id="hero-select" class="overlay hidden">
+      <h1>Alege-ți eroul</h1>
+      <p id="hero-subtitle" class="subtitle"></p>
       <div id="hero-cards" class="hero-cards"></div>
     </div>
 
@@ -114,13 +151,15 @@
             </div>
             <div id="shop-result" class="shop-result"></div>
             <button id="shop-roll" class="primary-btn"></button>
-            <div id="shop-odds" class="odds-bar"></div>
           </section>
           <section class="shop-info">
-            <h3>Mai poți câștiga</h3>
-            <div id="shop-remaining" class="remaining"></div>
-            <h3>Ce ai</h3>
+            <h3>Ce ai în plus</h3>
             <div id="shop-stats" class="stats-grid"></div>
+            <details class="shop-details">
+              <summary>ⓘ Șanse și premii rămase</summary>
+              <div id="shop-odds-mini" class="odds-bar"></div>
+              <div id="shop-remaining" class="remaining"></div>
+            </details>
           </section>
         </div>
       </div>
@@ -129,7 +168,10 @@
     <div id="end-screen" class="overlay hidden">
       <h1 id="end-title"></h1>
       <p id="end-text"></p>
-      <button id="restart-btn" class="primary-btn">Joacă din nou</button>
+      <div class="menu-row">
+        <button id="restart-btn" class="primary-btn">Joacă din nou</button>
+        <button id="end-menu-btn" class="secondary-btn">Meniu</button>
+      </div>
     </div>
 
     <div id="rotate-hint">↻ Rotește telefonul (landscape)</div>

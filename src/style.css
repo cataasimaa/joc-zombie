@@ -105,10 +105,9 @@ button {
 }
 
 .resources {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 2px 14px;
-  font-size: 16px;
+  display: flex;
+  gap: 16px;
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -178,10 +177,13 @@ button {
   background: linear-gradient(90deg, #e2553d, #f2a33a);
 }
 .fill.hero {
-  background: linear-gradient(90deg, #3bb36b, #7fe08a);
+  background: linear-gradient(90deg, #a3141f, #e8413a);
 }
 .fill.xp {
-  background: #8fb8ff;
+  background: linear-gradient(90deg, #c9961a, #ffd34a);
+}
+.fill.plasma {
+  background: linear-gradient(90deg, #1fa88a, #5cffc8);
 }
 .fill.boss {
   background: linear-gradient(90deg, #6b1d24, #7ec8ff);
@@ -228,9 +230,11 @@ button {
   background: var(--panel-strong);
   padding: 8px;
   border-radius: 10px;
-  transform: translate(-50%, calc(-100% - 24px));
+  transform: translateX(-50%);
   pointer-events: auto;
   min-width: 170px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
 }
 
 .build-menu button {
@@ -1110,4 +1114,287 @@ button {
 .top-center,
 .top-right {
   z-index: 5;
+}
+
+/* ---------- Panoul eroului (stânga sus, compact) ---------- */
+
+.hero-panel {
+  width: 210px;
+  padding: 6px 8px 4px;
+}
+
+.hero-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.lvl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd34a, #c9961a);
+  color: #2a1a02;
+  font-weight: 900;
+  font-size: 12px;
+  text-shadow: none;
+}
+
+.hero-name {
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar.big {
+  position: relative;
+  height: 15px;
+  border-radius: 7px;
+  margin: 2px 0 3px;
+}
+
+.bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- Bara minei (deasupra ei, în lume) ---------- */
+
+.world-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 128px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: rgba(8, 20, 24, 0.6);
+  border: 1px solid rgba(92, 255, 200, 0.45);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  will-change: transform;
+}
+
+.world-bar .bar {
+  height: 7px;
+  margin: 2px 0 0;
+}
+
+.world-bar.low {
+  border-color: #e2553d;
+  animation: pulse 0.8s infinite;
+}
+
+/* ---------- Resursele (jos, centru) ---------- */
+
+.bottom-res {
+  position: absolute;
+  left: 50%;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  z-index: 4;
+}
+
+.top-right {
+  flex-direction: column;
+}
+
+/* Paleta / bara de plasare stau deasupra resurselor. */
+#build-palette,
+#place-bar {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 44px);
+}
+
+.build-menu.wide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+}
+
+.build-menu.wide button.cancel,
+.build-menu.wide button.full {
+  grid-column: 1 / -1;
+}
+
+.build-menu .menu-title {
+  grid-column: 1 / -1;
+  font-weight: 800;
+  font-size: 13px;
+  text-align: center;
+  padding: 2px 0 4px;
+}
+
+.build-menu button.kind-rocket { background: #8a3a24; }
+.build-menu button.kind-cannon { background: #4a4f57; }
+.build-menu button.kind-tesla { background: #2a6a8f; }
+.build-menu button.kind-frost { background: #3a7fa8; }
+.build-menu button.kind-demolish { background: #6b4a2c; }
+
+/* ---------- Meniul principal și pauza ---------- */
+
+.overlay.menu {
+  background: radial-gradient(ellipse at 50% 30%, rgba(40, 70, 100, 0.55), rgba(6, 10, 18, 0.92));
+}
+
+.game-title {
+  font-size: 44px !important;
+  letter-spacing: 2px;
+  text-shadow: 0 0 18px rgba(126, 200, 255, 0.7), 0 3px 6px rgba(0, 0, 0, 0.8);
+}
+
+.menu-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(460px, 92vw);
+  background: var(--panel-strong);
+  border: 1px solid var(--frost);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.menu-card h2 {
+  margin: 0 0 4px;
+  text-align: center;
+}
+
+.menu-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.name-input {
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--frost);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.difficulty {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.diff-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: #243246;
+  color: #fff;
+  font-size: 14px;
+}
+
+.diff-btn small {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.diff-btn.selected {
+  border-color: #fff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+}
+
+.diff-easy.selected { background: #2f7a4c; }
+.diff-medium.selected { background: #8a6a1f; }
+.diff-hard.selected { background: #8f3a24; }
+.diff-nightmare.selected { background: #5a1a3a; }
+
+.menu-row {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-btn,
+.secondary-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--frost);
+  background: #243246;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#menu-start {
+  font-size: 20px;
+}
+
+/* ---------- Magazin: accent pe ce ai câștigat ---------- */
+
+.stat.zero {
+  opacity: 0.45;
+}
+
+.stat.gained {
+  background: rgba(59, 179, 107, 0.22);
+  border-color: rgba(59, 179, 107, 0.6);
+}
+
+.shop-details {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.shop-details summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+@media (max-height: 450px) {
+  .hero-panel {
+    width: 180px;
+  }
+  .game-title {
+    font-size: 32px !important;
+  }
+  .menu-card {
+    gap: 6px;
+    padding: 10px 12px;
+  }
+  .diff-btn {
+    padding: 5px 4px;
+    font-size: 13px;
+  }
+  .name-input {
+    padding: 6px 10px;
+    font-size: 15px;
+  }
+  .bottom-res {
+    font-size: 13px;
+    padding: 4px 12px;
+  }
+  #build-palette,
+  #place-bar {
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 38px);
+  }
 }

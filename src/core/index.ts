@@ -3,10 +3,10 @@ export { GameSimulation } from "./Game";
 export type { GameOptions, PlayerSetup } from "./Game";
 export type { BuildKind, Command } from "./commands";
 export { CONFIG } from "./config";
-export type { HeroClass, Rarity, ShopRarity, ZombieType } from "./config";
+export type { Difficulty, HeroClass, Rarity, ShopRarity, TowerKind, ZombieType } from "./config";
 export { DEFAULT_SKIN_COLOR, HERO_DEFS, SKINS } from "./heroDefs";
 export type { HeroDef, SkinDef } from "./heroDefs";
-export { REPEATABLE, SHOP_POOLS, WEAPONS, rewardKey } from "./items";
+export { CHEST_POOL, REPEATABLE, SHOP_POOLS, WEAPONS, rewardKey } from "./items";
 export type { ShopReward, WeaponDef, WeaponId } from "./items";
 export { GAME_MAP } from "./map";
 export type { GameMap, House, Rock, Tree } from "./map";
@@ -29,5 +29,15 @@ export { gunStats, heroById, heroRange, traceBullet, xpToNextLevel } from "./sys
 export type { GunStats } from "./systems/heroes";
 export { canPlaceMine } from "./systems/mines";
 export { canShopRoll, shopRemaining } from "./systems/shop";
-export { canBuildTower, canUpgradeTower, towerAt, towerCost, towerSlots, towersOf } from "./systems/towers";
+export {
+  canBuildTower,
+  canUpgradeTower,
+  towerAt,
+  towerCost,
+  towerRefund,
+  towerSlots,
+  towerStats,
+  towerUpgradeCost,
+  towersOf,
+} from "./systems/towers";
 export type * from "./types";

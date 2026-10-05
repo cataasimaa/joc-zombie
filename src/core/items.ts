@@ -33,7 +33,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
   hunting: {
     id: "hunting", name: "Pușcă de vânătoare", rarity: "rare",
-    damage: 1.35, interval: 1.1, range: 3, pellets: 0, pierce: 1, magazine: 0.6, reload: 1, slow: 0,
+    damage: 1.25, interval: 1.1, range: 3, pellets: 0, pierce: 1, magazine: 0.6, reload: 1, slow: 0,
     description: "Damage mare, glonțul trece prin doi zombi.",
   },
   scattergun: {
@@ -43,17 +43,17 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
   pipeGun: {
     id: "pipeGun", name: "Mitralieră din țevi", rarity: "epic",
-    damage: 0.9, interval: 0.55, range: 0, pellets: 0, pierce: 0, magazine: 2, reload: 1.3, slow: 0,
-    description: "Trage foarte des, încărcător dublu.",
+    damage: 0.85, interval: 0.65, range: 0, pellets: 0, pierce: 0, magazine: 1.6, reload: 1.3, slow: 0,
+    description: "Trage foarte des, încărcător mare.",
   },
   boneBow: {
     id: "boneBow", name: "Arbaletă de os", rarity: "epic",
-    damage: 2.2, interval: 1.4, range: 4, pellets: 0, pierce: 2, magazine: 0.35, reload: 0.8, slow: 0,
+    damage: 1.9, interval: 1.4, range: 4, pellets: 0, pierce: 2, magazine: 0.35, reload: 0.8, slow: 0,
     description: "Săgeți grele care trec prin trei zombi.",
   },
   iceLance: {
     id: "iceLance", name: "Lancea de gheață", rarity: "legendary",
-    damage: 2, interval: 0.9, range: 3, pellets: 0, pierce: 1, magazine: 1, reload: 0.9, slow: 1.5,
+    damage: 1.7, interval: 0.95, range: 3, pellets: 0, pierce: 1, magazine: 1, reload: 0.9, slow: 1.2,
     description: "Damage uriaș și îngheață ce lovește.",
   },
 };
@@ -61,48 +61,55 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 export type ShopReward =
   | { kind: "nothing" }
   | { kind: "wood"; amount: number }
+  /** Câștig în monede (jackpot-ul clasic de păcănele). */
+  | { kind: "coins"; amount: number }
   | { kind: "mines"; count: number }
   | { kind: "maxHp"; pct: number }
   | { kind: "speed"; pct: number }
   | { kind: "regen"; perSec: number }
   | { kind: "repair"; pct: number }
   | { kind: "towerSlot" }
+  /** Deblochează nivelul `tier` al turnurilor. */
   | { kind: "towerTier"; tier: number }
   | { kind: "weapon"; weaponId: WeaponId }
   | { kind: "skin"; skinId: string };
 
 /** Recompensele care se pot repeta (consumabile). Restul se primesc o singură dată pe rundă. */
-export const REPEATABLE: ShopReward["kind"][] = ["nothing", "wood", "mines"];
+export const REPEATABLE: ShopReward["kind"][] = ["nothing", "wood", "mines", "coins"];
 
 /** Cheie unică pentru o recompensă (ca să știm ce ai câștigat deja în runda asta). */
 export const rewardKey = (r: ShopReward): string => JSON.stringify(r);
 
-/** Ce poți primi la fiecare raritate (tragem la sorți una dintre variante). */
+/**
+ * Ce poți primi la fiecare raritate (tragem la sorți una dintre variante).
+ * Bonusurile de statistici sunt mici (max +10% viață); premiile mari sunt armele,
+ * nivelul 3 al turnurilor și câștigurile în monede.
+ */
 export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
   nothing: [{ kind: "nothing" }],
   common: [
     { kind: "wood", amount: 25 },
     { kind: "mines", count: 2 },
-    { kind: "maxHp", pct: 0.1 },
-    { kind: "speed", pct: 0.06 },
-    { kind: "regen", perSec: 0.5 },
-    { kind: "repair", pct: 0.25 },
+    { kind: "maxHp", pct: 0.05 },
+    { kind: "speed", pct: 0.04 },
+    { kind: "regen", perSec: 0.3 },
+    { kind: "repair", pct: 0.2 },
   ],
   rare: [
+    { kind: "coins", amount: 75 },
     { kind: "mines", count: 4 },
-    { kind: "maxHp", pct: 0.2 },
-    { kind: "speed", pct: 0.1 },
-    { kind: "regen", perSec: 1.5 },
-    { kind: "repair", pct: 0.5 },
-    { kind: "towerTier", tier: 2 },
+    { kind: "maxHp", pct: 0.1 },
+    { kind: "speed", pct: 0.06 },
+    { kind: "regen", perSec: 0.8 },
+    { kind: "repair", pct: 0.4 },
     { kind: "weapon", weaponId: "hunting" },
     { kind: "weapon", weaponId: "scattergun" },
     { kind: "skin", skinId: "hunter" },
     { kind: "skin", skinId: "ember" },
   ],
   epic: [
-    { kind: "mines", count: 6 },
-    { kind: "regen", perSec: 3 },
+    { kind: "coins", amount: 150 },
+    { kind: "mines", count: 8 },
     { kind: "towerSlot" },
     { kind: "towerTier", tier: 3 },
     { kind: "weapon", weaponId: "pipeGun" },
@@ -111,8 +118,19 @@ export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
     { kind: "skin", skinId: "shadow" },
   ],
   legendary: [
-    { kind: "towerTier", tier: 4 },
+    { kind: "coins", amount: 400 },
     { kind: "weapon", weaponId: "iceLance" },
     { kind: "skin", skinId: "gold" },
   ],
 };
+
+/** Cufărul lăsat de boss: mereu ceva rar (epic sau legendar). */
+export const CHEST_POOL: { rarity: Rarity; reward: ShopReward }[] = [
+  { rarity: "epic", reward: { kind: "towerTier", tier: 3 } },
+  { rarity: "epic", reward: { kind: "towerSlot" } },
+  { rarity: "epic", reward: { kind: "weapon", weaponId: "pipeGun" } },
+  { rarity: "epic", reward: { kind: "weapon", weaponId: "boneBow" } },
+  { rarity: "epic", reward: { kind: "mines", count: 8 } },
+  { rarity: "legendary", reward: { kind: "weapon", weaponId: "iceLance" } },
+  { rarity: "legendary", reward: { kind: "skin", skinId: "gold" } },
+];

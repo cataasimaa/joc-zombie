@@ -3,7 +3,7 @@
 // se refolosesc în loc să fie create și distruse mereu (mult mai rapid pe telefon).
 
 import {
-  type Color3,
+  Color3,
   DynamicTexture,
   type InstancedMesh,
   type Mesh,
@@ -17,7 +17,10 @@ import { rng } from "./noise";
 import { PAL, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
 
-export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom";
+export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom" | "stone" | "dust" | "smoke" | "plasma";
+
+/** Particulele „care plutesc”: praf și fum (fără gravitație, cresc și se rarefiază). */
+const FLOATY: BurstKind[] = ["dust", "smoke"];
 
 interface Particle {
   inst: InstancedMesh;
@@ -54,6 +57,10 @@ const BURST_COLORS: Record<BurstKind, Color3> = {
   wood: PAL.oldWood,
   bone: PAL.bone,
   venom: mix(PAL.ice, PAL.pineLight, 0.3),
+  stone: PAL.stone,
+  dust: mix(PAL.snowShadow, PAL.snow, 0.55),
+  smoke: mix(PAL.iron, PAL.snowShadow, 0.5),
+  plasma: Color3.FromHexString("#5cffc8"),
 };
 
 /** Textură desenată pe canvas: pată de sânge neregulată, cu stropi în jur. */
@@ -121,8 +128,8 @@ export class Fx {
   constructor(private scene: Scene, private mats: Materials) {
     for (const kind of Object.keys(BURST_COLORS) as BurstKind[]) {
       const k = new ModelKit(scene, mats, 1000 + kind.length);
-      const glow = kind === "spark" || kind === "ice" || kind === "venom";
-      if (kind === "blood" || kind === "venom" || kind === "snow") {
+      const glow = kind === "spark" || kind === "ice" || kind === "venom" || kind === "plasma";
+      if (kind === "blood" || kind === "venom" || kind === "snow" || kind === "dust" || kind === "smoke") {
         k.sphere(1, 6, {}, { color: BURST_COLORS[kind], mat: glow ? "glow" : "matte", wear: 0.15, smooth: true });
       } else {
         k.box(1, 1, 1, {}, { color: BURST_COLORS[kind], mat: glow ? "glow" : "matte", wear: 0.15 });
@@ -195,6 +202,10 @@ export class Fx {
       p.inst.setEnabled(true);
       p.life = p.maxLife = 0.5 + Math.random() * 0.5;
       p.spin = (Math.random() - 0.5) * 12;
+      if (FLOATY.includes(kind)) {
+        p.life = p.maxLife = 1.1 + Math.random() * 0.9;
+        p.spin = (Math.random() - 0.5) * 2;
+      }
     }
   }
 
@@ -334,10 +345,45 @@ export class Fx {
     this.burst("snow", pos.add(new Vector3(0, 0.3, 0)), null, 20, 6, 0.2);
   }
 
+  /** Nor de praf (clădire dărâmată): bulgări mari care se umflă și se risipesc. */
+  dust(pos: Vector3, radius: number, amount = 1): void {
+    for (let i = 0; i < Math.round(14 * amount); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * radius;
+      const at = pos.add(new Vector3(Math.cos(a) * r, Math.random() * 1.2, Math.sin(a) * r));
+      this.burst("dust", at, new Vector3(Math.cos(a), 0.2, Math.sin(a)), 1, 2.5, 0.5 + Math.random() * 0.4);
+    }
+  }
+
+  /** Fulger (Tesla): o linie frântă din câteva trasoare scurte. */
+  lightning(from: Vector3, to: Vector3, color: Color3, width = 0.07, life = 0.12): void {
+    const segments = 6;
+    let prev = from;
+    for (let i = 1; i <= segments; i++) {
+      const k = i / segments;
+      const jitter = i === segments ? 0 : 0.45;
+      const next = Vector3.Lerp(from, to, k).add(new Vector3((Math.random() - 0.5) * jitter, (Math.random() - 0.5) * jitter, (Math.random() - 0.5) * jitter));
+      this.tracer(prev, next, color, width, life);
+      prev = next;
+    }
+    this.muzzle(to, color, 0.5, life);
+  }
+
   update(dt: number): void {
     for (const p of this.particles) {
       if (p.life <= 0) continue;
       p.life -= dt;
+      if (FLOATY.includes(p.kind)) {
+        // Praful și fumul: încetinesc, urcă ușor, cresc și dispar.
+        p.vel.scaleInPlace(Math.max(0, 1 - dt * 2.5));
+        p.vel.y += dt * (p.kind === "smoke" ? 1.2 : 0.4);
+        p.inst.position.addInPlace(p.vel.scale(dt));
+        const k = 1 - p.life / p.maxLife;
+        p.inst.scaling.setAll(p.size * (1 + k * 2.2) * Math.min(1, p.life * 2));
+        p.inst.rotation.y += p.spin * dt;
+        if (p.life <= 0) p.inst.setEnabled(false);
+        continue;
+      }
       p.vel.y -= 14 * dt;
       p.inst.position.addInPlace(p.vel.scale(dt));
       p.inst.rotation.x += p.spin * dt;

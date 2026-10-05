@@ -6,7 +6,7 @@
 //  - distorsiune (face împușcăturile „murdare”) și reverb (spațiu deschis, rece)
 // Pe iPhone, sunetul pornește doar după prima atingere a ecranului (regula browserului).
 
-import type { EntityId, GameEvent, PlayerId, ShopRarity, WeaponId } from "../core";
+import type { EntityId, GameEvent, PlayerId, ShopRarity, TowerKind, WeaponId } from "../core";
 import { Music } from "./Music";
 
 export interface SfxFrame {
@@ -37,7 +37,10 @@ export class Sfx {
   private crackleTimer = 0;
   private last = new Map<string, number>();
   private music: Music | null = null;
+  private spinIndex = 0;
+  private musicBus: GainNode | null = null;
   muted = false;
+  musicOn = true;
 
   constructor() {
     const unlock = () => {
@@ -93,8 +96,8 @@ export class Sfx {
     this.distortion.connect(this.reverbSend);
 
     this.startWind();
-    const musicBus = ctx.createGain();
-    musicBus.gain.value = 0.55;
+    const musicBus = (this.musicBus = ctx.createGain());
+    musicBus.gain.value = this.musicOn ? 0.55 : 0;
     musicBus.connect(this.master);
     this.music = new Music(ctx, musicBus, this.reverbSend, this.noise);
   }
@@ -102,6 +105,11 @@ export class Sfx {
   setMuted(m: boolean): void {
     this.muted = m;
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.7, this.ctx.currentTime, 0.05);
+  }
+
+  setMusicOn(on: boolean): void {
+    this.musicOn = on;
+    if (this.ctx && this.musicBus) this.musicBus.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.1);
   }
 
   // ---------- Ambient: vânt, foc, gemete ----------
@@ -172,11 +180,29 @@ export class Sfx {
     const mine = (heroId: EntityId) => heroId === f.localHero;
     switch (e.type) {
       case "shot":
-        if (e.source === "tower") {
-          if (this.throttle("tower", 0.08)) this.ballista();
-        } else if (this.throttle(`shot${e.heroId}`, 0.035)) {
-          this.gunshot(e.heroId !== undefined ? f.weaponOf(e.heroId) : "rusty", !!e.crit);
-        }
+        if (this.throttle(`shot${e.heroId}`, 0.035)) this.gunshot(e.heroId !== undefined ? f.weaponOf(e.heroId) : "rusty", !!e.crit);
+        break;
+      case "towerFired":
+        if (this.throttle(`tower_${e.kind}${e.special}`, e.kind === "tesla" ? 0.05 : 0.07)) this.towerShot(e.kind, e.special !== "none" && e.special !== "mini");
+        break;
+      case "towerAbility":
+        if (e.kind === "tesla") this.laser();
+        else if (e.kind === "frost") this.frostNova();
+        break;
+      case "shellHit":
+        this.shellHit(e.kind, e.special);
+        break;
+      case "towerHit":
+        if (this.throttle("towerHit", 0.12)) this.thunk(130, 0.22);
+        break;
+      case "towerDestroyed":
+        this.crumble(1.2);
+        break;
+      case "chestDropped":
+        this.shimmer(1.5);
+        break;
+      case "chestOpened":
+        if (e.playerId === f.localPlayer) this.spinResult(e.rarity);
         break;
       case "dryFire":
         if (mine(e.heroId) && this.throttle("dry", 0.3)) this.click(2600, 0.12);
@@ -222,8 +248,7 @@ export class Sfx {
         if (this.throttle("wallHit", 0.12)) this.thunk(160, 0.18);
         break;
       case "barricadeDestroyed":
-        this.noiseHit({ type: "lowpass", freq: 1200, dur: 0.4, vol: 0.4, dist: true });
-        this.thunk(70, 0.3);
+        this.crumble(0.7);
         break;
       case "barricadePlaced":
       case "barricadeChanged":
@@ -273,48 +298,108 @@ export class Sfx {
     this.noiseHit({ type: "lowpass", freq: 300, dur: 0.06, vol: 0.06 });
   }
 
-  /** Un „tic” al păcănelei (fiecare schimbare de simbol). */
+  /** Un „tic” al păcănelei: clic mecanic + bip electronic (ca la aparatele din cazino). */
   spinTick(): void {
     if (!this.ctx || this.ctx.state !== "running") return;
-    this.tone(1500 + Math.random() * 200, 1400, 0.03, "square", 0.04);
+    this.spinIndex = (this.spinIndex + 1) % 4;
+    this.noiseHit({ type: "highpass", freq: 3000, dur: 0.018, vol: 0.22 });
+    this.tone([880, 1175, 988, 1319][this.spinIndex], 0, 0.05, "square", 0.07);
   }
 
-  /** Oprirea unei role. */
+  /** Oprirea unei role: „CLANC” greu + un clopoțel. */
   reelStop(): void {
     if (!this.ctx || this.ctx.state !== "running") return;
-    this.thunk(220, 0.15);
-    this.click(1800, 0.08);
+    this.thunk(140, 0.55);
+    this.noiseHit({ type: "bandpass", freq: 700, dur: 0.12, vol: 0.35, dist: true });
+    this.bell(1319, 0.14);
   }
 
-  /** Rezultatul la păcănele: tristețe pentru „nimic”, clinchet pentru normal, fanfară pentru JACKPOT. */
+  /**
+   * Rezultatul: trombon trist pentru „nimic”, clopoțel pentru comun, clopote + monede pentru rar,
+   * iar la JACKPOT (epic / legendar): sirenă, clopote care sună întruna, fanfară și ploaie de monede.
+   */
   spinResult(rarity: ShopRarity): void {
     if (!this.ctx || this.ctx.state !== "running") return;
     if (rarity === "nothing") {
-      this.tone(330, 320, 0.25, "triangle", 0.12);
-      this.tone(247, 220, 0.6, "triangle", 0.12, 0.25);
+      // „Wah-wah-wah-waaah”.
+      [392, 370, 349].forEach((f, i) => this.tone(f, f * 0.97, 0.32, "sawtooth", 0.13, i * 0.34, 900));
+      this.tone(330, 300, 1.0, "sawtooth", 0.14, 1.02, 900);
       return;
     }
     if (rarity === "common") {
-      this.tone(784, 784, 0.25, "triangle", 0.12);
-      this.tone(1047, 1047, 0.4, "triangle", 0.12, 0.1);
+      this.bell(1047, 0.25);
+      this.bell(1568, 0.22, 0.14);
+      this.coinRain(6, 0.25, 0.6);
       return;
     }
     if (rarity === "rare") {
-      [659, 784, 988, 1319].forEach((f, i) => this.tone(f, f, 0.35, "triangle", 0.12, i * 0.08));
+      [784, 988, 1175, 1568].forEach((f, i) => this.bell(f, 0.22, i * 0.09));
+      this.coinRain(16, 0.3, 1.2);
       return;
     }
-    // EPIC / LEGENDAR = JACKPOT: fanfară + clopote + ploaie de monede.
-    const fan = rarity === "legendary" ? [523, 659, 784, 1047, 1319, 1568] : [523, 659, 784, 1047];
+    // JACKPOT
+    const legendary = rarity === "legendary";
+    this.explosion(0.5);
+    this.siren(legendary ? 2.2 : 1.4);
+    for (let i = 0; i < (legendary ? 24 : 14); i++) this.bell(i % 2 ? 1568 : 2093, 0.16, 0.1 + i * 0.09);
+    const fan = legendary ? [523, 659, 784, 1047, 1319, 1568, 2093] : [523, 659, 784, 1047, 1319];
     fan.forEach((f, i) => {
-      this.tone(f, f, 0.5, "sawtooth", 0.06, i * 0.09, 2500);
-      this.tone(f * 2, f * 2, 0.6, "sine", 0.05, i * 0.09);
+      this.tone(f, f, 0.6, "sawtooth", 0.12, 0.3 + i * 0.1, 3000);
+      this.tone(f * 2, f * 2, 0.7, "sine", 0.08, 0.3 + i * 0.1);
     });
-    this.chord([523, 659, 784, 1047], 1.6, 0.08);
-    const coins = rarity === "legendary" ? 40 : 22;
-    for (let i = 0; i < coins; i++) {
-      const t = 0.4 + Math.random() * 1.8;
-      const f = 1800 + Math.random() * 1600;
-      this.tone(f, f, 0.08, "square", 0.025, t);
+    [523, 659, 784, 1047].forEach((f) => this.tone(f, f, 2.2, "triangle", 0.12, 0.3 + fan.length * 0.1));
+    this.coinRain(legendary ? 70 : 40, 0.5, legendary ? 3 : 2.2);
+  }
+
+  /** Clopoțel metalic (ton + armonicele „strâmbe” ale unui clopot). */
+  private bell(freq: number, vol: number, delay = 0): void {
+    this.tone(freq, freq, 1.1, "sine", vol, delay);
+    this.tone(freq * 2.76, freq * 2.76, 0.6, "sine", vol * 0.45, delay);
+    this.tone(freq * 5.4, freq * 5.4, 0.3, "sine", vol * 0.25, delay);
+  }
+
+  /** Monede care cad (clinchete rapide, la întâmplare). */
+  private coinRain(count: number, start: number, spread: number): void {
+    for (let i = 0; i < count; i++) {
+      const t = start + Math.random() * spread;
+      const f = 2000 + Math.random() * 1800;
+      this.tone(f, f * 0.98, 0.09, "square", 0.05, t);
+      this.tone(f * 1.5, f * 1.5, 0.06, "sine", 0.04, t + 0.02);
+    }
+  }
+
+  /** Sirena de jackpot: un ton care urcă și coboară rapid. */
+  private siren(dur: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = 900;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 6;
+    const depth = ctx.createGain();
+    depth.gain.value = 300;
+    lfo.connect(depth).connect(osc.frequency);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2500;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.05);
+    g.gain.setValueAtTime(0.09, t + dur - 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(lp).connect(g).connect(this.sfxBus);
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + dur);
+    lfo.stop(t + dur);
+  }
+
+  /** Sclipire magică (cufărul apare). */
+  private shimmer(dur: number): void {
+    for (let i = 0; i < 12; i++) {
+      const f = 1500 + i * 180 + Math.random() * 80;
+      this.tone(f, f, 0.4, "sine", 0.06, (i / 12) * dur * 0.6);
     }
   }
 
@@ -381,10 +466,109 @@ export class Sfx {
     if (weapon === "boneBow") this.tone(260, 180, 0.12, "triangle", 0.15);
   }
 
-  /** Balista turnului: „thwack” de lemn + coardă. */
-  private ballista(): void {
-    this.tone(220, 120, 0.12, "triangle", 0.12);
-    this.noiseHit({ type: "bandpass", freq: 1200, dur: 0.06, vol: 0.12 });
+  /** Sunetul fiecărui tip de turn (tare, ca să se audă peste luptă). `heavy` = abilitatea. */
+  private towerShot(kind: TowerKind, heavy: boolean): void {
+    const k = heavy ? 1.5 : 1;
+    switch (kind) {
+      case "crossbow":
+        // Coarda arbaletei: „TWANG” + lemnul care lovește + șuierat.
+        this.tone(190, 85, 0.18, "triangle", 0.35 * k);
+        this.tone(95, 60, 0.12, "sine", 0.3 * k);
+        this.noiseHit({ type: "bandpass", freq: 1000, dur: 0.05, vol: 0.3 * k });
+        this.noiseHit({ type: "highpass", freq: 2500, sweepTo: 6000, dur: 0.18, vol: 0.08 * k, delay: 0.03 });
+        break;
+      case "rocket":
+        // Lansare: șuierat care urcă + aprindere.
+        this.noiseHit({ type: "bandpass", freq: 400, sweepTo: 3000, dur: 0.55 * k, vol: 0.4 * k });
+        this.noiseHit({ type: "lowpass", freq: 800, dur: 0.15, vol: 0.35 * k, dist: true });
+        this.tone(160, 520, 0.4, "sawtooth", 0.06 * k, 0, 1500);
+        break;
+      case "cannon":
+        // BUM: pocnitură, corp distorsionat și bubuitură lungă cu ecou.
+        this.noiseHit({ type: "highpass", freq: 2000, dur: 0.03, vol: 0.45 });
+        this.noiseHit({ type: "lowpass", freq: 2500, sweepTo: 90, dur: 0.9, vol: 0.75, dist: true });
+        this.tone(75, 28, 0.7, "sine", 0.8);
+        this.noiseHit({ type: "lowpass", freq: 500, dur: 1.6, vol: 0.15, reverbOnly: true });
+        break;
+      case "tesla": {
+        // Descărcare electrică: bâzâit aspru care coboară + trosnituri.
+        this.tone(2200, 300, 0.16, "sawtooth", 0.16, 0, 6000);
+        this.tone(120, 60, 0.18, "square", 0.12);
+        for (let i = 0; i < 5; i++) this.noiseHit({ type: "highpass", freq: 4000, dur: 0.015, vol: 0.2, delay: i * 0.025 + Math.random() * 0.01 });
+        break;
+      }
+      case "frost":
+        // Cristal: clinchet înalt + șuierat rece.
+        this.tone(2093, 2093, 0.35, "sine", 0.14);
+        this.tone(3136, 3100, 0.25, "sine", 0.08, 0.02);
+        this.noiseHit({ type: "highpass", freq: 5000, sweepTo: 2500, dur: 0.25, vol: 0.12 });
+        break;
+    }
+  }
+
+  /** Laserul Tesla: bâzâit gros, lung, cu vibrato. */
+  private laser(): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(110, t);
+    osc.frequency.linearRampToValueAtTime(220, t + 0.5);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 40;
+    const vg = ctx.createGain();
+    vg.gain.value = 25;
+    vib.connect(vg).connect(osc.frequency);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+    osc.connect(g).connect(this.distortion);
+    osc.start(t);
+    vib.start(t);
+    osc.stop(t + 0.6);
+    vib.stop(t + 0.6);
+    this.tone(3000, 1200, 0.5, "sine", 0.08);
+  }
+
+  /** Nova de gheață: arpegiu de cristal care coboară + vânt rece. */
+  private frostNova(): void {
+    [3136, 2637, 2093, 1568, 1319].forEach((f, i) => this.tone(f, f, 0.5, "sine", 0.12, i * 0.05));
+    this.noiseHit({ type: "bandpass", freq: 3000, sweepTo: 600, dur: 0.8, vol: 0.25 });
+  }
+
+  /** Impactul proiectilelor de turn. */
+  private shellHit(kind: TowerKind, special: string): void {
+    switch (kind) {
+      case "rocket":
+        if (special === "mini") {
+          if (this.throttle("mini", 0.06)) this.explosion(0.3);
+        } else this.explosion(special === "big" ? 0.9 : 0.55);
+        break;
+      case "cannon":
+        this.explosion(0.8);
+        if (special === "fire") this.noiseHit({ type: "highpass", freq: 1500, dur: 1.2, vol: 0.15 });
+        break;
+      case "frost":
+        if (this.throttle("iceHit", 0.05)) {
+          this.noiseHit({ type: "highpass", freq: 4000, dur: 0.12, vol: 0.18 });
+          this.tone(2637, 2400, 0.15, "sine", 0.07);
+        }
+        break;
+      case "crossbow":
+        if (this.throttle("arrowHit", 0.05)) this.noiseHit({ type: "lowpass", freq: 700, dur: 0.08, vol: special === "heavy" ? 0.4 : 0.22 });
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Construcție dărâmată: trosnet, bubuitură și pietre/lemne care cad. */
+  private crumble(size: number): void {
+    this.noiseHit({ type: "lowpass", freq: 1500, sweepTo: 200, dur: 0.9 * size, vol: 0.5 * size, dist: true });
+    this.tone(60, 30, 0.6, "sine", 0.5 * size);
+    for (let i = 0; i < 7; i++) this.thunk(110 + Math.random() * 120, 0.18 * size, 0.15 + i * 0.09 + Math.random() * 0.05);
+    this.noiseHit({ type: "bandpass", freq: 600, dur: 1.4 * size, vol: 0.12, reverbOnly: true });
   }
 
   private explosion(size: number): void {

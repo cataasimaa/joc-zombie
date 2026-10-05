@@ -4,7 +4,7 @@
 import type { Mesh } from "@babylonjs/core";
 import type { House } from "../../core";
 import { type Materials, ModelKit } from "../ModelKit";
-import { PAL, mix } from "../palette";
+import { PAL, hex, mix } from "../palette";
 import type { Scene } from "@babylonjs/core";
 
 // ---------- Brazi ----------
@@ -243,108 +243,91 @@ export function buildHouse(scene: Scene, mats: Materials, h: House): HouseParts 
   return { meshes: k.build(`house${h.seed}`), chimney: [chX, top + rise + 1.2, -D * 0.15] };
 }
 
-// ---------- Adăpostul ----------
+// ---------- Mina de plasmă (ce apărăm) ----------
 
 export interface ShelterParts {
   meshes: Mesh[];
-  /** Flăcările focului (le animăm). */
+  /** Piese animate: flăcările focului și cristalele de plasmă care pulsează. */
   flames: Mesh[];
+  crystals: Mesh[];
   firePos: [number, number, number];
-  chimney: [number, number, number];
+  plasmaPos: [number, number, number];
 }
 
-/** Adăpostul: parter de piatră, etaj de lemn, banner rupt și foc în față. Fața spre -z (spre cameră). */
+/**
+ * Mina de plasmă: o movilă de stâncă înghețată, cu un puț acoperit de un capac greu de fier,
+ * un cadru de lemn cu scripete deasupra și cristale extraterestre care strălucesc printre pietre.
+ * Lângă ea, un foc de tabără (accentul cald). Raza ≈ CONFIG.shelter.radius.
+ */
 export function buildShelter(scene: Scene, mats: Materials): ShelterParts {
   const k = new ModelKit(scene, mats, 77);
-  const W = 5.6;
-  const D = 4.8;
-  const stoneH = 1.7;
-  const woodH = 1.5;
-  const top = stoneH + woodH;
-  const fz = -D / 2;
-
-  // Parter din piatră, cu blocuri ieșite în relief.
-  k.box(W, stoneH, D, { p: [0, stoneH / 2, 0] }, { color: PAL.stone, wear: 0.22, frost: 0.6 });
-  for (let i = 0; i < 26; i++) {
-    const onFront = i % 2 === 0;
-    const x = k.rand(-W / 2 + 0.3, W / 2 - 0.3);
-    const y = k.rand(0.2, stoneH - 0.2);
-    const color = mix(PAL.stoneDark, PAL.moss, k.rand(0, 0.5));
-    if (onFront) k.box(k.rand(0.4, 0.8), k.rand(0.25, 0.4), 0.12, { p: [x, y, fz - 0.04] }, { color, wear: 0.2, frost: 0.8, frostNormal: 0.6 });
-    else k.box(0.12, k.rand(0.25, 0.4), k.rand(0.4, 0.8), { p: [(i % 4 === 1 ? 1 : -1) * (W / 2 + 0.04), y, k.rand(-D / 2 + 0.3, D / 2 - 0.3)] }, { color, wear: 0.2, frost: 0.8, frostNormal: 0.6 });
+  const R = 2.1;
+  // Movila de stâncă.
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 11) * Math.PI * 2 + k.rand(-0.15, 0.15);
+    const r = R - k.rand(0.2, 0.5);
+    k.ico(k.rand(0.55, 0.85), { p: [Math.cos(a) * r, k.rand(0.15, 0.35), Math.sin(a) * r], s: [1.2, k.rand(0.6, 0.9), 1], r: [0, k.rand(0, 3), 0] }, { color: mix(PAL.stone, PAL.stoneDark, k.rand(0, 1)), wear: 0.25, frost: 0.75 });
   }
-  // Etaj din lemn ars.
-  k.box(W - 0.2, woodH, D - 0.2, { p: [0, stoneH + woodH / 2, 0] }, { color: PAL.burntWood, wear: 0.16 });
-  for (let i = 0; i < 3; i++) {
-    const y = stoneH + 0.25 + i * 0.5;
-    k.cyl(W + 0.3, 0.26, 0.26, 6, { p: [0, y, fz + 0.05], r: [0, 0, Math.PI / 2] }, { color: PAL.darkWood, wear: 0.2, frost: 0.4, frostNormal: 0.7 });
+  k.cyl(0.7, R * 1.5, R * 2, 10, { p: [0, 0.3, 0] }, { color: PAL.stoneDark, wear: 0.25, frost: 0.6 });
+  // Gura puțului: inel de piatră + capac de fier cu grilaj (plasma luminează printre bare).
+  k.cyl(0.4, 2.0, 2.2, 12, { p: [0, 0.75, 0] }, { color: PAL.stone, wear: 0.2, frost: 0.5 });
+  k.cyl(0.05, 1.7, 1.7, 12, { p: [0, 0.92, 0] }, { color: PLASMA, mat: "glow" });
+  for (let i = -3; i <= 3; i++) k.box(0.12, 0.12, 1.75, { p: [i * 0.24, 1.0, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  for (const z of [-0.5, 0.5]) k.box(1.75, 0.14, 0.14, { p: [0, 1.04, z] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
+  // Cadrul de lemn (capră) cu scripete și frânghie.
+  const top = 3.6;
+  for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const bx = x * 1.35;
+    const bz = z * 1.1;
+    const len = Math.hypot(bx * 0.6, top, bz * 0.6);
+    k.cyl(len, 0.2, 0.26, 6, { p: [bx * 0.7, top / 2 + 0.6, bz * 0.7], r: [Math.atan2(-bz * 0.6, top) * -1, 0, Math.atan2(bx * 0.6, top)] }, { color: PAL.darkWood, wear: 0.2, frost: 0.4 });
   }
-  for (const x of [W / 2 - 0.1, -W / 2 + 0.1]) for (const z of [D / 2 - 0.1, -D / 2 + 0.1]) {
-    k.cyl(woodH + 0.2, 0.4, 0.42, 6, { p: [x, stoneH + woodH / 2, z] }, { color: PAL.darkWood, wear: 0.15 });
-  }
-
-  // Acoperiș mare, cu zăpadă groasă pe ambele părți.
-  const rise = D * 0.45;
-  const sx = rise / 0.75;
-  k.cyl(W - 0.3, 1, 1, 3, { p: [0, top + 0.25 * sx, 0], r: [0, 0, Math.PI / 2], s: [sx, 1, (D - 0.2) / 0.866] }, { color: PAL.oldWood, wear: 0.15 });
-  const slope = Math.atan2(rise, D / 2);
-  const len = Math.hypot(D / 2 + 0.5, rise + 0.3);
-  for (const side of [1, -1]) {
-    const cz = side * (D / 4 + 0.1);
-    const cy = top + rise / 2 + 0.1;
-    k.box(W + 0.9, 0.2, len, { p: [0, cy, cz], r: [side * slope, 0, 0] }, { color: PAL.darkWood, wear: 0.2 });
-    const thick = side === 1 ? 0.45 : 0.3;
-    k.box(W + 0.7, thick, len * 0.95, { p: [0, cy + Math.cos(slope) * (0.1 + thick / 2), cz + side * Math.sin(slope) * (0.1 + thick / 2)], r: [side * slope, 0, 0] }, { color: PAL.snow, wear: 0.03 });
-    for (let i = 0; i < 9; i++) {
-      const ih = k.rand(0.3, 0.9);
-      k.cyl(ih, 0.13, 0, 4, { p: [k.rand(-W / 2, W / 2), top + 0.05 - ih / 2, side * (D / 2 + 0.45)] }, { color: mix(PAL.ice, PAL.snow, 0.55), wear: 0.05 });
-    }
-  }
-  // Horn.
-  k.box(0.9, rise + 1.5, 0.9, { p: [W * 0.3, top + (rise + 1.5) / 2 - 0.3, D * 0.1] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.85, frostNormal: 0.6 });
-
-  // Ușă întărită cu benzi de fier.
-  k.box(1.3, 2, 0.14, { p: [0, 1.0, fz - 0.08] }, { color: PAL.darkWood, wear: 0.15 });
-  for (const y of [0.35, 1.0, 1.65]) k.box(1.35, 0.12, 0.06, { p: [0, y, fz - 0.17] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
-  // Ferestre luminate (familia e înăuntru).
-  for (const x of [-1.7, 1.7]) {
-    k.box(0.95, 0.75, 0.12, { p: [x, stoneH + 0.75, fz - 0.06] }, { color: PAL.darkWood });
-    k.box(0.72, 0.52, 0.1, { p: [x, stoneH + 0.75, fz - 0.1] }, { color: PAL.window, mat: "glow" });
-    k.box(0.08, 0.52, 0.12, { p: [x, stoneH + 0.75, fz - 0.13] }, { color: PAL.darkWood });
-  }
-
-  // Banner rupt pe un stâlp.
-  const bx = -W / 2 - 0.6;
-  const bz = fz - 0.4;
-  k.cyl(4.6, 0.14, 0.18, 6, { p: [bx, 2.3, bz] }, { color: PAL.darkWood, wear: 0.2 });
-  k.box(1.6, 0.1, 0.1, { p: [bx + 0.75, 4.4, bz] }, { color: PAL.darkWood });
-  for (let i = 0; i < 5; i++) {
-    const sh = k.rand(1.1, 2.1);
-    k.box(0.3, sh, 0.04, { p: [bx + 0.15 + i * 0.3, 4.35 - sh / 2, bz], r: [0, 0, k.rand(-0.06, 0.06)] }, { color: PAL.blood, wear: 0.2 });
-  }
-  k.box(0.5, 0.5, 0.06, { p: [bx + 0.75, 3.7, bz - 0.03], r: [0, 0, 0.785] }, { color: PAL.bone, wear: 0.1 });
-
-  // Groapa de foc: cerc de pietre + bușteni.
-  const fire: [number, number, number] = [1.2, 0, fz - 2.1];
+  k.cyl(1.9, 0.22, 0.22, 6, { p: [0, top + 0.45, 0], r: [0, 0, Math.PI / 2] }, { color: PAL.burntWood, wear: 0.2, frost: 0.7, frostNormal: 0.5 });
+  k.cyl(0.14, 0.9, 0.9, 12, { p: [0, top + 0.1, 0], r: [0, 0, Math.PI / 2] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  k.cyl(top - 1.0, 0.04, 0.04, 4, { p: [0, (top + 1.0) / 2, 0] }, { color: PAL.cloth });
+  // Felinar de plasmă atârnat de cadru.
+  k.box(0.3, 0.4, 0.3, { p: [0.75, top - 0.3, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  k.sphere(0.24, 8, { p: [0.75, top - 0.3, 0] }, { color: PLASMA, mat: "glow" });
+  // Vagonet cu minereu de plasmă.
+  k.box(1.0, 0.5, 0.7, { p: [-1.9, 0.75, -1.2], r: [0, 0.4, 0] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
+  for (let i = 0; i < 4; i++) k.ico(0.18, { p: [-1.9 + k.rand(-0.3, 0.3), 1.05, -1.2 + k.rand(-0.2, 0.2)] }, { color: PLASMA, mat: "glow" });
+  // Foc de tabără în fața minei.
+  const fire: [number, number, number] = [1.6, 0, -3.7];
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    k.ico(0.28, { p: [fire[0] + Math.cos(a) * 0.75, 0.08, fire[2] + Math.sin(a) * 0.75], s: [1, 0.7, 1] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.4 });
+    k.ico(0.26, { p: [fire[0] + Math.cos(a) * 0.7, 0.08, fire[2] + Math.sin(a) * 0.7], s: [1, 0.7, 1] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.4 });
   }
   for (let i = 0; i < 3; i++) {
-    k.cyl(1.1, 0.16, 0.16, 6, { p: [fire[0], 0.18, fire[2]], r: [Math.PI / 2, (i * Math.PI) / 3, 0.25] }, { color: PAL.darkWood, wear: 0.3 });
+    k.cyl(1.0, 0.15, 0.15, 6, { p: [fire[0], 0.18, fire[2]], r: [Math.PI / 2, (i * Math.PI) / 3, 0.25] }, { color: PAL.darkWood, wear: 0.3 });
   }
-  k.cyl(0.1, 0.9, 0.9, 8, { p: [fire[0], 0.05, fire[2]] }, { color: PAL.fire, mat: "glow" });
+  k.cyl(0.1, 0.8, 0.8, 8, { p: [fire[0], 0.05, fire[2]] }, { color: PAL.fire, mat: "glow" });
   const meshes = k.build("shelter");
 
-  // Flăcările sunt mesh-uri separate (le animăm în fiecare cadru).
   const flames: Mesh[] = [];
   for (let i = 0; i < 3; i++) {
     const fk = new ModelKit(scene, mats, 200 + i);
     const color = i === 0 ? PAL.fire : i === 1 ? mix(PAL.fire, PAL.gold, 0.6) : mix(PAL.fire, PAL.blood, 0.3);
-    fk.cyl(1.2 - i * 0.25, 0, 0.6 - i * 0.12, 5, { p: [0, (1.2 - i * 0.25) / 2, 0] }, { color, mat: "glow" });
+    fk.cyl(1.1 - i * 0.25, 0, 0.55 - i * 0.12, 5, { p: [0, (1.1 - i * 0.25) / 2, 0] }, { color, mat: "glow" });
     const f = fk.build(`flame${i}`)[0];
     f.position.set(fire[0] + (i - 1) * 0.12, 0.1, fire[2] + (i % 2) * 0.1);
     flames.push(f);
   }
-  return { meshes, flames, firePos: [fire[0], 1, fire[2]], chimney: [W * 0.3, top + rise + 1.3, D * 0.1] };
+  // Cristalele de plasmă: ies dintre pietre, pulsează (le animăm).
+  const crystals: Mesh[] = [];
+  for (let i = 0; i < 7; i++) {
+    const ck = new ModelKit(scene, mats, 260 + i);
+    const h = ck.rand(0.7, 1.5);
+    ck.cyl(h, 0, ck.rand(0.25, 0.4), 5, { p: [0, h / 2, 0] }, { color: i % 3 === 0 ? PLASMA_DEEP : PLASMA, mat: "glow" });
+    ck.cyl(h * 0.6, 0, 0.18, 5, { p: [0.15, h * 0.3, 0.05], r: [0, 0, -0.5] }, { color: PLASMA, mat: "glow" });
+    const c = ck.build(`plasma${i}`)[0];
+    const a = (i / 7) * Math.PI * 2 + 0.4;
+    c.position.set(Math.cos(a) * (R - 0.35), 0.3, Math.sin(a) * (R - 0.35));
+    c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
+    crystals.push(c);
+  }
+  return { meshes, flames, crystals, firePos: [fire[0], 1, fire[2]], plasmaPos: [0, 1.6, 0] };
 }
+
+/** Plasma extraterestră din mină: verde-cyan rece. */
+export const PLASMA = hex("#5cffc8");
+const PLASMA_DEEP = hex("#2fd6ff");

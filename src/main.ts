@@ -7,6 +7,7 @@ import { Sfx } from "./audio/Sfx";
 import {
   CONFIG,
   type Command,
+  type Difficulty,
   type EntityId,
   GameSimulation,
   type GameState,
@@ -21,10 +22,14 @@ import {
   canUpgradeBarricade,
   canUpgradeTower,
   defaultBarricadeRotation,
+  type TowerKind,
   heroById,
   nextInChain,
   snapBarricade,
   towerAt,
+  towerRefund,
+  towerStats,
+  towerUpgradeCost,
 } from "./core";
 import { FireStick } from "./input/FireStick";
 import { Keyboard } from "./input/Keyboard";
@@ -44,6 +49,9 @@ const fireStick = new FireStick(document.getElementById("fire-stick")!, document
 const sfx = new Sfx();
 
 let sim: GameSimulation | null = null;
+let paused = false;
+let playerName = "";
+let difficulty: Difficulty = "easy";
 let accumulator = 0;
 let lastMove = { x: 0, z: 0 };
 let lastAim = "";
@@ -56,7 +64,8 @@ function localHero(state: GameState) {
 
 function startGame(heroClass: HeroClass): void {
   renderer.reset();
-  sim = new GameSimulation({ players: [{ id: LOCAL_PLAYER, heroClass }] });
+  sim = new GameSimulation({ players: [{ id: LOCAL_PLAYER, heroClass, name: playerName }], difficulty });
+  paused = false;
   accumulator = 0;
   lastMove = { x: 0, z: 0 };
   lastAim = "";
@@ -106,6 +115,31 @@ function inFrontOfHero(distance: number): Vec2 {
   return { x: hero.pos.x + Math.sin(hero.facing) * distance, z: hero.pos.z + Math.cos(hero.facing) * distance };
 }
 
+/** Problema ține de loc (nu de lemn sau sloturi)? */
+const isSpotProblem = (p: string | null) => p !== null && !p.startsWith("Ai nevoie") && p !== "Nu mai ai sloturi libere";
+
+/**
+ * Primul loc liber în fața eroului (apoi tot mai lateral), ca fantoma să apară
+ * direct într-un loc bun — nu peste mină sau peste o casă.
+ */
+function firstFreeSpot(kind: "tower" | "wall"): [Vec2, number] {
+  const hero = localHero(sim!.state);
+  // Direcții (unghiuri pe hartă): întâi încotro privește eroul dacă e spre partea de sus a ecranului,
+  // apoi lateral și în sus — jos e paleta, acolo nu se vede bine fantoma.
+  const dirs = [Math.PI / 2, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, 0, (Math.PI * 3) / 4, (-Math.PI * 3) / 4, Math.PI];
+  if (Math.cos(hero.facing) > -0.2) dirs.unshift(hero.facing);
+  for (const d of kind === "tower" ? [3.5, 4.5, 5.5] : [3, 4, 5]) {
+    for (const a of dirs) {
+      const pos = { x: hero.pos.x + Math.sin(a) * d, z: hero.pos.z + Math.cos(a) * d };
+      const rot = kind === "wall" ? autoRotation(pos) : 0;
+      const p = kind === "tower" ? canBuildTower(sim!.state, LOCAL_PLAYER, pos) : canBuildBarricade(sim!.state, LOCAL_PLAYER, pos, rot);
+      if (!isSpotProblem(p)) return [pos, rot];
+    }
+  }
+  const pos = inFrontOfHero(kind === "tower" ? 3.5 : 3);
+  return [pos, kind === "wall" ? autoRotation(pos) : 0];
+}
+
 function startPlacing(kind: "tower" | "wall", mode: "place" | "move", pos: Vec2, rotation: number, id: EntityId | null = null): void {
   placing = { kind, mode, id, pos, rotation };
   setBuildMode("place");
@@ -132,7 +166,7 @@ function refreshPlacing(): void {
   if (!placing) return;
   const problem = placeProblem();
   const kind = placing.kind === "tower" ? "tower" : "barricade";
-  renderer.setGhost(placing.pos, kind, problem === null, placing.kind === "tower" ? CONFIG.tower.tiers[0].range : 0, placing.rotation);
+  renderer.setGhost(placing.pos, kind, problem === null, placing.kind === "tower" ? CONFIG.tower.kinds.crossbow.range : 0, placing.rotation);
   hud.showPlaceBar(placing.kind, placing.mode, problem);
 }
 
@@ -167,8 +201,7 @@ function pick(kind: "tower" | "wall" | "mine"): void {
     else send({ type: "placeMine", playerId: LOCAL_PLAYER });
     return;
   }
-  const pos = inFrontOfHero(kind === "tower" ? 3.5 : 3);
-  startPlacing(kind, "place", pos, kind === "wall" ? autoRotation(pos) : 0);
+  startPlacing(kind, "place", ...firstFreeSpot(kind));
 }
 
 /** Tap în paletă: pe un turn sau zid de-al tău → meniul de editare. */
@@ -187,18 +220,42 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
   };
   const tower = towerAt(s, pos);
   if (tower && tower.ownerId === LOCAL_PLAYER) {
-    const maxed = tower.tier >= CONFIG.tower.tiers.length;
-    const next = CONFIG.tower.tiers[tower.tier];
-    renderer.setSelection(tower.pos, 1.6);
-    hud.showBuildMenu(screenX, screenY, [
-      {
-        label: maxed ? `🏰 Tier ${tower.tier} (maxim)` : `⬆ Upgrade la tier ${tower.tier + 1}`,
-        detail: maxed ? undefined : `🪵 ${next.cost} · damage ${next.damage}`,
-        blocked: maxed ? "Tier maxim" : canUpgradeTower(s, LOCAL_PLAYER, tower.id),
+    const stats = towerStats(tower.kind, tower.level);
+    const options: MenuOption[] = [];
+    if (tower.level < CONFIG.tower.maxLevel) {
+      const next = towerStats(tower.kind, tower.level + 1);
+      options.push({
+        label: `⬆ ${stats.name} nivel ${tower.level + 1}`,
+        detail: `🪵 ${towerUpgradeCost(tower)} · damage ${Math.round(stats.damage)} → ${Math.round(next.damage)}`,
+        blocked: canUpgradeTower(s, LOCAL_PLAYER, tower.id),
+        full: true,
         onClick: act({ type: "upgradeTower", playerId: LOCAL_PLAYER, towerId: tower.id }),
-      },
-      cancel,
-    ]);
+      });
+    }
+    // Arbaleta (turnul de bază) se poate transforma în celelalte tipuri.
+    if (tower.kind === "crossbow") {
+      for (const kind of ["rocket", "cannon", "tesla", "frost"] as TowerKind[]) {
+        const info = TOWER_INFO[kind];
+        options.push({
+          label: `${info.icon} ${CONFIG.tower.kinds[kind].name}`,
+          detail: `🪵 ${towerUpgradeCost(tower, kind)} · ${info.text}`,
+          blocked: canUpgradeTower(s, LOCAL_PLAYER, tower.id, kind),
+          className: `kind-${kind}`,
+          onClick: act({ type: "upgradeTower", playerId: LOCAL_PLAYER, towerId: tower.id, to: kind }),
+        });
+      }
+    }
+    options.push({
+      label: "🔨 Demolează",
+      detail: `+${towerRefund(tower)} 🪵`,
+      className: "kind-demolish",
+      full: tower.kind !== "crossbow",
+      onClick: act({ type: "demolishTower", playerId: LOCAL_PLAYER, towerId: tower.id }),
+    });
+    options.push(cancel);
+    renderer.setSelection(tower.pos, 1.6);
+    const info = TOWER_INFO[tower.kind];
+    hud.showBuildMenu(screenX, screenY, options, `${info.icon} ${stats.name} · nivel ${tower.level} · ❤ ${Math.ceil(tower.hp)}/${tower.maxHp}<br><small>★ ${info.ability}</small>`);
     return;
   }
   const b = barricadeAt(s, pos);
@@ -241,20 +298,50 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
   hud.hint("Alege din paleta de jos: Turn, Zid sau Mină");
 }
 
+/** Descrierea scurtă a fiecărui tip de turn (pentru meniul de upgrade). */
+const TOWER_INFO: Record<TowerKind, { icon: string; text: string; ability: string }> = {
+  crossbow: { icon: "🏹", text: "o țintă", ability: "La câteva secunde: o săgeată grea care trece prin 3 zombi" },
+  rocket: { icon: "🚀", text: "damage mare, o țintă", ability: "Racheta mare explodează și lansează mini-rachete" },
+  cannon: { icon: "💣", text: "explozie pe zonă, lent", ability: "Ghiuleaua lasă foc pe jos câteva secunde" },
+  tesla: { icon: "⚡", text: "fulger, damage mare", ability: "Laser care trece prin toți zombii din linie" },
+  frost: { icon: "❄", text: "-30% viteză și atac", ability: "Îngheață complet zombii din jur" },
+};
+
 // =====================================================================
 // HUD
 // =====================================================================
 
 const hud = new Hud({
+  onMenuStart: (name, diff) => {
+    playerName = name;
+    difficulty = diff;
+    hud.showHeroSelect(name);
+  },
   onPickHero: startGame,
+  onToggleSound: () => {
+    sfx.setMuted(!sfx.muted);
+    saveSetting("im.sound", !sfx.muted);
+    return !sfx.muted;
+  },
+  onToggleMusic: () => {
+    sfx.setMusicOn(!sfx.musicOn);
+    saveSetting("im.music", sfx.musicOn);
+    return sfx.musicOn;
+  },
+  onPause: (p) => {
+    paused = p;
+  },
+  onQuitToMenu: () => {
+    sim = null;
+    paused = false;
+    renderer.reset();
+    setBuildMode("off");
+    hud.showMainMenu();
+  },
   onToggleBuild: () => setBuildMode(buildMode === "off" ? "palette" : "off"),
   onPick: pick,
   onStartNight: () => send({ type: "startNightNow", playerId: LOCAL_PLAYER }),
   onShopRoll: () => send({ type: "shopRoll", playerId: LOCAL_PLAYER }),
-  onToggleMute: () => {
-    sfx.setMuted(!sfx.muted);
-    return sfx.muted;
-  },
   onReload: () => send({ type: "reload", playerId: LOCAL_PLAYER }),
   onWallRotate: rotateWall,
   onWallPlace: confirmPlace,
@@ -263,7 +350,7 @@ const hud = new Hud({
     sim = null;
     renderer.reset();
     setBuildMode("off");
-    hud.showHeroSelect();
+    hud.showHeroSelect(playerName);
   },
   onSpinTick: () => sfx.spinTick(),
   onReelStop: () => sfx.reelStop(),
@@ -276,7 +363,10 @@ const hud = new Hud({
 
 let downAt: { x: number; y: number } | null = null;
 let mouseFiring = false;
-let mouseGround: Vec2 | null = null;
+/** Ultima poziție a mouse-ului pe ecran (ochirea se recalculează în fiecare cadru, chiar dacă se mișcă camera). */
+let mouseScreen: { x: number; y: number } | null = null;
+/** Degetul care ține apăsat pe ecran (în afara butoanelor): trage spre acel punct. */
+let touchAim: { id: number; x: number; y: number } | null = null;
 
 function tapAt(x: number, y: number, mouse: boolean): void {
   if (buildMode === "off") return;
@@ -292,11 +382,21 @@ function tapAt(x: number, y: number, mouse: boolean): void {
 }
 canvas.addEventListener("pointerdown", (e) => {
   downAt = { x: e.clientX, y: e.clientY };
-  // Pe calculator: click ținut apăsat = trage spre cursor (când nu construiești).
-  if (e.pointerType === "mouse" && e.button === 0 && buildMode === "off") mouseFiring = true;
+  if (buildMode !== "off" || !sim) return;
+  // Calculator: click ținut = trage spre cursor. Telefon: ții degetul pe ecran = trage acolo.
+  if (e.pointerType === "mouse") {
+    if (e.button === 0) mouseFiring = true;
+    mouseScreen = { x: e.clientX, y: e.clientY };
+  } else if (!touchAim) {
+    touchAim = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  }
 });
 window.addEventListener("pointerup", (e) => {
   if (e.pointerType === "mouse") mouseFiring = false;
+  if (touchAim?.id === e.pointerId) touchAim = null;
+});
+window.addEventListener("pointercancel", (e) => {
+  if (touchAim?.id === e.pointerId) touchAim = null;
 });
 canvas.addEventListener("pointerup", (e) => {
   if (!downAt) return;
@@ -307,29 +407,57 @@ canvas.addEventListener("pointerup", (e) => {
 // Zona joystick-ului acoperă stânga-jos; o atingere scurtă acolo contează tot ca tap de construcție.
 joystick.onTap = (x, y) => tapAt(x, y, false);
 canvas.addEventListener("pointermove", (e) => {
+  if (touchAim?.id === e.pointerId) {
+    touchAim.x = e.clientX;
+    touchAim.y = e.clientY;
+  }
   if (e.pointerType !== "mouse") return;
-  mouseGround = renderer.pickGround(e.clientX, e.clientY);
-  if (placing && mouseGround) setPlacePos(mouseGround);
+  mouseScreen = { x: e.clientX, y: e.clientY };
+  const ground = renderer.pickGround(e.clientX, e.clientY);
+  if (placing && ground) setPlacePos(ground);
 });
 
-keyboard.onPress("KeyB", () => sim && setBuildMode(buildMode === "off" ? "palette" : "off"));
-keyboard.onPress("Escape", () => setBuildMode(buildMode === "place" ? "palette" : "off"));
+keyboard.onPress("KeyB", () => sim && !paused && setBuildMode(buildMode === "off" ? "palette" : "off"));
+keyboard.onPress("Escape", () => {
+  if (!sim) return;
+  if (buildMode !== "off") setBuildMode(buildMode === "place" ? "palette" : "off");
+  else if (hud.shopOpen) hud.setShopOpen(false);
+  else hud.setPaused(!hud.paused);
+});
 keyboard.onPress("KeyR", () => (placing ? rotateWall() : send({ type: "reload", playerId: LOCAL_PLAYER })));
 keyboard.onPress("Enter", () => (placing ? confirmPlace() : send({ type: "startNightNow", playerId: LOCAL_PLAYER })));
-keyboard.onPress("KeyC", () => sim && hud.setShopOpen(!hud.shopOpen));
+keyboard.onPress("KeyC", () => sim && !paused && hud.setShopOpen(!hud.shopOpen));
 keyboard.onPress("Digit1", () => buildMode !== "off" && pick("tower"));
 keyboard.onPress("Digit2", () => buildMode !== "off" && pick("wall"));
 keyboard.onPress("Digit3", () => buildMode !== "off" && pick("mine"));
 
-/** Ochirea: butonul de tras (telefon), mouse-ul sau Space (ochire automată). */
+/** Direcția de la erou spre un punct de pe ecran. */
+function aimAtScreen(state: GameState, x: number, y: number): { x: number; z: number } | null {
+  const ground = renderer.pickGround(x, y);
+  if (!ground) return null;
+  const hero = localHero(state);
+  return { x: ground.x - hero.pos.x, z: ground.z - hero.pos.z };
+}
+
+/** Ochirea: butonul de tras, degetul pe ecran, mouse-ul sau Space. */
 function aimCommand(state: GameState): Command | null {
   const stick = fireStick.get();
   if (stick.firing) return { type: "aim", playerId: LOCAL_PLAYER, x: stick.x, z: stick.z, firing: true, auto: stick.auto };
   const hero = localHero(state);
-  if (mouseFiring && mouseGround) {
-    return { type: "aim", playerId: LOCAL_PLAYER, x: mouseGround.x - hero.pos.x, z: mouseGround.z - hero.pos.z, firing: true, auto: false };
+  if (touchAim && buildMode === "off") {
+    const d = aimAtScreen(state, touchAim.x, touchAim.y);
+    if (d) return { type: "aim", playerId: LOCAL_PLAYER, x: d.x, z: d.z, firing: true, auto: false };
   }
-  if (keyboard.isDown("Space") && !placing) return { type: "aim", playerId: LOCAL_PLAYER, x: 0, z: 1, firing: true, auto: true };
+  const toMouse = mouseScreen ? aimAtScreen(state, mouseScreen.x, mouseScreen.y) : null;
+  if (mouseFiring && toMouse && buildMode === "off") {
+    return { type: "aim", playerId: LOCAL_PLAYER, x: toMouse.x, z: toMouse.z, firing: true, auto: false };
+  }
+  // Space: trage spre cursor (dacă folosești mouse-ul), altfel ochește singur.
+  if (keyboard.isDown("Space") && !placing) {
+    return toMouse
+      ? { type: "aim", playerId: LOCAL_PLAYER, x: toMouse.x, z: toMouse.z, firing: true, auto: false }
+      : { type: "aim", playerId: LOCAL_PLAYER, x: 0, z: 1, firing: true, auto: true };
+  }
   return { type: "aim", playerId: LOCAL_PLAYER, x: hero.aim.x, z: hero.aim.z, firing: false, auto: true };
 }
 
@@ -367,8 +495,8 @@ renderer.engine.runRenderLoop(() => {
       lastAim = aimKey;
     }
 
-    // 2. Simularea avansează în pași FICȘI (aceleași rezultate pe orice telefon).
-    accumulator += dt;
+    // 2. Simularea avansează în pași FICȘI (aceleași rezultate pe orice telefon). În pauză stă pe loc.
+    if (!paused) accumulator += dt;
     while (accumulator >= STEP) {
       sim.step(STEP);
       accumulator -= STEP;
@@ -378,6 +506,10 @@ renderer.engine.runRenderLoop(() => {
     const events = sim.drainEvents();
     renderer.sync(state, events, LOCAL_PLAYER, dt);
     hud.update(state, LOCAL_PLAYER, events, dt);
+    // Bara de viață a minei stă pe sol, chiar în fața ei (nu se suprapune cu panourile de sus).
+    const mineAt = renderer.projectToScreen({ x: state.shelter.pos.x + state.shelter.radius + 0.6, z: state.shelter.pos.z }, 1);
+    const onScreen = mineAt.x > 0 && mineAt.x < window.innerWidth && mineAt.y > 60 && mineAt.y < window.innerHeight;
+    hud.setMineScreen(onScreen ? mineAt : null);
     sfx.update({
       events,
       localPlayer: LOCAL_PLAYER,
@@ -394,7 +526,25 @@ renderer.engine.runRenderLoop(() => {
   renderer.render();
 });
 
-hud.showHeroSelect();
+// Setările de sunet păstrate de la o sesiune la alta.
+function loadSetting(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== "0";
+  } catch {
+    return true;
+  }
+}
+function saveSetting(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    // fără salvare
+  }
+}
+sfx.setMuted(!loadSetting("im.sound"));
+sfx.setMusicOn(loadSetting("im.music"));
+hud.setAudioLabels(!sfx.muted, sfx.musicOn);
+hud.showMainMenu();
 
 // Pentru depanare în consola browserului: game().state, renderer.setCameraOffset(...)
 if (import.meta.env.DEV) Object.assign(window, { game: () => sim, renderer });

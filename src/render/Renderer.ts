@@ -25,6 +25,8 @@ import {
   type GameState,
   type Hero,
   SKINS,
+  type Shell,
+  type TowerKind,
   type Vec2,
   type ZombieType,
   segmentEnds,
@@ -32,14 +34,27 @@ import {
 import { Fx } from "./Fx";
 import { Materials, ModelKit } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
-import { buildCoin, buildFlame, buildMine, buildTowerBase, buildTowerHead, buildWall, towerHeadY } from "./models/structures";
+import {
+  type ShellModel,
+  TOWER_COLORS,
+  buildChest,
+  buildCoin,
+  buildFlame,
+  buildIceShell,
+  buildMine,
+  buildShell,
+  buildTowerBase,
+  buildTowerHead,
+  buildWall,
+  towerHeadY,
+} from "./models/structures";
 import { PAL, hex, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
 import { Prefab, World } from "./World";
 
 const CAMERA_OFFSET = new Vector3(0, 20, -15);
 const ZOMBIE_SCALE: Record<ZombieType, number> = { walker: 1, runner: 0.88, spitter: 1, flyer: 1, brute: 1, boss: 1 };
-const HP_BAR_Y: Partial<Record<ZombieType, number>> = { brute: 2.7, boss: 4.4 };
+const HP_BAR_Y: Partial<Record<ZombieType, number>> = { brute: 3.0, boss: 5.3 };
 /** Turnurile sunt desenate puțin mai mici decât modelul (mai ușor de așezat). */
 const TOWER_SCALE = 0.85;
 
@@ -97,6 +112,7 @@ interface ZombieView {
   legL: TransformNode;
   legR: TransformNode;
   fire: TransformNode | null;
+  ice: InstancedMesh | null;
   bar: HpBar | null;
   type: ZombieType;
   walk: number;
@@ -111,10 +127,28 @@ interface TowerView {
   root: TransformNode;
   base: InstancedMesh[];
   head: TransformNode;
-  flame: InstancedMesh;
-  tier: number;
+  key: string;
+  level: number;
+  kind: TowerKind;
   kick: number;
+  bar: HpBar;
   dispose(): void;
+}
+
+interface ShellView {
+  mesh: InstancedMesh;
+  last: Vector3 | null;
+  trail: number;
+  dispose(): void;
+}
+
+/** O construcție distrusă care se prăbușește (animație), apoi dispare. */
+interface Collapse {
+  root: TransformNode;
+  t: number;
+  tiltX: number;
+  tiltZ: number;
+  y0: number;
 }
 
 interface BarricadeView {
@@ -141,7 +175,10 @@ export class Renderer {
 
   private zombiePrefabs = {} as Record<ZombieType, { model: ZombieModel; body: Prefab; armL: Prefab; armR: Prefab; legL: Prefab; legR: Prefab }>;
   private towerBases: Prefab[] = [];
-  private towerHeads: Prefab[] = [];
+  private towerHeads = new Map<string, Prefab>();
+  private shellPrefabs = {} as Record<ShellModel, Prefab>;
+  private iceShell!: Prefab;
+  private chest!: Prefab;
   private flame!: Prefab;
   private walls = new Map<string, Prefab>();
   private mine!: Prefab;
@@ -156,6 +193,11 @@ export class Renderer {
   private mineViews = new Map<EntityId, { root: TransformNode; light: InstancedMesh | undefined; dispose(): void }>();
   private coinViews = new Map<EntityId, InstancedMesh>();
   private projectileViews = new Map<EntityId, { mesh: InstancedMesh; trail: number; dispose(): void }>();
+  private shellViews = new Map<EntityId, ShellView>();
+  private fireViews = new Map<EntityId, { root: TransformNode; flames: TransformNode[]; dispose(): void }>();
+  private chestViews = new Map<EntityId, { root: TransformNode; beam: Mesh; dispose(): void }>();
+  private collapsing: Collapse[] = [];
+  private destroyed = new Set<EntityId>();
   private killed = new Map<EntityId, boolean>();
   private shelterShake = 0;
 
@@ -194,6 +236,7 @@ export class Renderer {
     tint("hpBg", new Color3(0.05, 0.06, 0.08), 0.75);
     tint("hpZombie", mix(PAL.blood, new Color3(1, 0.2, 0.2), 0.5), 1);
     tint("hpWall", mix(PAL.oldWood, PAL.gold, 0.5), 1);
+    tint("chestBeam", PAL.gold, 0.18);
 
     this.createPrefabs();
 
@@ -212,7 +255,7 @@ export class Renderer {
       }
     };
     ghostOf(this.towerBases[0].sources, this.ghostTower);
-    ghostOf(this.towerHeads[0].sources, this.ghostTower, towerHeadY(1));
+    ghostOf(this.towerHeads.get("crossbow1")!.sources, this.ghostTower, towerHeadY(1));
     ghostOf(this.walls.get("1")!.sources, this.ghostWall);
     this.footTower = MeshBuilder.CreateDisc("footTower", { radius: CONFIG.tower.radius + 0.2, tessellation: 40 }, this.scene);
     this.footTower.rotation.x = Math.PI / 2;
@@ -245,11 +288,19 @@ export class Renderer {
       [prefab.body, prefab.armL, prefab.armR, prefab.legL, prefab.legR].forEach(caster);
       this.zombiePrefabs[type] = prefab;
     }
-    for (let tier = 1; tier <= 4; tier++) {
-      this.towerBases.push(new Prefab(buildTowerBase(s, this.mats, tier)));
-      this.towerHeads.push(new Prefab(buildTowerHead(s, this.mats, tier)));
+    for (let level = 1; level <= CONFIG.tower.maxLevel; level++) {
+      this.towerBases.push(new Prefab(buildTowerBase(s, this.mats, level)));
+      for (const kind of Object.keys(CONFIG.tower.kinds) as TowerKind[]) {
+        this.towerHeads.set(`${kind}${level}`, new Prefab(buildTowerHead(s, this.mats, kind, level)));
+      }
     }
-    [...this.towerBases, ...this.towerHeads].forEach(caster);
+    [...this.towerBases, ...this.towerHeads.values()].forEach(caster);
+    for (const model of ["arrow", "heavy", "rocket", "ball", "fireball", "ice"] as ShellModel[]) {
+      this.shellPrefabs[model] = new Prefab([buildShell(s, this.mats, model)]);
+    }
+    this.iceShell = new Prefab([buildIceShell(s, this.mats)]);
+    this.chest = new Prefab(buildChest(s, this.mats));
+    caster(this.chest);
     this.flame = new Prefab([buildFlame(s, this.mats)]);
     for (const level of [1, 2]) {
       for (const door of [false, true]) {
@@ -271,6 +322,7 @@ export class Renderer {
   sync(state: GameState, events: GameEvent[], localPlayerId: string, dt: number): void {
     this.time += dt;
     this.killed.clear();
+    this.destroyed.clear();
     const me = state.players[localPlayerId];
     this.localHeroId = me?.heroId ?? null;
     for (const e of events) this.handleEvent(state, e);
@@ -282,7 +334,11 @@ export class Renderer {
     this.syncMines(state);
     this.syncCoins(state);
     this.syncProjectiles(state);
+    this.syncShells(state);
+    this.syncFires(state);
+    this.syncChests(state);
     this.updateDying(dt);
+    this.updateCollapsing(dt);
     this.fx.update(dt);
 
     // Adăpostul tremură când e lovit.
@@ -345,18 +401,30 @@ export class Renderer {
 
   private handleEvent(state: GameState, e: GameEvent): void {
     switch (e.type) {
+      case "towerFired":
+        this.onTowerFired(state, e.towerId, e.kind, e.to, e.special);
+        break;
+      case "towerAbility":
+        this.onTowerAbility(state, e.towerId, e.kind, e.pos, e.to);
+        break;
+      case "shellHit":
+        this.onShellHit(e.kind, e.special, e.pos, e.splash);
+        break;
+      case "towerHit":
+        this.fx.burst("stone", this.at(e.pos, 0.9), null, 3, 3, 0.1);
+        break;
+      case "towerDestroyed":
+        this.destroyed.add(e.id);
+        this.fx.dust(this.at(e.pos, 0.3), 1.8, 1.4);
+        this.fx.burst("stone", this.at(e.pos, 1.2), null, 16, 6, 0.18);
+        this.fx.burst("wood", this.at(e.pos, 1.5), null, 10, 5, 0.12);
+        break;
+      case "chestOpened":
+        this.fx.ring(this.at(e.pos, 0.15), 3, PAL.gold, 0.8);
+        this.fx.burst("spark", this.at(e.pos, 1), null, 30, 7, 0.09);
+        this.fx.muzzle(this.at(e.pos, 1), PAL.gold, 2.2, 0.25);
+        break;
       case "shot": {
-        if (e.source === "tower") {
-          const t = state.towers.find((x) => x.pos.x === e.from.x && x.pos.z === e.from.z);
-          const view = t && this.towerViews.get(t.id);
-          if (view) view.kick = 1;
-          const f = t?.facing ?? 0;
-          const from = this.at(e.from, (towerHeadY(t?.tier ?? 1) + 0.6) * TOWER_SCALE).add(new Vector3(Math.sin(f), 0, Math.cos(f)).scale(0.8));
-          const target = state.zombies.find((z) => Math.abs(z.pos.x - e.to.x) < 0.01 && Math.abs(z.pos.z - e.to.z) < 0.01);
-          this.fx.bolt(from, this.at(e.to, 1.1 + (target ? this.zombieY(target.type) : 0)));
-          this.fx.muzzle(from, PAL.fire, 0.25);
-          break;
-        }
         const hero = e.heroId !== undefined ? state.heroes.find((h) => h.id === e.heroId) : undefined;
         const view = hero && this.heroViews.get(hero.id);
         const from = hero && view ? this.muzzleOf(hero, view) : this.at(e.from, 1.3);
@@ -426,6 +494,8 @@ export class Renderer {
         this.fx.burst("wood", this.at(e.pos, 0.9), null, 3, 3, 0.08);
         break;
       case "barricadeDestroyed":
+        this.destroyed.add(e.id);
+        this.fx.dust(this.at(e.pos, 0.2), 1.3, 0.9);
         this.fx.burst("wood", this.at(e.pos, 0.8), null, 18, 6, 0.14);
         this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.18);
         break;
@@ -434,7 +504,11 @@ export class Renderer {
         break;
       case "shelterHit":
         this.shelterShake = 1;
-        if (Math.random() < 0.4) this.fx.burst("wood", new Vector3((Math.random() - 0.5) * 4, 1.5, -2.6), null, 3, 3, 0.08);
+        if (Math.random() < 0.5) {
+          const a = Math.random() * Math.PI * 2;
+          this.fx.burst("plasma", new Vector3(Math.cos(a) * 1.6, 1.2, Math.sin(a) * 1.6), null, 4, 3, 0.08);
+          this.fx.burst("stone", new Vector3(Math.cos(a) * 2, 0.8, Math.sin(a) * 2), null, 2, 3, 0.1);
+        }
         break;
       case "levelUp": {
         const h = state.heroes.find((x) => x.id === e.heroId);
@@ -446,7 +520,11 @@ export class Renderer {
       }
       case "towerUpgraded": {
         const t = state.towers.find((x) => x.id === e.id);
-        if (t) this.fx.burst("spark", this.at(t.pos, 2.5), null, 14, 4, 0.07);
+        if (t) {
+          this.fx.burst("spark", this.at(t.pos, 2.5), null, 18, 4, 0.08);
+          this.fx.ring(this.at(t.pos, 0.2), 2.2, TOWER_COLORS[t.kind], 0.6);
+          this.fx.dust(this.at(t.pos, 0.2), 1, 0.4);
+        }
         break;
       }
       case "barricadePlaced":
@@ -597,6 +675,7 @@ export class Renderer {
       legL: pivot(prefab.legL, -hip[0], hip[1], 0),
       legR: pivot(prefab.legR, hip[0], hip[1], 0),
       fire: null,
+      ice: null,
       bar,
       type,
       walk: (id * 1.7) % 6,
@@ -610,6 +689,20 @@ export class Renderer {
       },
     };
     return view;
+  }
+
+  /** Înghețat de turnul de gheață: cristale în jurul lui. */
+  private setFrozen(view: ZombieView, frozen: boolean): void {
+    if (frozen && !view.ice) {
+      const [ice] = this.iceShell.instance("zIce", view.root);
+      const big = view.type === "boss" ? 2.4 : view.type === "brute" ? 1.6 : view.type === "runner" ? 1.1 : 1;
+      ice.scaling.setAll(big);
+      view.ice = ice;
+    } else if (!frozen && view.ice) {
+      view.ice.dispose();
+      view.ice = null;
+      this.fx.burst("ice", view.root.position.add(new Vector3(0, 1, 0)), null, 10, 4, 0.09);
+    }
   }
 
   /** Flăcări pe un zombie care arde în zori. */
@@ -635,7 +728,10 @@ export class Renderer {
       view.lastPos = { ...z.pos };
       const speed = moved / Math.max(dt, 0.001);
       const runner = z.type === "runner";
-      view.walk += speed * dt * (runner ? 3.2 : 2.2) + dt * 0.8;
+      const frozen = z.frozenTimer > 0;
+      this.setFrozen(view, frozen);
+      if (!frozen) view.walk += speed * dt * (runner ? 3.2 : 2.2) + dt * 0.8;
+      if (z.chillTimer > 0 && !frozen && Math.random() < dt * 4) this.fx.burst("ice", this.at(z.pos, 1.2 + this.zombieY(z.type)), null, 1, 1.5, 0.06);
       const amp = Math.min(1, speed / 1.5);
       const w = view.walk;
 
@@ -648,7 +744,7 @@ export class Renderer {
       let diff = z.facing - view.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       view.root.rotation.y += diff * Math.min(1, dt * 8);
-      view.root.rotation.x = view.knock * -0.15 + (runner ? 0.15 : 0) + lunge * 0.4;
+      view.root.rotation.x = view.knock * -0.15 + lunge * 0.4;
       view.root.rotation.z = Math.sin(w * 0.5) * 0.08;
 
       if (flying) {
@@ -658,6 +754,14 @@ export class Renderer {
         view.armR.rotation.z = -flap;
         view.legL.rotation.x = 0.3;
         view.legR.rotation.x = 0.4;
+      } else if (runner) {
+        // Galop în patru labe: labele din față și cele din spate în contratimp; la atac sare cu ghearele.
+        const g = Math.sin(w * 1.3) * 0.75 * Math.max(0.25, amp);
+        view.armL.rotation.x = g - view.attack * 1.1;
+        view.armR.rotation.x = -g * 0.8 - view.attack * 1.1;
+        view.legL.rotation.x = -g;
+        view.legR.rotation.x = g * 0.8;
+        view.root.rotation.x = Math.sin(w * 2.6) * 0.05 - view.attack * 0.25;
       } else {
         // Mers șchiopătat; brațele întinse înainte. La atac le ridică și lovește.
         view.legL.rotation.x = Math.sin(w) * 0.6 * amp;
@@ -707,34 +811,251 @@ export class Renderer {
   // ---------- Construcții ----------
 
   private syncTowers(state: GameState, dt: number): void {
-    syncMap(this.towerViews, state.towers, () => {
+    syncMap(this.towerViews, state.towers, (t) => {
       const root = new TransformNode("tower", this.scene);
       root.scaling.setAll(TOWER_SCALE);
       const head = new TransformNode("towerHead", this.scene);
       head.parent = root;
-      const flameNode = new TransformNode("towerFlame", this.scene);
-      flameNode.parent = root;
-      flameNode.position.set(0, 0.85, -1.15);
-      const [flame] = this.flame.instance("towerFlame", flameNode);
-      return { root, base: [], head, flame, tier: 0, kick: 0, dispose: () => root.dispose() };
+      const bar = new HpBar(this.scene, this.m.hpBg, this.m.hpWall, 1.8);
+      return {
+        root, base: [], head, key: "", level: 0, kind: t.kind, kick: 0, bar,
+        dispose: () => {
+          root.dispose();
+          bar.dispose();
+        },
+      };
     }, (view, t) => {
-      view.root.position.set(t.pos.x, terrainHeight(t.pos.x, t.pos.z), t.pos.z);
+      const y = terrainHeight(t.pos.x, t.pos.z);
+      view.root.position.set(t.pos.x, y, t.pos.z);
       // Arma de pe pivot se rotește lin spre țintă și „sare” puțin la fiecare foc.
       let diff = t.facing - view.head.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       view.head.rotation.y += diff * Math.min(1, dt * 10);
-      view.kick = Math.max(0, view.kick - dt * 8);
-      view.head.rotation.x = -view.kick * 0.15;
-      if (view.tier !== t.tier) {
-        // Tier nou: altă bază și altă armă.
+      view.kick = Math.max(0, view.kick - dt * 6);
+      view.head.rotation.x = t.kind === "tesla" || t.kind === "frost" ? 0 : -view.kick * 0.25;
+      const key = `${t.kind}${t.level}`;
+      if (view.key !== key) {
+        // Tip sau nivel nou: altă bază și altă armă.
         for (const m of view.base) m.dispose();
         for (const c of view.head.getChildMeshes()) c.dispose();
-        view.base = this.towerBases[t.tier - 1].instance("towerBase", view.root);
-        this.towerHeads[t.tier - 1].instance("towerHeadMesh", view.head);
-        view.head.position.y = towerHeadY(t.tier);
-        view.tier = t.tier;
+        view.base = this.towerBases[t.level - 1].instance("towerBase", view.root);
+        this.towerHeads.get(key)!.instance("towerHeadMesh", view.head);
+        view.head.position.y = towerHeadY(t.level);
+        view.key = key;
+        view.level = t.level;
+        view.kind = t.kind;
       }
-      view.flame.scaling.set(0.9 + Math.sin(this.time * 11 + t.id) * 0.15, 0.85 + Math.sin(this.time * 13 + t.id * 2) * 0.25, 0.9);
+      // Gheața plutește și se rotește încet; bobina Tesla vibrează.
+      if (t.kind === "frost") view.head.rotation.y = this.time * 0.6;
+      if (t.kind === "tesla") view.head.position.x = Math.sin(this.time * 40) * 0.01;
+      view.bar.set(t.pos, y + 3.6, t.hp / t.maxHp);
+    }, (id, view) => this.startCollapse(id, view.root, () => view.bar.dispose()));
+  }
+
+  /** Construcție distrusă: n-o ștergem brusc, ci o lăsăm să se prăbușească. */
+  private startCollapse(id: EntityId, root: TransformNode, cleanup: () => void): boolean {
+    if (!this.destroyed.has(id)) return false;
+    cleanup();
+    const a = Math.random() * Math.PI * 2;
+    this.collapsing.push({ root, t: 0, tiltX: Math.cos(a) * 1.2, tiltZ: Math.sin(a) * 1.2, y0: root.position.y });
+    return true;
+  }
+
+  private updateCollapsing(dt: number): void {
+    for (let i = this.collapsing.length - 1; i >= 0; i--) {
+      const c = this.collapsing[i];
+      c.t += dt;
+      // Se clatină o clipă, apoi cade (accelerat) și se scufundă în zăpadă.
+      const wobble = c.t < 0.25 ? Math.sin(c.t * 60) * 0.04 : 0;
+      const fall = Math.min(1, Math.max(0, (c.t - 0.2) / 0.7) ** 2);
+      c.root.rotation.x = c.tiltX * fall + wobble;
+      c.root.rotation.z = c.tiltZ * fall;
+      c.root.position.y = c.y0 - fall * 0.6 - Math.max(0, c.t - 1.2) * 1.2;
+      if (c.t > 0.85 && c.t - dt <= 0.85) this.fx.dust(c.root.position.clone(), 1.5, 0.8);
+      if (c.t > 2.6) {
+        c.root.dispose();
+        this.collapsing.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------- Turnuri: tragere, abilități, proiectile ----------
+
+  /** Punctul din care pleacă proiectilul (gura armei). */
+  private towerMuzzle(state: GameState, towerId: EntityId): Vector3 | null {
+    const t = state.towers.find((x) => x.id === towerId);
+    const view = t && this.towerViews.get(t.id);
+    if (!t || !view) return null;
+    const up = t.kind === "tesla" ? 2.0 + t.level * 0.2 : t.kind === "frost" ? 2.4 : 0.8;
+    const fwd = t.kind === "tesla" || t.kind === "frost" ? 0 : t.kind === "cannon" ? 1.5 : 1.2;
+    const f = view.head.rotation.y;
+    return this.at(t.pos, (towerHeadY(t.level) + up) * TOWER_SCALE).add(new Vector3(Math.sin(f), 0, Math.cos(f)).scale(fwd * TOWER_SCALE));
+  }
+
+  private targetPoint(state: GameState, to: Vec2): Vector3 {
+    const z = state.zombies.find((x) => Math.abs(x.pos.x - to.x) < 0.01 && Math.abs(x.pos.z - to.z) < 0.01);
+    return this.at(to, 1.1 + (z ? this.zombieY(z.type) : 0));
+  }
+
+  private onTowerFired(state: GameState, towerId: EntityId, kind: TowerKind, to: Vec2, special: Shell["special"]): void {
+    const view = this.towerViews.get(towerId);
+    if (view) view.kick = 1;
+    const from = this.towerMuzzle(state, towerId);
+    if (!from) return;
+    switch (kind) {
+      case "tesla":
+        this.fx.lightning(from, this.targetPoint(state, to), TOWER_COLORS.tesla, 0.08, 0.14);
+        this.fx.lightning(from, this.targetPoint(state, to), PAL.snow, 0.03, 0.08);
+        break;
+      case "cannon":
+        this.fx.muzzle(from, PAL.fire, 1.1, 0.12);
+        this.fx.burst("smoke", from, null, 6, 2, 0.35);
+        break;
+      case "rocket":
+        this.fx.muzzle(from, PAL.fire, special === "big" ? 1.2 : 0.7, 0.1);
+        this.fx.burst("smoke", from, null, special === "big" ? 8 : 4, 1.5, 0.3);
+        break;
+      case "frost":
+        this.fx.muzzle(from, PAL.ice, 0.6, 0.1);
+        break;
+      default:
+        this.fx.muzzle(from, special === "heavy" ? PAL.fire : PAL.bone, special === "heavy" ? 0.7 : 0.3, 0.06);
+    }
+  }
+
+  private onTowerAbility(state: GameState, towerId: EntityId, kind: TowerKind, pos: Vec2, to: Vec2): void {
+    const view = this.towerViews.get(towerId);
+    if (view) view.kick = 1;
+    if (kind === "tesla") {
+      // Laser gros care trece prin tot.
+      const from = this.towerMuzzle(state, towerId) ?? this.at(pos, 2.5);
+      const end = this.at(to, 1.2);
+      this.fx.tracer(from, end, TOWER_COLORS.tesla, 0.4, 0.35);
+      this.fx.tracer(from, end, PAL.snow, 0.14, 0.35);
+      this.fx.lightning(from, end, TOWER_COLORS.tesla, 0.06, 0.3);
+      this.fx.muzzle(from, TOWER_COLORS.tesla, 1.4, 0.3);
+    } else if (kind === "frost") {
+      const t = state.towers.find((x) => x.id === towerId);
+      const range = t ? CONFIG.tower.kinds.frost.range * (1 + (t.level - 1) * CONFIG.tower.rangePerLevel) : 9;
+      this.fx.ring(this.at(pos, 0.2), range, PAL.ice, 0.7);
+      this.fx.ring(this.at(pos, 0.4), range * 0.6, PAL.snow, 0.5);
+      this.fx.burst("ice", this.at(pos, 2.5), null, 30, 8, 0.12);
+    }
+  }
+
+  private onShellHit(kind: TowerKind, special: Shell["special"], pos: Vec2, splash: number): void {
+    const at = this.at(pos, 0.9);
+    switch (kind) {
+      case "crossbow":
+        this.fx.burst("wood", at, null, special === "heavy" ? 8 : 3, 3, 0.07);
+        if (special === "heavy") this.fx.burst("spark", at, null, 10, 5, 0.07);
+        break;
+      case "rocket": {
+        const r = special === "big" ? splash : special === "mini" ? 0.9 : splash + 0.3;
+        this.fx.explosion(this.at(pos), r);
+        this.fx.burst("smoke", at, null, special === "big" ? 12 : 4, 2, 0.4);
+        break;
+      }
+      case "cannon":
+        // Ghiuleaua bubuie: explozie, pământ și zăpadă aruncate, fum negru.
+        this.fx.explosion(this.at(pos), splash);
+        this.fx.burst("stone", at, null, 10, 7, 0.14);
+        this.fx.burst("smoke", at, null, 10, 2.5, 0.45);
+        this.fx.decal(pos.x, pos.z, 1.2);
+        break;
+      case "frost":
+        this.fx.burst("ice", at, null, 8, 3, 0.08);
+        this.fx.ring(this.at(pos, 0.15), 0.9, PAL.ice, 0.3);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private shellModel(s: Shell): ShellModel {
+    if (s.kind === "rocket") return "rocket";
+    if (s.kind === "cannon") return s.special === "fire" ? "fireball" : "ball";
+    if (s.kind === "frost") return "ice";
+    return s.special === "heavy" ? "heavy" : "arrow";
+  }
+
+  private syncShells(state: GameState): void {
+    syncMap(this.shellViews, state.shells, (s) => {
+      const [mesh] = this.shellPrefabs[this.shellModel(s)].instance("shell");
+      const scale = s.special === "mini" ? 0.55 : s.special === "big" ? 1.6 : 1;
+      mesh.scaling.setAll(scale);
+      return { mesh, last: null, trail: 0, dispose: () => mesh.dispose() };
+    }, (view, s) => {
+      // Arc de zbor: ghiulelele urcă sus, săgețile aproape drept.
+      const done = Math.hypot(s.pos.x - s.from.x, s.pos.z - s.from.z);
+      const left = Math.hypot(s.target.x - s.pos.x, s.target.z - s.pos.z);
+      const p = done / Math.max(0.01, done + left);
+      const t = state.towers.find((x) => x.id === s.towerId);
+      const startY = t ? (towerHeadY(t.level) + 1) * TOWER_SCALE : 1.6;
+      const target = s.targetId !== null ? state.zombies.find((z) => z.id === s.targetId) : undefined;
+      const endY = 1.0 + (target ? this.zombieY(target.type) : 0);
+      const arc = s.kind === "cannon" ? 3 : s.kind === "rocket" ? (s.special === "mini" ? 0.6 : 1.4) : 0.4;
+      const y = startY * (1 - p) + endY * p + Math.sin(p * Math.PI) * arc;
+      const pos = this.at(s.pos, y);
+      if (view.last && Vector3.DistanceSquared(view.last, pos) > 1e-4) view.mesh.lookAt(pos.add(pos.subtract(view.last)));
+      view.last = pos.clone();
+      view.mesh.position.copyFrom(pos);
+      // Dâre: fum la rachete, scântei la ghiulelele cu foc, gheață la cristale.
+      view.trail++;
+      if (s.kind === "rocket") {
+        this.fx.burst("smoke", pos, null, 1, 0.3, s.special === "mini" ? 0.15 : 0.25);
+        if (view.trail % 2 === 0) this.fx.burst("spark", pos, null, 1, 1, 0.06);
+      } else if (s.kind === "cannon" && view.trail % 2 === 0) {
+        this.fx.burst(s.special === "fire" ? "spark" : "smoke", pos, null, 1, 0.4, 0.15);
+      } else if (s.kind === "frost" && view.trail % 2 === 0) {
+        this.fx.burst("ice", pos, null, 1, 0.5, 0.05);
+      } else if (s.special === "heavy") {
+        this.fx.burst("spark", pos, null, 1, 0.5, 0.05);
+      }
+    });
+  }
+
+  /** Focul de pe jos de la ghiuleaua tunului. */
+  private syncFires(state: GameState): void {
+    syncMap(this.fireViews, state.fires, (f) => {
+      const root = new TransformNode("firePatch", this.scene);
+      const flames: TransformNode[] = [];
+      for (let i = 0; i < 7; i++) {
+        const node = new TransformNode("fp", this.scene);
+        node.parent = root;
+        const a = (i / 7) * Math.PI * 2;
+        const r = i === 0 ? 0 : f.radius * 0.55;
+        node.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+        this.flame.instance("fpFlame", node);
+        flames.push(node);
+      }
+      return { root, flames, dispose: () => root.dispose() };
+    }, (view, f) => {
+      view.root.position.set(f.pos.x, terrainHeight(f.pos.x, f.pos.z), f.pos.z);
+      const fade = Math.min(1, f.life * 1.5);
+      view.flames.forEach((n, i) => {
+        const k = (1.2 + Math.abs(Math.sin(this.time * 9 + i * 1.3)) * 0.9) * fade;
+        n.scaling.set(1.3 * fade, k, 1.3 * fade);
+      });
+      if (Math.random() < 0.3) this.fx.burst("smoke", this.at(f.pos, 1.2), null, 1, 0.5, 0.3);
+    });
+  }
+
+  /** Cufărul boss-ului: plutește puțin și are un stâlp de lumină aurie. */
+  private syncChests(state: GameState): void {
+    syncMap(this.chestViews, state.chests, () => {
+      const root = new TransformNode("chest", this.scene);
+      this.chest.instance("chestMesh", root);
+      const beam = MeshBuilder.CreateCylinder("chestBeam", { height: 14, diameterTop: 0.2, diameterBottom: 1.2, tessellation: 12 }, this.scene);
+      beam.material = this.m.chestBeam;
+      beam.isPickable = false;
+      beam.parent = root;
+      beam.position.y = 7;
+      return { root, beam, dispose: () => root.dispose() };
+    }, (view, c) => {
+      view.root.position.set(c.pos.x, terrainHeight(c.pos.x, c.pos.z) + 0.15 + Math.sin(this.time * 2.5) * 0.12, c.pos.z);
+      view.root.rotation.y = this.time * 0.8;
+      if (Math.random() < 0.15) this.fx.burst("spark", this.at(c.pos, 0.8), new Vector3(0, 1, 0), 1, 2, 0.06);
     });
   }
 
@@ -772,7 +1093,7 @@ export class Renderer {
       view.root.rotation.z = Math.sin(b.id) * dmg * 0.12;
       view.root.rotation.x = dmg * 0.08;
       view.bar.set(b.pos, y + 2.6, b.hp / b.maxHp);
-    });
+    }, (id, view) => this.startCollapse(id, view.root, () => view.bar.dispose()));
   }
 
   private syncMines(state: GameState): void {
@@ -868,6 +1189,7 @@ export class Renderer {
   reset(): void {
     const maps: Map<EntityId, { dispose(): void }>[] = [
       this.heroViews, this.zombieViews, this.towerViews, this.barricadeViews, this.coinViews, this.mineViews, this.projectileViews,
+      this.shellViews, this.fireViews, this.chestViews,
     ];
     for (const map of maps) {
       for (const v of map.values()) v.dispose();
@@ -875,6 +1197,8 @@ export class Renderer {
     }
     for (const d of this.dying) d.view.dispose();
     this.dying = [];
+    for (const c of this.collapsing) c.root.dispose();
+    this.collapsing = [];
     this.hideGhost();
     this.setSelection(null);
     this.night = 0;

@@ -3,7 +3,7 @@
 // În faza 3 (multiplayer) exact această clasă va rula pe serverul Colyseus.
 
 import type { Command } from "./commands";
-import { CONFIG, type HeroClass } from "./config";
+import { CONFIG, type Difficulty, type HeroClass } from "./config";
 import { clamp } from "./math";
 import {
   buildBarricade,
@@ -12,11 +12,11 @@ import {
   moveBarricade,
   upgradeBarricade,
 } from "./systems/barricades";
-import { updateCoins } from "./systems/coins";
+import { updateChests, updateCoins } from "./systems/coins";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
-import { buildTower, updateTowers, upgradeTower } from "./systems/towers";
+import { buildTower, demolishTower, updateFires, updateShells, updateTowers, upgradeTower } from "./systems/towers";
 import { startNight, updateWaves } from "./systems/waves";
 import { updateProjectiles, updateZombies } from "./systems/zombies";
 import type { GameEvent, GameState, PlayerId } from "./types";
@@ -24,11 +24,15 @@ import type { GameEvent, GameState, PlayerId } from "./types";
 export interface PlayerSetup {
   id: PlayerId;
   heroClass: HeroClass;
+  /** Numele ales în meniu. */
+  name?: string;
 }
 
 export interface GameOptions {
   players: PlayerSetup[];
   seed?: number;
+  /** Easy = jocul de bază; Medium / Hard / Nightmare = mai mulți zombi, mai puternici. */
+  difficulty?: Difficulty;
 }
 
 export class GameSimulation {
@@ -59,10 +63,13 @@ export class GameSimulation {
     updateWaves(s, dt, this.events);
     updateHeroes(s, dt, this.events);
     updateTowers(s, dt, this.events);
+    updateShells(s, dt, this.events);
+    updateFires(s, dt, this.events);
     updateZombies(s, dt, this.events);
     updateProjectiles(s, dt, this.events);
     updateMines(s, dt, this.events);
     updateCoins(s, dt, this.events);
+    updateChests(s, this.events);
 
     if (s.shelter.hp <= 0) {
       s.phase = "gameover";
@@ -99,7 +106,10 @@ export class GameSimulation {
         break;
       }
       case "upgradeTower":
-        upgradeTower(s, cmd.playerId, cmd.towerId, this.events);
+        upgradeTower(s, cmd.playerId, cmd.towerId, cmd.to, this.events);
+        break;
+      case "demolishTower":
+        demolishTower(s, cmd.playerId, cmd.towerId, this.events);
         break;
       case "moveBarricade":
         moveBarricade(s, cmd.playerId, cmd.barricadeId, { x: cmd.x, z: cmd.z }, cmd.rotation, this.events);
@@ -137,9 +147,10 @@ export class GameSimulation {
   }
 }
 
-function createInitialState({ players, seed = Date.now() }: GameOptions): GameState {
+function createInitialState({ players, seed = Date.now(), difficulty = "easy" }: GameOptions): GameState {
   const state: GameState = {
     time: 0,
+    difficulty,
     phase: "day",
     wave: 0,
     totalWaves: CONFIG.waves.count,
@@ -158,11 +169,14 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
     mines: [],
     coins: [],
     projectiles: [],
+    shells: [],
+    fires: [],
+    chests: [],
     nextId: 1,
     rngState: seed | 0,
   };
 
-  players.forEach(({ id, heroClass }, i) => {
+  players.forEach(({ id, heroClass, name }, i) => {
     const heroId = state.nextId++;
     const stats = CONFIG.heroes[heroClass];
     // Eroii pornesc în jurul adăpostului.
@@ -170,11 +184,12 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
     const r = CONFIG.shelter.radius + 2;
     state.players[id] = {
       id,
+      name: (name ?? "").trim().slice(0, 16) || `Supraviețuitor ${i + 1}`,
       heroId,
       coins: 0,
-      wood: CONFIG.economy.startWood,
+      wood: Math.round(CONFIG.economy.startWood * CONFIG.difficulty[difficulty].wood),
       weapon: "rusty",
-      towerTier: 1,
+      towerTier: 2,
       extraTowerSlots: 0,
       mines: 0,
       maxHpBonus: 0,
@@ -190,7 +205,8 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
       playerId: id,
       heroClass,
       pos: { x: Math.cos(angle) * r, z: Math.sin(angle) * r },
-      facing: 0,
+      // Cu spatele la mină (privește spre sat).
+      facing: Math.atan2(Math.cos(angle), Math.sin(angle)),
       hp: stats.maxHp,
       maxHp: stats.maxHp,
       alive: true,

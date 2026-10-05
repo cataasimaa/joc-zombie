@@ -6,7 +6,7 @@ import { segmentEnds } from "./math";
 import { barricadeSpotProblem, nextInChain, snapBarricade } from "./systems/barricades";
 import { gunStats } from "./systems/heroes";
 import { rollRarity } from "./systems/shop";
-import { canBuildTower, towerSlots } from "./systems/towers";
+import { canBuildTower, towerSlots, towerStats } from "./systems/towers";
 import { nightDuration, waveComposition } from "./systems/waves";
 import { spawnZombie } from "./systems/zombies";
 
@@ -199,6 +199,140 @@ describe("luptă", () => {
   });
 });
 
+/** Un turn de test. */
+function tower(id: number, x: number, z: number, kind: "crossbow" | "rocket" | "cannon" | "tesla" | "frost" = "crossbow") {
+  const hp = towerStats(kind, 1).hp;
+  return { id, ownerId: "p1", kind, pos: { x, z }, level: 1, facing: 0, fireTimer: 0, abilityTimer: 99, hp, maxHp: hp };
+}
+
+describe("turnuri", () => {
+  it("arbaleta se transformă în alt tip și crește în nivel", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.players.p1.wood = 1000;
+    sim.enqueue({ type: "build", playerId: "p1", kind: "tower", x: 8, z: 8 });
+    sim.step(DT);
+    const t = s.towers[0];
+    expect(t.kind).toBe("crossbow");
+    sim.enqueue({ type: "upgradeTower", playerId: "p1", towerId: t.id, to: "cannon" });
+    sim.step(DT);
+    expect(t.kind).toBe("cannon");
+    // Un tun nu se mai transformă.
+    sim.enqueue({ type: "upgradeTower", playerId: "p1", towerId: t.id, to: "tesla" });
+    sim.enqueue({ type: "upgradeTower", playerId: "p1", towerId: t.id });
+    sim.step(DT);
+    expect(t.kind).toBe("cannon");
+    expect(t.level).toBe(2);
+    // Nivelul 3 cere deblocare.
+    sim.enqueue({ type: "upgradeTower", playerId: "p1", towerId: t.id });
+    sim.step(DT);
+    expect(t.level).toBe(2);
+    s.players.p1.towerTier = 3;
+    sim.enqueue({ type: "upgradeTower", playerId: "p1", towerId: t.id });
+    sim.step(DT);
+    expect(t.level).toBe(3);
+  });
+
+  it("proiectilele zboară și lovesc la sosire", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    s.towers.push(tower(800, 8, 8));
+    const z = dummy(sim, "brute", 16, 8);
+    sim.step(DT);
+    expect(s.shells.length).toBe(1);
+    expect(z.hp).toBe(z.maxHp);
+    run(sim, 0.5);
+    expect(z.hp).toBeLessThan(z.maxHp);
+  });
+
+  it("zombiul lovit de turn atacă turnul", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    s.towers.push(tower(800, 15, 15));
+    const z = dummy(sim, "walker", 22, 15);
+    run(sim, 1);
+    expect(z.aggroTowerId).toBe(800);
+    run(sim, 6);
+    expect(s.towers[0]?.hp ?? 0).toBeLessThan(towerStats("crossbow", 1).hp);
+  });
+
+  it("turnul distrus dispare și zombii merg mai departe spre mină", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.towers.push({ ...tower(800, 15, 15), hp: 5 });
+    const z = dummy(sim, "walker", 16.5, 15);
+    z.aggroTowerId = 800;
+    run(sim, 2);
+    const events = sim.drainEvents();
+    expect(events.some((e) => e.type === "towerDestroyed")).toBe(true);
+    expect(s.towers.length).toBe(0);
+    expect(z.aggroTowerId).toBeNull();
+  });
+
+  it("turnul de gheață încetinește zombii cu 30% și îi poate îngheța", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    s.towers.push({ ...tower(800, 10, 10, "frost"), abilityTimer: 0 });
+    const z = dummy(sim, "walker", 14, 10);
+    sim.step(DT);
+    expect(z.chillTimer).toBeGreaterThan(0);
+    expect(z.frozenTimer).toBeGreaterThan(0);
+  });
+
+  it("tunul lasă foc pe jos, Tesla trage laser prin mai mulți zombi", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    s.towers.push({ ...tower(800, 10, 10, "cannon"), abilityTimer: 0 });
+    dummy(sim, "brute", 16, 10);
+    run(sim, 1);
+    expect(s.fires.length).toBe(1);
+
+    const sim2 = newGame();
+    sim2.state.heroes[0].pos = { x: -38, z: -38 };
+    sim2.state.towers.push({ ...tower(801, -10, -10, "tesla"), abilityTimer: 0 });
+    const a = dummy(sim2, "brute", -6, -10);
+    const b = dummy(sim2, "brute", -3, -10);
+    sim2.step(DT);
+    expect(a.hp).toBeLessThan(a.maxHp);
+    expect(b.hp).toBeLessThan(b.maxHp);
+  });
+
+  it("boss-ul învins lasă un cufăr cu ceva rar", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const boss = dummy(sim, "boss", 6, 0, 10);
+    s.heroes[0].pos = { x: 0, z: -3 };
+    sim.enqueue({ type: "aim", playerId: "p1", x: 1, z: 0.5, firing: true, auto: true });
+    run(sim, 1);
+    expect(s.zombies.includes(boss)).toBe(false);
+    expect(s.chests.length).toBe(1);
+    s.heroes[0].pos = { ...s.chests[0].pos };
+    sim.drainEvents();
+    sim.step(DT);
+    const opened = sim.drainEvents().find((e) => e.type === "chestOpened");
+    expect(opened && opened.type === "chestOpened" && ["epic", "legendary"].includes(opened.rarity)).toBe(true);
+  });
+});
+
+describe("dificultate", () => {
+  it("Nightmare are mai mulți zombi și mai puternici decât Easy", () => {
+    expect(waveComposition(5, 1, "nightmare").length).toBeGreaterThan(waveComposition(5, 1, "easy").length);
+    const easy = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 1, difficulty: "easy" });
+    const hard = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 1, difficulty: "nightmare" });
+    easy.state.wave = hard.state.wave = 1;
+    expect(spawnZombie(hard.state, "walker").maxHp).toBeGreaterThan(spawnZombie(easy.state, "walker").maxHp);
+  });
+
+  it("numele jucătorului vine din meniu", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "tank", name: "Ion" }] });
+    expect(sim.state.players.p1.name).toBe("Ion");
+  });
+});
+
 describe("construcții", () => {
   it("turnul costă lemn și respectă sloturile", () => {
     const sim = newGame();
@@ -208,7 +342,7 @@ describe("construcții", () => {
     sim.step(DT);
     const slots = towerSlots(sim.state, "p1");
     expect(sim.state.towers.length).toBe(slots);
-    expect(sim.state.players.p1.wood).toBe(1000 - slots * CONFIG.tower.tiers[0].cost);
+    expect(sim.state.players.p1.wood).toBe(1000 - slots * CONFIG.tower.kinds.crossbow.cost);
     expect(canBuildTower(sim.state, "p1", { x: 0, z: 0 })).not.toBeNull();
   });
 
@@ -222,7 +356,7 @@ describe("construcții", () => {
     let shots = 0;
     for (let i = 0; i < 60; i++) {
       sim.step(DT);
-      shots += sim.drainEvents().filter((e) => e.type === "shot" && e.source === "tower").length;
+      shots += sim.drainEvents().filter((e) => e.type === "towerFired").length;
     }
     expect(shots).toBeGreaterThan(0);
     expect(z.hp).toBeLessThan(z.maxHp);
@@ -231,7 +365,7 @@ describe("construcții", () => {
   it("nu poți trece prin turnuri", () => {
     const sim = newGame();
     const s = sim.state;
-    s.towers.push({ id: 800, ownerId: "p1", pos: { x: 10, z: 0 }, tier: 1, facing: 0, fireTimer: 0 });
+    s.towers.push(tower(800, 10, 0));
     s.heroes[0].pos = { x: 7, z: 0 };
     sim.enqueue({ type: "move", playerId: "p1", x: 1, z: 0 });
     run(sim, 1.5);

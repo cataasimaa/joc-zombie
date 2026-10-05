@@ -23,7 +23,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG, GAME_MAP } from "../core";
 import type { Materials } from "./ModelKit";
-import { buildHouse, buildPine, buildRock, buildShelter, buildTree } from "./models/environment";
+import { PLASMA, buildHouse, buildPine, buildRock, buildShelter, buildTree } from "./models/environment";
 import { rng } from "./noise";
 import { PAL, hex, mix } from "./palette";
 import { createTerrain, terrainHeight } from "./Terrain";
@@ -57,6 +57,8 @@ export class World {
   private hemi: HemisphericLight;
   private sun: DirectionalLight;
   private fireLight: PointLight;
+  private plasmaLight: PointLight;
+  private crystals: Mesh[] = [];
   private flames: Mesh[];
   private snow: ParticleSystem;
   private snowEmitter = new Vector3();
@@ -124,7 +126,13 @@ export class World {
       this.shadows.addShadowCaster(m);
     }
     this.flames = shelter.flames;
-    this.addSmoke(new Vector3(...shelter.chimney));
+    this.crystals = shelter.crystals;
+    for (const c of this.crystals) c.parent = this.shelter;
+    // Lumina rece a plasmei din mină (al doilea accent, lângă focul cald).
+    this.plasmaLight = new PointLight("plasma", new Vector3(...shelter.plasmaPos), scene);
+    this.plasmaLight.diffuse = PLASMA;
+    this.plasmaLight.specular = Color3.Black();
+    this.plasmaLight.range = 11;
     this.fireLight = new PointLight("fire", new Vector3(...shelter.firePos), scene);
     this.fireLight.diffuse = PAL.fire;
     this.fireLight.specular = Color3.Black();
@@ -349,6 +357,13 @@ export class World {
     this.flames.forEach((f, i) => {
       f.scaling.set(0.85 + Math.sin(t * 9 + i) * 0.15, 0.8 + Math.sin(t * 11 + i * 2) * 0.25, 0.85 + Math.cos(t * 8 + i) * 0.15);
       f.rotation.y = t * (0.5 + i * 0.3);
+    });
+    // Plasma pulsează încet.
+    const pulse = 0.5 + Math.sin(t * 2.2) * 0.5;
+    this.plasmaLight.intensity = 0.6 + night * 1.4 + pulse * 0.4;
+    this.crystals.forEach((c, i) => {
+      const k = 0.92 + Math.sin(t * 2.2 + i * 0.9) * 0.08;
+      c.scaling.set(k, 0.95 + Math.sin(t * 2.2 + i) * 0.07, k);
     });
     this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
     // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.

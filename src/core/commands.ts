@@ -1,6 +1,7 @@
 // Comenzile sunt SINGURA cale prin care un jucător poate schimba jocul.
 // Acum le trimite input-ul local; în multiplayer le va trimite clientul la server.
 
+import type { TowerKind } from "./config";
 import type { EntityId, PlayerId } from "./types";
 
 export type BuildKind = "tower" | "barricade";
@@ -10,7 +11,12 @@ export type Command =
   | { type: "move"; playerId: PlayerId; x: number; z: number }
   /** `rotation` contează doar pentru baricade. */
   | { type: "build"; playerId: PlayerId; kind: BuildKind; x: number; z: number; rotation?: number }
-  | { type: "upgradeTower"; playerId: PlayerId; towerId: EntityId }
+  /**
+   * Upgrade de turn: fără `to` = nivelul următor; cu `to` = transformă arbaleta
+   * în alt tip (rachete, tun, tesla, gheață), păstrând nivelul.
+   */
+  | { type: "upgradeTower"; playerId: PlayerId; towerId: EntityId; to?: TowerKind }
+  | { type: "demolishTower"; playerId: PlayerId; towerId: EntityId }
   /** Mută și/sau rotește o baricadă existentă. */
   | { type: "moveBarricade"; playerId: PlayerId; barricadeId: EntityId; x: number; z: number; rotation: number }
   | { type: "upgradeBarricade"; playerId: PlayerId; barricadeId: EntityId; to: "reinforce" | "door" }

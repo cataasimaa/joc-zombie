@@ -5,6 +5,35 @@ export type HeroClass = "assault" | "sniper" | "tank" | "healer";
 export type ZombieType = "walker" | "runner" | "spitter" | "flyer" | "brute" | "boss";
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 export type ShopRarity = "nothing" | Rarity;
+/** Turnul de bază e arbaleta; din ea faci upgrade în celelalte. */
+export type TowerKind = "crossbow" | "rocket" | "cannon" | "tesla" | "frost";
+export type Difficulty = "easy" | "medium" | "hard" | "nightmare";
+
+export interface TowerStats {
+  name: string;
+  /** Lemn: pentru arbaletă = cât costă construcția; pentru restul = cât costă transformarea. */
+  cost: number;
+  damage: number;
+  range: number;
+  fireInterval: number;
+  /** Viteza proiectilului (0 = lovește instant, ex. laserul). */
+  shellSpeed: number;
+  /** Raza exploziei (0 = o singură țintă). */
+  splash: number;
+  /** Abilitatea turnului: se declanșează singură la fiecare `abilityCooldown` secunde. */
+  abilityCooldown: number;
+  hp: number;
+}
+
+export interface DifficultyStats {
+  name: string;
+  /** Multiplicatori față de Easy (jocul de acum). */
+  zombieHp: number;
+  zombieCount: number;
+  zombieDamage: number;
+  /** Lemnul de start și venitul din zori. */
+  wood: number;
+}
 
 export interface HeroStats {
   maxHp: number;
@@ -50,10 +79,18 @@ export const CONFIG = {
     halfSize: 40,
   },
 
+  /** Mina de plasmă (ce apărăm). Mai mică decât fosta casă: se înconjoară ușor cu ziduri. */
   shelter: {
     maxHp: 1200,
-    radius: 3.5,
+    radius: 2.2,
   },
+
+  difficulty: {
+    easy: { name: "Easy", zombieHp: 1, zombieCount: 1, zombieDamage: 1, wood: 1 },
+    medium: { name: "Medium", zombieHp: 1.12, zombieCount: 1.1, zombieDamage: 1.1, wood: 1 },
+    hard: { name: "Hard", zombieHp: 1.3, zombieCount: 1.25, zombieDamage: 1.2, wood: 0.9 },
+    nightmare: { name: "Nightmare", zombieHp: 1.6, zombieCount: 1.45, zombieDamage: 1.4, wood: 0.8 },
+  } satisfies Record<Difficulty, DifficultyStats>,
 
   heroes: {
     assault: { maxHp: 160, speed: 7, radius: 0.6, range: 13, damage: 10, fireInterval: 0.13, magazine: 24, reloadTime: 1.9, pellets: 1, spread: 0, pierce: 1 },
@@ -92,8 +129,12 @@ export const CONFIG = {
   } satisfies Record<ZombieType, ZombieStats>,
 
   zombieCommon: {
-    /** HP-ul crește cu 19% la fiecare noapte. */
-    hpGrowthPerWave: 0.19,
+    /** Zombii loviți de un turn îl atacă pe el întâi (dacă e mai aproape de atât), apoi merg spre mină. */
+    towerAggroRange: 12,
+    /** Răcit de turnul de gheață: -30% viteză și -30% viteză de atac. */
+    chillSlow: 0.3,
+    /** HP-ul crește cu 33% la fiecare noapte. */
+    hpGrowthPerWave: 0.33,
     /** Dacă un erou e mai aproape de atât, zombiul îl atacă pe el în loc de adăpost. */
     aggroRadius: 5,
     /** Fiecare jucător în plus: +25% HP la zombi. */
@@ -109,13 +150,43 @@ export const CONFIG = {
 
   tower: {
     radius: 0.8,
-    /** Tier-urile 1–4: tier 1 e disponibil mereu, restul se deblochează din magazin. */
-    tiers: [
-      { damage: 14, range: 11, fireInterval: 0.6, cost: 30 },
-      { damage: 24, range: 12, fireInterval: 0.5, cost: 30 },
-      { damage: 38, range: 13, fireInterval: 0.42, cost: 45 },
-      { damage: 60, range: 14.5, fireInterval: 0.34, cost: 70 },
-    ],
+    /** Fiecare turn are 3 niveluri. Nivelul 3 se deblochează din magazin sau din cufărul boss-ului. */
+    maxLevel: 3,
+    /** Costul unui nivel în plus (lemn) și cât crește puterea pe nivel. */
+    levelCost: [0, 45, 80],
+    damagePerLevel: 0.45,
+    rangePerLevel: 0.08,
+    hpPerLevel: 0.4,
+    /** Eroii din apropiere repară și turnurile (HP/s) — doar ziua. */
+    repairRate: 10,
+    kinds: {
+      crossbow: { name: "Arbaletă", cost: 30, damage: 14, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 200 },
+      rocket: { name: "Rachete", cost: 50, damage: 34, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 220 },
+      cannon: { name: "Tun", cost: 55, damage: 24, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 280 },
+      tesla: { name: "Tesla", cost: 60, damage: 25, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 190 },
+      frost: { name: "Gheață", cost: 45, damage: 7, range: 9, fireInterval: 1.0, shellSpeed: 22, splash: 0, abilityCooldown: 10, hp: 230 },
+    } satisfies Record<TowerKind, TowerStats>,
+    /** Abilitățile turnurilor (se declanșează singure). */
+    abilities: {
+      /** Arbaleta: o săgeată grea, de N ori damage-ul, care trece prin 3 zombi. */
+      heavyBoltMultiplier: 4,
+      heavyBoltPierce: 3,
+      /** Rachete: racheta mare explodează și lansează mini-rachete spre zombii din jur. */
+      bigRocketMultiplier: 1.8,
+      bigRocketSplash: 2.6,
+      miniRockets: 5,
+      miniRocketDamage: 0.35,
+      miniRocketRange: 6,
+      /** Tun: ghiuleaua lasă foc pe jos. */
+      fireRadius: 2.4,
+      fireDuration: 4,
+      fireDps: 0.3,
+      /** Tesla: laser care trece prin toți zombii de pe linie. */
+      laserMultiplier: 2,
+      laserWidth: 0.6,
+      /** Gheață: înghețare completă a zombilor din rază. */
+      freezeDuration: 1.6,
+    },
   },
 
   barricade: {
@@ -187,8 +258,8 @@ export const CONFIG = {
     spawnWindow: 0.75,
     /** Fiecare jucător în plus adaugă +50% zombi. */
     extraPerPlayer: 0.5,
-    baseCount: 12,
-    countPerWave: 7,
+    baseCount: 14,
+    countPerWave: 8,
     runnersFromWave: 2,
     runnerShare: 0.2,
     spittersFromWave: 3,
@@ -204,11 +275,11 @@ export const CONFIG = {
   shop: {
     /** Cât costă o încercare la magazin. */
     cost: 30,
-    /** Șansele (suma = 1). Se afișează în joc. „nothing” = nu primești nimic. */
+    /** Șansele (suma = 1). Riscant: des nimic, dar premiile mari merită. */
     odds: [
-      { rarity: "nothing", chance: 0.26 },
-      { rarity: "common", chance: 0.5 },
-      { rarity: "rare", chance: 0.17 },
+      { rarity: "nothing", chance: 0.38 },
+      { rarity: "common", chance: 0.4 },
+      { rarity: "rare", chance: 0.15 },
       { rarity: "epic", chance: 0.06 },
       { rarity: "legendary", chance: 0.01 },
     ] as { rarity: ShopRarity; chance: number }[],

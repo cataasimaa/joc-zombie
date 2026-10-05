@@ -2,8 +2,8 @@
 // regenerare, reparat mai rapid, turnuri sau arme. Tragerea la sorți se face în core
 // (pe server în multiplayer), cu RNG-ul din stare.
 
-import { CONFIG, type ShopRarity } from "../config";
-import { REPEATABLE, SHOP_POOLS, type ShopReward, WEAPONS, rewardKey } from "../items";
+import { CONFIG, type Rarity, type ShopRarity } from "../config";
+import { CHEST_POOL, REPEATABLE, SHOP_POOLS, type ShopReward, WEAPONS, rewardKey } from "../items";
 import { nextRandom } from "../math";
 import type { GameEvent, GameState, Player, PlayerId } from "../types";
 import { gunStats, heroById, recomputeMaxHp } from "./heroes";
@@ -28,10 +28,24 @@ export function shopRoll(state: GameState, playerId: PlayerId, events: GameEvent
   const reward: ShopReward = options.length > 0
     ? options[Math.floor(nextRandom(state) * options.length)]
     : { kind: "wood", amount: 25 }; // tot ce era la raritatea asta îl ai deja
-  applyReward(state, player, reward);
-  if (!REPEATABLE.includes(reward.kind)) player.unlocked.push(rewardKey(reward));
+  grantReward(state, player, reward);
   events.push({ type: "shopRoll", playerId, rarity, reward });
   return true;
+}
+
+/** Deschide cufărul boss-ului: o recompensă epică sau legendară pe care nu o ai încă. */
+export function openChest(state: GameState, player: Player): { rarity: Rarity; reward: ShopReward } {
+  const options = CHEST_POOL.filter((o) => isUseful(player, o.reward));
+  const pick = options.length > 0
+    ? options[Math.floor(nextRandom(state) * options.length)]
+    : { rarity: "epic" as Rarity, reward: { kind: "coins", amount: 150 } as ShopReward };
+  grantReward(state, player, pick.reward);
+  return pick;
+}
+
+function grantReward(state: GameState, player: Player, reward: ShopReward): void {
+  applyReward(state, player, reward);
+  if (!REPEATABLE.includes(reward.kind)) player.unlocked.push(rewardKey(reward));
 }
 
 /** Transformă un număr 0..1 într-o raritate, după șansele din config. */
@@ -66,6 +80,9 @@ function applyReward(state: GameState, player: Player, r: ShopReward): void {
       break;
     case "wood":
       player.wood += r.amount;
+      break;
+    case "coins":
+      player.coins += r.amount;
       break;
     case "mines":
       player.mines += r.count;

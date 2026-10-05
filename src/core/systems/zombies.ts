@@ -1,10 +1,11 @@
 import { CONFIG, type ZombieType } from "../config";
 import { type Vec2, angleOf, dist, nextRandom } from "../math";
 import { canReachShelter, flowDirection } from "../navigation";
-import type { Barricade, EntityId, GameEvent, GameState, Hero, Zombie } from "../types";
+import type { Barricade, EntityId, GameEvent, GameState, Hero, Tower, Zombie } from "../types";
 import { damageBarricade, distToBarricade } from "./barricades";
 import { damageHero, giveXp, heroById } from "./heroes";
 import { resolveCollisions, separateZombies } from "./physics";
+import { damageTower } from "./towers";
 
 /** Creează un zombie într-un punct aleator de pe marginea hărții (sau lângă `near`, pentru hoarde). */
 export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | null = null): Zombie {
@@ -25,7 +26,8 @@ export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | nul
 
   const c = CONFIG.zombieCommon;
   const players = Object.keys(state.players).length;
-  const scale = (1 + (state.wave - 1) * c.hpGrowthPerWave) * (1 + (players - 1) * c.hpPerExtraPlayer);
+  const scale = (1 + (state.wave - 1) * c.hpGrowthPerWave) * (1 + (players - 1) * c.hpPerExtraPlayer) *
+    CONFIG.difficulty[state.difficulty].zombieHp;
   const hp = Math.round(stats.hp * scale);
   const zombie: Zombie = {
     id: state.nextId++,
@@ -38,6 +40,9 @@ export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | nul
     slowTimer: 0,
     stuckTime: 0,
     burning: false,
+    aggroTowerId: null,
+    chillTimer: 0,
+    frozenTimer: 0,
   };
   state.zombies.push(zombie);
   return zombie;
@@ -49,9 +54,11 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
   const targets: (Vec2 | null)[] = [];
   const distBefore: number[] = [];
 
+  const difficultyDamage = CONFIG.difficulty[state.difficulty].zombieDamage;
   for (const zombie of [...state.zombies]) {
     const stats = CONFIG.zombies[zombie.type];
-    zombie.attackTimer -= dt;
+    const chilled = zombie.chillTimer > 0;
+    zombie.chillTimer = Math.max(0, zombie.chillTimer - dt);
     zombie.slowTimer = Math.max(0, zombie.slowTimer - dt);
 
     // În zori: arde și moare încet (fără monede).
@@ -62,19 +69,36 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
         continue;
       }
     }
-    const slow = (zombie.slowTimer > 0 ? 0.45 : 1) * (zombie.burning ? c.burnSlow : 1);
+    // Înghețat de turnul de gheață: nu se mișcă și nu atacă.
+    if (zombie.frozenTimer > 0) {
+      zombie.frozenTimer -= dt;
+      targets.push(null);
+      distBefore.push(0);
+      continue;
+    }
+    // Răcit: atacă mai rar.
+    zombie.attackTimer -= dt * (chilled ? 1 - c.chillSlow : 1);
+    const slow = (zombie.slowTimer > 0 ? 0.45 : 1) * (zombie.burning ? c.burnSlow : 1) * (chilled ? 1 - c.chillSlow : 1);
     const speed = stats.speed * slow;
-    const damage = stats.damage * (zombie.burning ? 0.5 : 1);
+    const damage = stats.damage * difficultyDamage * (zombie.burning ? 0.5 : 1);
 
-    // 1. Ținta: eroul din raza de „aggro” (scuipătorul vede mai departe), altfel adăpostul.
+    // 1. Ținta: eroul foarte aproape > turnul care l-a lovit > mina de plasmă.
     const hero = nearestLivingHero(state, zombie.pos, Math.max(c.aggroRadius, stats.rangedRange));
-    const targetPos = hero ? hero.pos : state.shelter.pos;
-    const targetRadius = hero ? CONFIG.heroes[hero.heroClass].radius : state.shelter.radius;
+    let tower: Tower | null = null;
+    if (!hero && zombie.aggroTowerId !== null) {
+      tower = state.towers.find((t) => t.id === zombie.aggroTowerId) ?? null;
+      if (!tower || dist(tower.pos, zombie.pos) > c.towerAggroRange) {
+        zombie.aggroTowerId = null;
+        tower = null;
+      }
+    }
+    const targetPos = hero ? hero.pos : tower ? tower.pos : state.shelter.pos;
+    const targetRadius = hero ? CONFIG.heroes[hero.heroClass].radius : tower ? CONFIG.tower.radius : state.shelter.radius;
     const d = dist(zombie.pos, targetPos);
     let dirX = (targetPos.x - zombie.pos.x) / (d || 1);
     let dirZ = (targetPos.z - zombie.pos.z) / (d || 1);
-    // Spre adăpost merge pe drumul ocolit din flow field (zburătorii merg drept).
-    if (!hero && !stats.flying) {
+    // Spre mină merge pe drumul ocolit din flow field (zburătorii merg drept).
+    if (!hero && !tower && !stats.flying) {
       const flow = flowDirection(zombie.pos, stats.radius);
       if (flow) {
         dirX = flow.x;
@@ -118,12 +142,9 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
       // 5. A ajuns: atacă.
       zombie.attackTimer = stats.attackInterval;
       events.push({ type: "zombieAttack", id: zombie.id, zombieType: zombie.type, pos: { ...zombie.pos } });
-      if (hero) {
-        damageHero(hero, damage, events, zombie.pos);
-      } else {
-        state.shelter.hp = Math.max(0, state.shelter.hp - damage);
-        events.push({ type: "shelterHit" });
-      }
+      if (hero) damageHero(hero, damage, events, zombie.pos);
+      else if (tower) damageTower(state, tower, damage, events);
+      else damageShelter(state, damage, events);
     }
   }
 
@@ -137,6 +158,11 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
     }
     // Plasă de siguranță: un zombie blocat de peste 2 secunde poate trece prin case și brazi.
     resolveCollisions(state, zombie.pos, stats.radius, { barricades: "all", towers: true, ignoreObstacles: zombie.stuckTime > 2 });
+    // Blocat mult timp lângă un turn pe care nu-l poate ajunge? Renunță și merge spre mină.
+    if (zombie.stuckTime > 4 && zombie.aggroTowerId !== null) {
+      zombie.aggroTowerId = null;
+      zombie.stuckTime = 0;
+    }
     const target = targets[i];
     if (!target) return;
     const progress = distBefore[i] - dist(zombie.pos, target);
@@ -167,17 +193,24 @@ export function updateProjectiles(state: GameState, dt: number, events: GameEven
     p.pos.z += p.vel.z * dt;
     p.life -= dt;
     const hero = state.heroes.find((h) => h.alive && dist(h.pos, p.pos) < CONFIG.heroes[h.heroClass].radius + 0.3);
+    const tower = hero ? undefined : state.towers.find((t) => dist(t.pos, p.pos) < CONFIG.tower.radius + 0.2);
     if (hero) {
       damageHero(hero, p.damage, events, { x: p.pos.x - p.vel.x, z: p.pos.z - p.vel.z });
+    } else if (tower) {
+      damageTower(state, tower, p.damage, events);
     } else if (dist(p.pos, state.shelter.pos) < state.shelter.radius) {
-      state.shelter.hp = Math.max(0, state.shelter.hp - p.damage);
-      events.push({ type: "shelterHit" });
+      damageShelter(state, p.damage, events);
     } else if (p.life > 0) {
       continue;
     }
     events.push({ type: "projectileHit", pos: { ...p.pos } });
     state.projectiles.splice(i, 1);
   }
+}
+
+function damageShelter(state: GameState, amount: number, events: GameEvent[]): void {
+  state.shelter.hp = Math.max(0, state.shelter.hp - amount);
+  events.push({ type: "shelterHit" });
 }
 
 /** Zidul pe care zombiul îl atinge și care e în direcția în care merge. */
@@ -219,6 +252,12 @@ function killZombie(state: GameState, zombie: Zombie, events: GameEvent[], attac
   state.zombies.splice(state.zombies.indexOf(zombie), 1);
   events.push({ type: "zombieDied", id: zombie.id, pos: { ...zombie.pos }, zombieType: zombie.type, burned });
   if (burned) return; // cei arși de soare nu lasă nimic
+  // Boss-ul învins lasă un cufăr cu ceva rar.
+  if (zombie.type === "boss") {
+    const id = state.nextId++;
+    state.chests.push({ id, pos: { ...zombie.pos } });
+    events.push({ type: "chestDropped", id, pos: { ...zombie.pos } });
+  }
   // Monedele cad doar uneori; boss-ul lasă mai multe, împrăștiate.
   const drops = zombie.type === "boss" ? 5 : nextRandom(state) < stats.coinChance ? 1 : 0;
   for (let i = 0; i < drops; i++) {
