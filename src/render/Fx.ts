@@ -124,6 +124,10 @@ export class Fx {
   private rings: Timed[] = [];
   private bolts: Timed[] = [];
   private boltSource: Mesh;
+  private bullets: Timed[] = [];
+  private zPrintSource: Mesh;
+  private zPrints: Decal[] = [];
+  private zPrintIndex = 0;
 
   constructor(private scene: Scene, private mats: Materials) {
     for (const kind of Object.keys(BURST_COLORS) as BurstKind[]) {
@@ -171,6 +175,19 @@ export class Fx {
     this.footSource = MeshBuilder.CreateGround("foot", { width: 0.22, height: 0.4 }, scene);
     this.footSource.material = footMat;
     this.footSource.isVisible = false;
+
+    // Urmele zombilor: picior desculț cu gheare. Nu le acoperă ceața (la viscol vezi urma, nu corpul).
+    const zMat = new StandardMaterial("zPrintMat", scene);
+    zMat.diffuseTexture = footprintTexture(scene);
+    zMat.useAlphaFromDiffuseTexture = true;
+    zMat.specularColor.set(0, 0, 0);
+    zMat.emissiveColor.set(0.08, 0.1, 0.14);
+    zMat.diffuseColor.set(0.35, 0.4, 0.5);
+    zMat.fogEnabled = false;
+    zMat.zOffset = -1;
+    this.zPrintSource = MeshBuilder.CreateGround("zPrint", { width: 0.3, height: 0.48 }, scene);
+    this.zPrintSource.material = zMat;
+    this.zPrintSource.isVisible = false;
 
     // Săgeata de balistă: tijă de lemn cu vârf de fier.
     const bk = new ModelKit(scene, mats, 1200);
@@ -266,9 +283,57 @@ export class Fx {
     d.life = d.maxLife = 20;
   }
 
+  /** Urma unui zombie (ține câteva secunde). */
+  zombiePrint(x: number, z: number, facing: number, scale = 1): void {
+    let d = this.zPrints[this.zPrintIndex];
+    if (!d) {
+      const inst = this.zPrintSource.createInstance("zPrint");
+      inst.isPickable = false;
+      d = { inst, life: 0, maxLife: 8, size: 1 };
+      this.zPrints.push(d);
+    }
+    this.zPrintIndex = (this.zPrintIndex + 1) % 160;
+    d.inst.position.set(x, terrainHeight(x, z) + 0.035, z);
+    d.inst.rotation.y = facing;
+    d.size = scale;
+    d.inst.scaling.setAll(scale);
+    d.inst.setEnabled(true);
+    d.life = d.maxLife = 8;
+  }
+
   // ---------- Trasoare, săgeți, flăcări, inele ----------
 
-  tracer(from: Vector3, to: Vector3, color: Color3, width = 0.05, life = 0.05): void {
+  /**
+   * Glonț care zboară: un segment scurt și luminos care merge de la armă la țintă
+   * (lasă o dâră scurtă în urmă). `len` = lungimea segmentului.
+   */
+  bullet(from: Vector3, to: Vector3, color: Color3, width = 0.05, len = 0.6, speed = 90): void {
+    let b = this.bullets.find((x) => x.life <= 0);
+    if (!b) {
+      const mesh = MeshBuilder.CreateBox("bullet", { size: 1 }, this.scene);
+      mesh.isPickable = false;
+      b = { mesh, life: 0, maxLife: 1, grow: 0 };
+      this.bullets.push(b);
+    }
+    b.mesh.material = this.mats.glow(color, 1.6);
+    b.from = from.clone();
+    b.to = to.clone();
+    b.grow = len;
+    b.life = b.maxLife = Math.max(0.03, Vector3.Distance(from, to) / speed);
+    b.mesh.scaling.set(width, width, len);
+    b.mesh.position.copyFrom(from);
+    b.mesh.lookAt(to);
+    b.mesh.setEnabled(true);
+  }
+
+  /** Undă de praf și zăpadă la izbitură (alicele Tank-ului). */
+  impactWave(pos: Vector3, size = 1): void {
+    this.burst("snow", pos, new Vector3(0, 0.6, 0), Math.round(6 * size), 3, 0.1);
+    this.burst("dust", pos, null, Math.round(2 * size), 1.5, 0.3 * size);
+    this.ring(pos.add(new Vector3(0, -0.8, 0)), 0.9 * size, PAL.snow, 0.3);
+  }
+
+  tracer(from: Vector3, to: Vector3, color: Color3, width = 0.05, life = 0.05, fadeOut = false): void {
     let t = this.tracers.find((x) => x.life <= 0);
     if (!t) {
       const mesh = MeshBuilder.CreateBox("tracer", { size: 1 }, this.scene);
@@ -279,6 +344,7 @@ export class Fx {
     t.mesh.material = this.mats.glow(color, 1.4);
     t.mesh.position = Vector3.Center(from, to);
     t.mesh.scaling.set(width, width, Vector3.Distance(from, to));
+    t.grow = fadeOut ? width : 0;
     t.mesh.lookAt(to);
     t.mesh.setEnabled(true);
     t.life = t.maxLife = life;
@@ -430,8 +496,22 @@ export class Fx {
     for (const t of this.tracers) {
       if (t.life <= 0) continue;
       t.life -= dt;
+      // Se subțiază pe măsură ce se stinge (trasorul lung al sniper-ului „rămâne” o clipă în aer).
+      if (t.grow > 0) {
+        const k = Math.max(0.05, t.life / t.maxLife);
+        t.mesh.scaling.x = t.grow * k;
+        t.mesh.scaling.y = t.grow * k;
+      }
       if (t.life <= 0) t.mesh.setEnabled(false);
     }
+    for (const b of this.bullets) {
+      if (b.life <= 0) continue;
+      b.life -= dt;
+      const k = 1 - Math.max(0, b.life) / b.maxLife;
+      Vector3.LerpToRef(b.from!, b.to!, k, b.mesh.position);
+      if (b.life <= 0) b.mesh.setEnabled(false);
+    }
+    fade(this.zPrints, 3);
     for (const f of this.flashes) {
       if (f.life <= 0) continue;
       f.life -= dt;

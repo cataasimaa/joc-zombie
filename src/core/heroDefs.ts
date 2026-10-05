@@ -43,12 +43,18 @@ export const HERO_DEFS: Record<HeroClass, HeroDef> = {
   },
 };
 
+/** Accesoriul care schimbă silueta eroului (pe lângă culoarea hainei). */
+export type SkinAccessory =
+  | "santa" | "skier" | "werewolf" | "viking" | "snowman" | "yeti"
+  | "zombie" | "knight" | "chef" | "astronaut" | "pumpkin" | "penguin";
+
 export interface SkinDef {
   id: string;
   name: string;
   rarity: Rarity;
-  /** Culoarea corpului (r, g, b între 0 și 1). */
+  /** Culoarea hainei (r, g, b între 0 și 1). */
   color: [number, number, number];
+  accessory: SkinAccessory;
 }
 
 /** Culoarea mantiei/hainei fiecărei clase (pielea, blana și armele au culorile lor). */
@@ -59,10 +65,18 @@ export const DEFAULT_SKIN_COLOR: Record<HeroClass, [number, number, number]> = {
   healer: [0.62, 0.6, 0.55],
 };
 
+/** 12 skin-uri amuzante (din magazin și din cufere). */
 export const SKINS: SkinDef[] = [
-  { id: "hunter", name: "Vânător", rarity: "rare", color: [0.22, 0.28, 0.16] },
-  { id: "ember", name: "Jar", rarity: "rare", color: [0.48, 0.18, 0.1] },
-  { id: "arctic", name: "Lup alb", rarity: "epic", color: [0.85, 0.88, 0.9] },
-  { id: "shadow", name: "Umbră", rarity: "epic", color: [0.1, 0.1, 0.13] },
-  { id: "gold", name: "Rege al iernii", rarity: "legendary", color: [0.62, 0.45, 0.12] },
+  { id: "skier", name: "Schiorul", rarity: "rare", color: [0.1, 0.55, 0.75], accessory: "skier" },
+  { id: "viking", name: "Vikingul", rarity: "rare", color: [0.42, 0.28, 0.18], accessory: "viking" },
+  { id: "zombie", name: "Vecinul zombi", rarity: "rare", color: [0.32, 0.4, 0.28], accessory: "zombie" },
+  { id: "knight", name: "Cavalerul", rarity: "rare", color: [0.4, 0.42, 0.46], accessory: "knight" },
+  { id: "chef", name: "Bucătarul", rarity: "rare", color: [0.88, 0.88, 0.86], accessory: "chef" },
+  { id: "werewolf", name: "Vârcolacul", rarity: "epic", color: [0.36, 0.33, 0.3], accessory: "werewolf" },
+  { id: "snowman", name: "Omul de zăpadă", rarity: "epic", color: [0.92, 0.94, 0.96], accessory: "snowman" },
+  { id: "yeti", name: "Yeti", rarity: "epic", color: [0.85, 0.88, 0.92], accessory: "yeti" },
+  { id: "pumpkin", name: "Cap de dovleac", rarity: "epic", color: [0.25, 0.18, 0.12], accessory: "pumpkin" },
+  { id: "santa", name: "Moș Crăciun", rarity: "legendary", color: [0.72, 0.08, 0.08], accessory: "santa" },
+  { id: "astronaut", name: "Astronautul", rarity: "legendary", color: [0.9, 0.9, 0.92], accessory: "astronaut" },
+  { id: "penguin", name: "Pinguinul", rarity: "legendary", color: [0.08, 0.08, 0.1], accessory: "penguin" },
 ];

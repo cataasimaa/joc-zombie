@@ -3,7 +3,7 @@
 // ca să le putem anima. Formele organice folosesc umbrire netedă (smooth) → aspect mai realist.
 
 import { type Color3, type Mesh, type Scene, TransformNode } from "@babylonjs/core";
-import type { HeroClass, WeaponId, ZombieType } from "../../core";
+import type { HeroClass, SkinAccessory, WeaponId, ZombieType } from "../../core";
 import { type Materials, ModelKit } from "../ModelKit";
 import { PAL, hex, mix } from "../palette";
 
@@ -16,6 +16,8 @@ export interface HeroLook {
   coat: Color3;
   level: number;
   weapon: WeaponId;
+  /** Accesoriul skin-ului (Moș Crăciun, vârcolac…), dacă are. */
+  accessory?: SkinAccessory;
 }
 
 /** Un picior din două bucăți: coapsa (pivot în șold) și gamba (pivot în genunchi). */
@@ -91,16 +93,34 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
     }
   }
 
-  // Cap: glugă de blană (sau coif de fier la Tank), fața în umbră, eșarfă.
-  if (tank) {
+  // Mantie de blană ruptă, de pe umeri până sub genunchi (ca la supraviețuitorii din referințe).
+  const mantle = mix(PAL.furDark, coat, 0.25);
+  for (let i = 0; i < 11; i++) {
+    const a = Math.PI + (i / 10 - 0.5) * 2.3;
+    const h = k.rand(0.95, 1.35);
+    const w = k.rand(0.2, 0.3);
+    k.cyl(h, w, w * 0.2, 4, { p: [Math.sin(a) * 0.36 * bulk, 1.62 - h / 2, Math.cos(a) * 0.26 - 0.06], r: [k.rand(-0.1, 0.05), a + Math.PI / 4, 0], s: [1, 1, 0.14] }, { color: mix(mantle, PAL.cloth, k.rand(0, 0.4)), wear: 0.15, frost: 0.4, frostNormal: 0.25, smooth: true });
+  }
+  for (const side of [1, -1]) {
+    k.sphere(0.42 * bulk, 8, { p: [side * 0.3 * bulk, 1.68, -0.02], s: [1, 0.55, 1] }, { color: fur, wear: 0.3, frost: 0.7, frostNormal: 0.3, ...SMOOTH });
+  }
+
+  // Cap: glugă de blană (sau coif de fier la Tank), fața în umbră, eșarfă. Skin-urile au capul lor.
+  if (look.accessory) {
+    skinHead(k, look.accessory, coat);
+  } else if (tank) {
     k.sphere(0.46, 12, { p: [0, 1.92, 0], s: [1, 0.95, 1] }, { color: PAL.iron, mat: "metal", wear: 0.2, ...SMOOTH });
     k.cyl(0.1, 0.5, 0.52, 12, { p: [0, 1.8, 0] }, { color: fur, wear: 0.2, ...SMOOTH });
     k.box(0.07, 0.24, 0.08, { p: [0, 1.87, 0.22] }, { color: PAL.iron, mat: "metal" });
     k.sphere(0.3, 8, { p: [0, 1.82, 0.12] }, { color: PAL.skin.scale(0.7), ...SMOOTH });
   } else {
-    k.sphere(0.32, 10, { p: [0, 1.88, 0.06] }, { color: PAL.skin.scale(0.75), ...SMOOTH });
-    k.sphere(0.5, 10, { p: [0, 1.92, -0.04], s: [1, 1.08, 1.05] }, { color: fur, wear: 0.22, frost: 0.5, frostNormal: 0.55, ...SMOOTH });
+    // Glugă ascuțită cu margine de blană; fața în umbră (la Sniper, ochi reci care strălucesc).
+    k.sphere(0.3, 10, { p: [0, 1.88, 0.08] }, { color: PAL.skin.scale(cls === "sniper" ? 0.3 : 0.6), ...SMOOTH });
+    k.sphere(0.5, 10, { p: [0, 1.93, -0.05], s: [1, 1.1, 1.05] }, { color: mix(coat, PAL.cloth, 0.5), wear: 0.2, frost: 0.4, frostNormal: 0.55, ...SMOOTH });
+    k.cyl(0.32, 0, 0.3, 8, { p: [0, 2.2, -0.16], r: [-0.5, 0, 0] }, { color: mix(coat, PAL.cloth, 0.5), wear: 0.2, frost: 0.5, ...SMOOTH });
+    k.cyl(0.12, 0.48, 0.5, 12, { p: [0, 1.93, 0.13], r: [1.35, 0, 0] }, { color: fur, wear: 0.3, frost: 0.6, frostNormal: 0.3, ...SMOOTH });
     k.cyl(0.14, 0.34, 0.38, 10, { p: [0, 1.77, 0.08] }, { color: coat.scale(0.6), wear: 0.15, ...SMOOTH });
+    if (cls === "sniper") for (const x of [-0.07, 0.07]) k.sphere(0.05, 6, { p: [x, 1.92, 0.33] }, { color: PAL.ice, mat: "glow" });
   }
 
   // Bandulieră în diagonală, cu cartușe.
@@ -131,7 +151,12 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
     k.cyl(0.14, 1.16, 1.16, 14, { p: [0, 1.3, -0.51], r: [Math.PI / 2, 0, 0], s: [1, 0.5, 1] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
     muzzle = gun(k, look.weapon === "rusty" ? "scattergun" : look.weapon, false);
   } else {
-    // Healer: robă lungă, pușcă ușoară, felinar de gheață la șold.
+    // Healer: robă lungă, pușcă ușoară, felinar de gheață la șold și toiag cu cristal de chihlimbar pe spate.
+    k.cyl(2.1, 0.07, 0.09, 6, { p: [0.2, 1.25, -0.42], r: [0, 0, -0.3] }, { color: PAL.oldWood, wear: 0.25 });
+    for (const [dx, dy] of [[-0.12, 0.12], [0.12, 0.1], [0, 0.18]] as const) {
+      k.cyl(0.35, 0.02, 0.05, 4, { p: [0.53 + dx, 2.25 + dy, -0.42], r: [0, 0, dx * 4] }, { color: PAL.bone });
+    }
+    k.cyl(0.32, 0, 0.18, 5, { p: [0.53, 2.32, -0.42] }, { color: hex("#ffb347"), mat: "glow" });
     k.cyl(0.6, 0.8, 1.05, 12, { p: [0, 0.55, 0] }, { color: coat, wear: 0.12, frost: 0.4, frostNormal: 0.6, ...SMOOTH });
     arm(0.4, 0);
     arm(-0.4, 1);
@@ -144,6 +169,111 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
   const legL = buildLeg(scene, mats, 21, trousers, -0.15 * bulk, bulk);
   const legR = buildLeg(scene, mats, 23, trousers, 0.15 * bulk, bulk);
   return { body, legL, legR, muzzle };
+}
+
+/** Capul (și ce mai ține de el) pentru fiecare skin amuzant. */
+function skinHead(k: ModelKit, acc: SkinAccessory, coat: Color3): void {
+  const skin = PAL.skin.scale(0.85);
+  const white = hex("#f2f4f6");
+  const black = hex("#15161a");
+  const eyes = (y: number, z: number, color: Color3, size = 0.06, gap = 0.08) => {
+    for (const x of [-gap, gap]) k.sphere(size, 6, { p: [x, y, z] }, { color, mat: "glow" });
+  };
+  switch (acc) {
+    case "santa":
+      k.sphere(0.34, 10, { p: [0, 1.9, 0.05] }, { color: skin, ...SMOOTH });
+      k.sphere(0.36, 10, { p: [0, 1.76, 0.14], s: [1, 1.1, 0.8] }, { color: white, wear: 0.05, ...SMOOTH });
+      k.sphere(0.07, 6, { p: [0, 1.9, 0.24] }, { color: hex("#d06a6a"), ...SMOOTH });
+      eyes(1.96, 0.2, black, 0.04);
+      k.cyl(0.12, 0.42, 0.42, 12, { p: [0, 2.05, 0] }, { color: white, ...SMOOTH });
+      k.cyl(0.55, 0, 0.38, 10, { p: [0.08, 2.32, -0.05], r: [0, 0, -0.5] }, { color: coat, ...SMOOTH });
+      k.sphere(0.14, 8, { p: [0.32, 2.44, -0.05] }, { color: white, ...SMOOTH });
+      k.cyl(0.1, 0.66, 0.66, 12, { p: [0, 1.06, 0], s: [1, 1, 0.8] }, { color: white, ...SMOOTH });
+      break;
+    case "skier":
+      k.sphere(0.34, 10, { p: [0, 1.9, 0.05] }, { color: skin, ...SMOOTH });
+      k.sphere(0.4, 10, { p: [0, 1.98, -0.02], s: [1, 0.8, 1] }, { color: hex("#ff5a2a"), ...SMOOTH });
+      k.sphere(0.12, 6, { p: [0, 2.17, -0.02] }, { color: white, ...SMOOTH });
+      k.box(0.36, 0.11, 0.08, { p: [0, 1.93, 0.2] }, { color: hex("#ffb020"), mat: "glow" });
+      for (const x of [-0.12, 0.12]) k.box(0.08, 0.05, 2.0, { p: [x, 1.4, -0.42], r: [-1.45, 0, x] }, { color: hex("#2a7fd4"), wear: 0.05 });
+      break;
+    case "werewolf":
+      k.sphere(0.46, 10, { p: [0, 1.95, 0.02] }, { color: hex("#5d5650"), wear: 0.2, ...SMOOTH });
+      k.cyl(0.36, 0.14, 0.24, 8, { p: [0, 1.88, 0.3], r: [Math.PI / 2, 0, 0] }, { color: hex("#6e655c"), ...SMOOTH });
+      k.sphere(0.08, 6, { p: [0, 1.92, 0.48] }, { color: black, ...SMOOTH });
+      for (const x of [-0.18, 0.18]) k.cyl(0.26, 0, 0.14, 4, { p: [x, 2.22, -0.02], r: [0, 0, x * -1.5] }, { color: hex("#4a443e"), wear: 0.2 });
+      eyes(2.02, 0.2, hex("#ffd23f"), 0.05, 0.1);
+      for (const x of [-0.05, 0.05]) k.cyl(0.08, 0, 0.03, 3, { p: [x, 1.79, 0.42] }, { color: white });
+      break;
+    case "viking":
+      k.sphere(0.34, 10, { p: [0, 1.9, 0.05] }, { color: skin, ...SMOOTH });
+      k.sphere(0.36, 8, { p: [0, 1.74, 0.13], s: [1, 1.2, 0.8] }, { color: hex("#c26a2a"), wear: 0.15, ...SMOOTH });
+      for (const x of [-0.1, 0.1]) k.capsule(0.3, 0.05, { p: [x, 1.55, 0.2] }, { color: hex("#c26a2a"), ...SMOOTH });
+      k.sphere(0.44, 10, { p: [0, 2.0, 0], s: [1, 0.75, 1] }, { color: PAL.iron, mat: "metal", wear: 0.25, ...SMOOTH });
+      for (const side of [1, -1]) k.cyl(0.42, 0, 0.13, 6, { p: [side * 0.3, 2.18, 0], r: [0, 0, side * -1.0] }, { color: PAL.bone, wear: 0.1, ...SMOOTH });
+      break;
+    case "snowman":
+      k.sphere(0.46, 12, { p: [0, 1.95, 0.02] }, { color: white, wear: 0.03, ...SMOOTH });
+      k.cyl(0.32, 0, 0.09, 6, { p: [0, 1.93, 0.36], r: [Math.PI / 2, 0, 0] }, { color: hex("#f07a1a"), ...SMOOTH });
+      for (const x of [-0.1, 0.1]) k.sphere(0.07, 6, { p: [x, 2.03, 0.2] }, { color: black, ...SMOOTH });
+      k.cyl(0.08, 0.6, 0.6, 12, { p: [0, 2.17, 0] }, { color: black, ...SMOOTH });
+      k.cyl(0.36, 0.38, 0.38, 12, { p: [0, 2.38, 0] }, { color: black, ...SMOOTH });
+      k.cyl(0.07, 0.39, 0.39, 12, { p: [0, 2.24, 0] }, { color: hex("#b0202a"), ...SMOOTH });
+      for (let i = 0; i < 3; i++) k.sphere(0.07, 6, { p: [0, 1.15 + i * 0.16, 0.3] }, { color: black, ...SMOOTH });
+      break;
+    case "yeti":
+      k.sphere(0.6, 12, { p: [0, 1.98, 0], s: [1, 0.95, 1] }, { color: hex("#e6ecf2"), wear: 0.08, ...SMOOTH });
+      k.sphere(0.3, 8, { p: [0, 1.92, 0.24], s: [1, 0.9, 0.6] }, { color: hex("#6fa0c8"), ...SMOOTH });
+      for (const side of [1, -1]) k.cyl(0.45, 0, 0.14, 6, { p: [side * 0.32, 2.3, -0.05], r: [0.3, 0, side * -0.8] }, { color: PAL.bone, ...SMOOTH });
+      eyes(2.0, 0.33, PAL.ice, 0.05);
+      for (const x of [-0.08, 0.08]) k.cyl(0.1, 0.03, 0, 3, { p: [x, 1.8, 0.33] }, { color: white });
+      break;
+    case "zombie":
+      k.sphere(0.4, 10, { p: [0, 1.92, 0.04] }, { color: hex("#7a9a6a"), wear: 0.2, ...SMOOTH });
+      k.sphere(0.15, 6, { p: [0.08, 2.08, 0.12] }, { color: hex("#c87a8a"), ...SMOOTH });
+      k.sphere(0.07, 6, { p: [-0.09, 1.95, 0.22] }, { color: hex("#d6ff6a"), mat: "glow" });
+      k.box(0.12, 0.03, 0.03, { p: [0.09, 1.95, 0.24] }, { color: black });
+      k.box(0.2, 0.06, 0.04, { p: [0, 1.8, 0.22] }, { color: PAL.blood });
+      break;
+    case "knight":
+      k.cyl(0.55, 0.42, 0.46, 12, { p: [0, 1.98, 0] }, { color: hex("#9aa4ae"), mat: "metal", wear: 0.15, ...SMOOTH });
+      k.sphere(0.42, 12, { p: [0, 2.24, 0], s: [1, 0.5, 1] }, { color: hex("#9aa4ae"), mat: "metal", ...SMOOTH });
+      k.box(0.3, 0.04, 0.05, { p: [0, 2.02, 0.22] }, { color: black });
+      k.box(0.04, 0.2, 0.05, { p: [0, 1.9, 0.22] }, { color: black });
+      for (let i = 0; i < 5; i++) k.sphere(0.16, 6, { p: [0, 2.38 + i * 0.03, -0.1 - i * 0.07] }, { color: hex("#c02030"), ...SMOOTH });
+      break;
+    case "chef":
+      k.sphere(0.34, 10, { p: [0, 1.9, 0.05] }, { color: skin, ...SMOOTH });
+      k.cyl(0.45, 0.38, 0.34, 12, { p: [0, 2.22, 0] }, { color: white, wear: 0.03, ...SMOOTH });
+      k.sphere(0.5, 10, { p: [0, 2.48, 0], s: [1, 0.6, 1] }, { color: white, wear: 0.03, ...SMOOTH });
+      for (const x of [-0.08, 0.08]) k.capsule(0.16, 0.035, { p: [x, 1.86, 0.22], r: [0, 0, Math.PI / 2 + x * 4] }, { color: black, ...SMOOTH });
+      eyes(1.97, 0.2, black, 0.04);
+      k.cyl(0.05, 0.5, 0.5, 12, { p: [0, 1.3, -0.45], r: [Math.PI / 2, 0, 0] }, { color: black, mat: "metal" });
+      break;
+    case "astronaut":
+      k.sphere(0.6, 14, { p: [0, 1.96, 0] }, { color: white, wear: 0.03, ...SMOOTH });
+      k.sphere(0.46, 12, { p: [0, 1.96, 0.12], s: [1, 0.8, 0.8] }, { color: hex("#2a4a7a"), mat: "glow" });
+      k.cyl(0.4, 0.02, 0.02, 4, { p: [0.22, 2.35, -0.1] }, { color: PAL.iron, mat: "metal" });
+      k.sphere(0.06, 6, { p: [0.22, 2.56, -0.1] }, { color: hex("#ff4040"), mat: "glow" });
+      k.box(0.6, 0.6, 0.3, { p: [0, 1.38, -0.42] }, { color: white, wear: 0.05 });
+      break;
+    case "pumpkin":
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        k.sphere(0.36, 8, { p: [Math.sin(a) * 0.14, 1.97, Math.cos(a) * 0.14], s: [0.8, 1, 0.8] }, { color: hex("#e0701a"), wear: 0.1, ...SMOOTH });
+      }
+      k.cyl(0.16, 0.05, 0.07, 6, { p: [0, 2.25, 0] }, { color: hex("#4a6a2a") });
+      for (const x of [-0.1, 0.1]) k.cyl(0.04, 0.1, 0.1, 3, { p: [x, 2.03, 0.29], r: [Math.PI / 2, 0, 0] }, { color: PAL.fire, mat: "glow" });
+      k.box(0.24, 0.06, 0.04, { p: [0, 1.88, 0.3] }, { color: PAL.fire, mat: "glow" });
+      break;
+    case "penguin":
+      k.sphere(0.48, 12, { p: [0, 1.96, 0] }, { color: black, ...SMOOTH });
+      k.sphere(0.34, 10, { p: [0, 1.92, 0.16], s: [1, 1, 0.6] }, { color: white, ...SMOOTH });
+      k.cyl(0.2, 0, 0.12, 6, { p: [0, 1.9, 0.38], r: [Math.PI / 2, 0, 0] }, { color: hex("#f0a020"), ...SMOOTH });
+      eyes(2.02, 0.32, black, 0.04);
+      k.sphere(0.6, 10, { p: [0, 1.25, 0.12], s: [0.85, 1, 0.5] }, { color: white, ...SMOOTH });
+      break;
+  }
 }
 
 /** Arma de foc a eroului; arată diferit pentru fiecare armă din magazin. Returnează vârful țevii. */
@@ -182,11 +312,14 @@ function gun(k: ModelKit, weapon: WeaponId, sniper: boolean): [number, number, n
       k.box(0.2, 0.2, 0.2, { p: [x, y + 0.04, 0.45] }, { color: PAL.iron, mat: "metal" });
       return [x, y + 0.04, 1.7];
     default: {
-      // Țeava ruginită: pușcă din țevi și lemn, legată cu sfoară. La Sniper e lungă, cu lunetă.
+      // Țeava ruginită: pușcă din țevi și lemn, legată cu curele de piele, cu talisman de os.
+      // La Sniper e lungă, cu lunetă.
       const len = sniper ? 1.9 : 1.25;
       stock(0.65);
       barrel(len, 0.4 + len / 2, 0.1, mix(PAL.iron, PAL.rust, 0.35));
-      k.cyl(0.18, 0.15, 0.15, 8, { p: [x, y + 0.05, 0.75], r: [Math.PI / 2, 0, 0] }, { color: PAL.cloth, wear: 0.3, smooth: true });
+      for (const z of [0.3, 0.55, 0.8]) k.cyl(0.07, 0.17, 0.17, 8, { p: [x, y + 0.02, z], r: [Math.PI / 2, 0, 0] }, { color: PAL.leather, wear: 0.3, smooth: true });
+      k.cyl(0.18, 0.15, 0.15, 8, { p: [x, y + 0.05, 0.4 + len - 0.05], r: [Math.PI / 2, 0, 0] }, { color: PAL.rust, mat: "metal", wear: 0.3, smooth: true });
+      k.cyl(0.2, 0.01, 0.06, 4, { p: [x, y - 0.25, 0.5], r: [0.3, 0, 0] }, { color: PAL.bone });
       k.box(0.09, 0.3, 0.15, { p: [x, y - 0.2, 0.6], r: [0.15, 0, 0] }, { color: PAL.iron, mat: "metal" });
       if (sniper) k.cyl(0.5, 0.09, 0.09, 10, { p: [x, y + 0.2, 0.7], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal", smooth: true });
       return [x, y + 0.05, 0.45 + len];

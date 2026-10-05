@@ -3,7 +3,7 @@
 // În faza 3 (multiplayer) exact această clasă va rula pe serverul Colyseus.
 
 import type { Command } from "./commands";
-import { CONFIG, type Difficulty, type HeroClass } from "./config";
+import { CONFIG, type Difficulty, type GameMode, type HeroClass } from "./config";
 import { clamp } from "./math";
 import {
   buildBarricade,
@@ -13,6 +13,7 @@ import {
   upgradeBarricade,
 } from "./systems/barricades";
 import { updateChests, updateCoins } from "./systems/coins";
+import { addFuel, buildBuilding, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
@@ -33,6 +34,8 @@ export interface GameOptions {
   seed?: number;
   /** Easy = jocul de bază; Medium / Hard / Nightmare = mai mulți zombi, mai puternici. */
   difficulty?: Difficulty;
+  /** Apără mina (implicit) sau Supraviețuire. */
+  mode?: GameMode;
 }
 
 export class GameSimulation {
@@ -69,9 +72,14 @@ export class GameSimulation {
     updateProjectiles(s, dt, this.events);
     updateMines(s, dt, this.events);
     updateCoins(s, dt, this.events);
-    updateChests(s, this.events);
+    updateChests(s, dt);
+    updateSurvival(s, dt, this.events);
+    updateDrops(s, dt, this.events);
+    updateAnimals(s, dt, this.events);
 
-    if (s.shelter.hp <= 0) {
+    // Pierzi: mina cade (Apără mina) sau toți eroii sunt căzuți (Supraviețuire).
+    const lost = s.mode === "survival" ? s.heroes.every((h) => !h.alive) : s.shelter.hp <= 0;
+    if (lost) {
       s.phase = "gameover";
       this.events.push({ type: "gameOver" });
     }
@@ -102,7 +110,8 @@ export class GameSimulation {
       case "build": {
         const pos = { x: cmd.x, z: cmd.z };
         if (cmd.kind === "tower") buildTower(s, cmd.playerId, pos, this.events);
-        else buildBarricade(s, cmd.playerId, pos, cmd.rotation ?? defaultBarricadeRotation(pos), this.events);
+        else if (cmd.kind === "barricade") buildBarricade(s, cmd.playerId, pos, cmd.rotation ?? defaultBarricadeRotation(pos), this.events);
+        else buildBuilding(s, cmd.playerId, cmd.kind, pos, this.events);
         break;
       }
       case "upgradeTower":
@@ -130,8 +139,18 @@ export class GameSimulation {
         if (len > 0.001) hero.aim = { x: cmd.x / len, z: cmd.z / len };
         hero.firing = cmd.firing;
         hero.autoAim = cmd.auto;
+        hero.aimDist = cmd.dist !== undefined && cmd.dist > 0 ? Math.min(60, cmd.dist) : 0;
         break;
       }
+      case "useItem":
+        useItem(s, cmd.playerId, cmd.item, this.events);
+        break;
+      case "addFuel":
+        addFuel(s, cmd.playerId, cmd.fireId, this.events);
+        break;
+      case "demolishBuilding":
+        demolishBuilding(s, cmd.playerId, cmd.buildingId, this.events);
+        break;
       case "reload": {
         const hero = heroById(s, player.heroId);
         if (hero) startReload(s, hero, this.events);
@@ -147,10 +166,12 @@ export class GameSimulation {
   }
 }
 
-function createInitialState({ players, seed = Date.now(), difficulty = "easy" }: GameOptions): GameState {
+function createInitialState({ players, seed = Date.now(), difficulty = "easy", mode = "defend" }: GameOptions): GameState {
   const state: GameState = {
     time: 0,
+    mode,
     difficulty,
+    weather: "clear",
     phase: "day",
     wave: 0,
     totalWaves: CONFIG.waves.count,
@@ -172,6 +193,11 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy" }:
     shells: [],
     fires: [],
     chests: [],
+    campfires: [],
+    farms: [],
+    animals: [],
+    drops: [],
+    wildTimer: 4,
     nextId: 1,
     rngState: seed | 0,
   };
@@ -199,6 +225,8 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy" }:
       skins: [],
       skin: null,
       unlocked: [],
+      kills: 0,
+      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0 },
     };
     state.heroes.push({
       id: heroId,
@@ -220,10 +248,17 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy" }:
       autoAim: false,
       ammo: 0,
       reloadTimer: 0,
+      reserve: 0,
+      aimDist: 0,
+      hunger: 100,
+      warmth: 100,
     });
     const hero = state.heroes[state.heroes.length - 1];
     hero.ammo = gunStats(state, hero).magazine;
+    hero.reserve = hero.ammo * CONFIG.ammo.startMagazines;
   });
 
+  // Focul de tabără de lângă mină (în Apără mina e doar decor și nu se stinge).
+  state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 1.6, z: -3.7 }, fuel: CONFIG.survival.campfireFuel, cooking: [] });
   return state;
 }

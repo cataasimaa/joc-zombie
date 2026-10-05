@@ -151,7 +151,7 @@ describe("luptă", () => {
     const sim = newGame();
     const s = sim.state;
     s.heroes[0].pos = { x: -38, z: -38 };
-    s.barricades.push({ id: 999, ownerId: "p1", pos: { x: 0, z: 10 }, rotation: 0, level: 1, door: false, hp: 250, maxHp: 250 });
+    s.barricades.push({ id: 999, ownerId: "p1", pos: { x: 0, z: 10 }, rotation: 0, level: 1, door: false, broken: false, hp: 250, maxHp: 250 });
     const z = dummy(sim, "walker", 0, 14, 100);
     run(sim, 5);
     expect(z.pos.z).toBeGreaterThan(10);
@@ -162,7 +162,7 @@ describe("luptă", () => {
     const sim = newGame();
     const s = sim.state;
     s.heroes[0].pos = { x: -38, z: -38 };
-    s.barricades.push({ id: 999, ownerId: "p1", pos: { x: 0, z: 10 }, rotation: 0, level: 1, door: false, hp: 250, maxHp: 250 });
+    s.barricades.push({ id: 999, ownerId: "p1", pos: { x: 0, z: 10 }, rotation: 0, level: 1, door: false, broken: false, hp: 250, maxHp: 250 });
     const z = dummy(sim, "flyer", 0, 14, 100);
     run(sim, 3);
     expect(z.pos.z).toBeLessThan(9);
@@ -301,20 +301,142 @@ describe("turnuri", () => {
     expect(b.hp).toBeLessThan(b.maxHp);
   });
 
-  it("boss-ul învins lasă un cufăr cu ceva rar", () => {
+  it("boss-ul învins lasă un cufăr; îl împuști și primești ceva rar", () => {
     const sim = newGame();
     const s = sim.state;
     const boss = dummy(sim, "boss", 6, 0, 10);
     s.heroes[0].pos = { x: 0, z: -3 };
     sim.enqueue({ type: "aim", playerId: "p1", x: 1, z: 0.5, firing: true, auto: true });
-    run(sim, 1);
+    run(sim, 0.4);
     expect(s.zombies.includes(boss)).toBe(false);
     expect(s.chests.length).toBe(1);
-    s.heroes[0].pos = { ...s.chests[0].pos };
+    expect(s.chests[0].openedFor).toBeNull();
+    // Cufărul se deschide trăgând în el.
+    s.heroes[0].pos = { x: s.chests[0].pos.x - 4, z: s.chests[0].pos.z };
+    s.heroes[0].reserve = 100;
     sim.drainEvents();
-    sim.step(DT);
-    const opened = sim.drainEvents().find((e) => e.type === "chestOpened");
+    const events: ReturnType<typeof sim.drainEvents> = [];
+    for (let i = 0; i < 120; i++) {
+      sim.enqueue({ type: "aim", playerId: "p1", x: 1, z: 0, firing: true, auto: false });
+      sim.step(DT);
+      events.push(...sim.drainEvents());
+    }
+    const opened = events.find((e) => e.type === "chestOpened");
     expect(opened && opened.type === "chestOpened" && ["epic", "legendary"].includes(opened.rarity)).toBe(true);
+    expect(s.players.p1.inventory.cookedMeat).toBeGreaterThan(0);
+  });
+});
+
+describe("muniție și ziduri", () => {
+  it("reîncărcarea ia gloanțe din rezervă; fără rezervă nu mai tragi", () => {
+    const sim = newGame();
+    const h = sim.state.heroes[0];
+    const mag = h.ammo;
+    expect(h.reserve).toBe(mag * CONFIG.ammo.startMagazines);
+    h.ammo = 0;
+    h.reserve = 5;
+    sim.enqueue({ type: "reload", playerId: "p1" });
+    run(sim, 3);
+    expect(h.ammo).toBe(5);
+    expect(h.reserve).toBe(0);
+    h.ammo = 0;
+    sim.enqueue({ type: "reload", playerId: "p1" });
+    sim.step(DT);
+    expect(sim.drainEvents().some((e) => e.type === "noAmmo")).toBe(true);
+  });
+
+  it("zidul dărâmat rămâne pe loc și se ridică la loc când e reparat", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.barricades.push({ id: 999, ownerId: "p1", pos: { x: 0, z: 10 }, rotation: 0, level: 1, door: false, broken: false, hp: 5, maxHp: 250 });
+    const z = dummy(sim, "brute", 0, 11.2);
+    z.attackTimer = 0;
+    run(sim, 0.5);
+    const b = s.barricades[0];
+    expect(b.broken).toBe(true);
+    s.zombies.length = 0;
+    s.heroes[0].pos = { x: 0, z: 8.6 };
+    s.heroes[0].heroClass = "tank";
+    run(sim, 6);
+    expect(b.broken).toBe(false);
+  });
+
+  it("kill-urile se numără pe jucător", () => {
+    const sim = newGame();
+    dummy(sim, "walker", 10, 4, 1);
+    sim.state.heroes[0].pos = { x: 10, z: -3 };
+    sim.enqueue({ type: "aim", playerId: "p1", x: 0, z: 1, firing: true, auto: true });
+    run(sim, 1);
+    expect(sim.state.players.p1.kills).toBe(1);
+  });
+});
+
+describe("supraviețuire", () => {
+  const survival = () => new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 3, mode: "survival" });
+
+  it("foamea și frigul scad; lângă foc te încălzești", () => {
+    const sim = survival();
+    const h = sim.state.heroes[0];
+    h.pos = { x: 20, z: -20 };
+    run(sim, 10);
+    expect(h.hunger).toBeLessThan(100);
+    expect(h.warmth).toBeLessThan(100);
+    const cold = h.warmth;
+    h.pos = { x: 1.6, z: -2.4 }; // lângă focul de start
+    run(sim, 3);
+    expect(h.warmth).toBeGreaterThan(cold);
+  });
+
+  it("carnea crudă se gătește pe foc în 15 s și apare pe jos", () => {
+    const sim = survival();
+    const s = sim.state;
+    s.players.p1.inventory.rawMeat = 1;
+    s.heroes[0].pos = { x: 1.6, z: -2.4 };
+    sim.enqueue({ type: "useItem", playerId: "p1", item: "rawMeat" });
+    sim.step(DT);
+    expect(s.campfires[0].cooking.length).toBe(1);
+    run(sim, CONFIG.survival.cookTime + 0.2);
+    expect(s.drops.some((d) => d.kind === "cookedMeat")).toBe(true);
+  });
+
+  it("vânezi o căprioară și primești carne", () => {
+    const sim = survival();
+    const s = sim.state;
+    s.heroes[0].pos = { x: 10, z: 10 };
+    s.animals.push({ id: 700, kind: "deer", pos: { x: 10, z: 14 }, facing: 0, hp: 40, maxHp: 40, goal: { x: 10, z: 14 }, timer: 99, attackTimer: 0, farmId: null });
+    sim.enqueue({ type: "aim", playerId: "p1", x: 0, z: 1, firing: true, auto: true });
+    run(sim, 1.5);
+    expect(s.animals.some((a) => a.id === 700)).toBe(false);
+    expect(s.drops.some((d) => d.kind === "rawMeat")).toBe(true);
+  });
+
+  it("zombii vânează eroul, nu mina; dacă eroul cade, jocul se termină", () => {
+    const sim = survival();
+    const s = sim.state;
+    s.heroes[0].pos = { x: 25, z: 25 };
+    const z = dummy(sim, "walker", 10, 10);
+    const d0 = Math.hypot(z.pos.x - 25, z.pos.z - 25);
+    run(sim, 2);
+    expect(Math.hypot(z.pos.x - 25, z.pos.z - 25)).toBeLessThan(d0);
+    s.heroes[0].hp = 1;
+    s.heroes[0].hunger = 0;
+    run(sim, 2);
+    expect(s.phase).toBe("gameover");
+  });
+
+  it("focul și ferma se construiesc doar în Supraviețuire", () => {
+    const sim = survival();
+    sim.state.players.p1.wood = 200;
+    sim.enqueue({ type: "build", playerId: "p1", kind: "campfire", x: 10, z: -10 });
+    sim.enqueue({ type: "build", playerId: "p1", kind: "farmChicken", x: -10, z: -10 });
+    sim.step(DT);
+    expect(sim.state.campfires.length).toBe(2);
+    expect(sim.state.farms.length).toBe(1);
+    const def = newGame();
+    def.state.players.p1.wood = 200;
+    def.enqueue({ type: "build", playerId: "p1", kind: "campfire", x: 10, z: -10 });
+    def.step(DT);
+    expect(def.state.campfires.length).toBe(1);
   });
 });
 
@@ -410,7 +532,7 @@ describe("construcții", () => {
     const sim = newGame();
     const s = sim.state;
     const hero = s.heroes[0];
-    s.barricades.push({ id: 900, ownerId: "p1", pos: { x: 10, z: 0 }, rotation: Math.PI / 2, level: 1, door: false, hp: 250, maxHp: 250 });
+    s.barricades.push({ id: 900, ownerId: "p1", pos: { x: 10, z: 0 }, rotation: Math.PI / 2, level: 1, door: false, broken: false, hp: 250, maxHp: 250 });
     hero.pos = { x: 8, z: 0 };
     sim.enqueue({ type: "move", playerId: "p1", x: 1, z: 0 });
     run(sim, 1);

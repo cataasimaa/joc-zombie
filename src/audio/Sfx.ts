@@ -41,6 +41,7 @@ export class Sfx {
   private musicBus: GainNode | null = null;
   muted = false;
   musicOn = true;
+  private menu = false;
 
   constructor() {
     const unlock = () => {
@@ -100,11 +101,44 @@ export class Sfx {
     musicBus.gain.value = this.musicOn ? 0.55 : 0;
     musicBus.connect(this.master);
     this.music = new Music(ctx, musicBus, this.reverbSend, this.noise);
+    this.music.setMenu(this.menu);
   }
 
   setMuted(m: boolean): void {
     this.muted = m;
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.7, this.ctx.currentTime, 0.05);
+  }
+
+  /** Meniul principal: tema eroică. */
+  setMenu(on: boolean): void {
+    this.menu = on;
+    this.music?.setMenu(on);
+  }
+
+  /**
+   * Anunțul cu voce (ca în Warcraft / DotA): „Double Kill”, „Rampage”... Vocea e cea a
+   * browserului (sintetizată), coborâtă și rară, plus o lovitură grea cu ecou dedesubt.
+   */
+  announce(text: string, tier: 1 | 2 | 3): void {
+    if (this.muted || !this.ctx || this.ctx.state !== "running") return;
+    this.tone(55, 30, 0.9, "sine", 0.35 + tier * 0.12);
+    this.noiseHit({ type: "lowpass", freq: 600, dur: 1.4, vol: 0.12 + tier * 0.05, reverbOnly: true });
+    if (tier === 3) this.chord([147, 220, 294], 1.2, 0.05);
+    try {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(text.replace("!", ""));
+      u.lang = "en-US";
+      u.pitch = 0.35;
+      u.rate = 0.82;
+      u.volume = Math.min(1, 0.6 + tier * 0.15);
+      const voice = synth.getVoices().find((v) => v.lang.startsWith("en") && /male|daniel|fred|alex|david|google uk english male/i.test(v.name));
+      if (voice) u.voice = voice;
+      synth.speak(u);
+    } catch {
+      // fără voce pe acest dispozitiv: rămâne textul de pe ecran
+    }
   }
 
   setMusicOn(on: boolean): void {
@@ -183,7 +217,8 @@ export class Sfx {
         if (this.throttle(`shot${e.heroId}`, 0.035)) this.gunshot(e.heroId !== undefined ? f.weaponOf(e.heroId) : "rusty", !!e.crit);
         break;
       case "towerFired":
-        if (this.throttle(`tower_${e.kind}${e.special}`, e.kind === "tesla" ? 0.05 : 0.07)) this.towerShot(e.kind, e.special !== "none" && e.special !== "mini");
+        // Sunetul e legat de țintă: doar Tesla (care lovește pe loc) sună la tragere.
+        if (e.kind === "tesla" && this.throttle("tower_tesla", 0.05)) this.towerShot("tesla", false);
         break;
       case "towerAbility":
         if (e.kind === "tesla") this.laser();
@@ -203,6 +238,50 @@ export class Sfx {
         break;
       case "chestOpened":
         if (e.playerId === f.localPlayer) this.spinResult(e.rarity);
+        this.crumble(0.4);
+        break;
+      case "chestHit":
+        if (this.throttle("chestHit", 0.08)) this.thunk(200, 0.3);
+        break;
+      case "picked":
+        if (e.playerId === f.localPlayer && this.throttle("pick", 0.06)) {
+          if (e.kind === "ammo") [0, 0.05, 0.1].forEach((d) => this.click(2400, 0.12, d));
+          else this.thunk(260, 0.15);
+        }
+        break;
+      case "ate":
+        if (e.playerId === f.localPlayer) for (let i = 0; i < 3; i++) this.noiseHit({ type: "bandpass", freq: 900, dur: 0.06, vol: 0.12, delay: i * 0.14 });
+        break;
+      case "fuelAdded":
+        this.thunk(150, 0.2);
+        this.noiseHit({ type: "highpass", freq: 3000, dur: 0.6, vol: 0.06 });
+        break;
+      case "fireOut":
+        this.noiseHit({ type: "highpass", freq: 1500, sweepTo: 4000, dur: 0.8, vol: 0.1 });
+        break;
+      case "cooked":
+        this.tone(1320, 1320, 0.15, "sine", 0.08);
+        this.tone(1760, 1760, 0.25, "sine", 0.06, 0.12);
+        break;
+      case "animalHit":
+        if (this.throttle("animalHit", 0.08)) this.noiseHit({ type: "lowpass", freq: 600, dur: 0.07, vol: 0.14 });
+        break;
+      case "animalAttack":
+        this.snarl(0.45);
+        this.thunk(80, 0.3);
+        break;
+      case "animalDied":
+        this.tone(e.kind === "bear" ? 160 : 520, e.kind === "bear" ? 70 : 260, 0.4, "sawtooth", 0.08, 0, 1200);
+        break;
+      case "barricadeRepaired":
+        this.thunk(220, 0.25);
+        this.thunk(180, 0.22, 0.1);
+        break;
+      case "noAmmo":
+        if (e.heroId === f.localHero && this.throttle("noAmmo", 0.6)) this.click(1800, 0.15);
+        break;
+      case "weatherChanged":
+        this.noiseHit({ type: "bandpass", freq: 500, sweepTo: 1200, dur: 2.2, vol: 0.12 });
         break;
       case "dryFire":
         if (mine(e.heroId) && this.throttle("dry", 0.3)) this.click(2600, 0.12);
@@ -546,7 +625,9 @@ export class Sfx {
         } else this.explosion(special === "big" ? 0.9 : 0.55);
         break;
       case "cannon":
-        this.explosion(0.8);
+        // Tunul se aude doar când ghiuleaua crapă.
+        this.noiseHit({ type: "highpass", freq: 2000, dur: 0.03, vol: 0.4 });
+        this.explosion(0.85);
         if (special === "fire") this.noiseHit({ type: "highpass", freq: 1500, dur: 1.2, vol: 0.15 });
         break;
       case "frost":
@@ -556,7 +637,11 @@ export class Sfx {
         }
         break;
       case "crossbow":
-        if (this.throttle("arrowHit", 0.05)) this.noiseHit({ type: "lowpass", freq: 700, dur: 0.08, vol: special === "heavy" ? 0.4 : 0.22 });
+        // Arbaleta sună scurt când nimerește: „tac” sec de săgeată + vibrația cozii.
+        if (this.throttle("arrowHit", 0.05)) {
+          this.noiseHit({ type: "bandpass", freq: 900, dur: 0.05, vol: special === "heavy" ? 0.5 : 0.32 });
+          this.tone(170, 120, 0.09, "triangle", special === "heavy" ? 0.3 : 0.18);
+        }
         break;
       default:
         break;

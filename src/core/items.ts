@@ -63,6 +63,8 @@ export type ShopReward =
   | { kind: "wood"; amount: number }
   /** Câștig în monede (jackpot-ul clasic de păcănele). */
   | { kind: "coins"; amount: number }
+  /** Încărcătoare în plus în rezervă. */
+  | { kind: "ammo"; magazines: number }
   | { kind: "mines"; count: number }
   | { kind: "maxHp"; pct: number }
   | { kind: "speed"; pct: number }
@@ -75,7 +77,7 @@ export type ShopReward =
   | { kind: "skin"; skinId: string };
 
 /** Recompensele care se pot repeta (consumabile). Restul se primesc o singură dată pe rundă. */
-export const REPEATABLE: ShopReward["kind"][] = ["nothing", "wood", "mines", "coins"];
+export const REPEATABLE: ShopReward["kind"][] = ["nothing", "wood", "mines", "coins", "ammo"];
 
 /** Cheie unică pentru o recompensă (ca să știm ce ai câștigat deja în runda asta). */
 export const rewardKey = (r: ShopReward): string => JSON.stringify(r);
@@ -89,6 +91,7 @@ export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
   nothing: [{ kind: "nothing" }],
   common: [
     { kind: "wood", amount: 25 },
+    { kind: "ammo", magazines: 2 },
     { kind: "mines", count: 2 },
     { kind: "maxHp", pct: 0.05 },
     { kind: "speed", pct: 0.04 },
@@ -97,6 +100,7 @@ export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
   ],
   rare: [
     { kind: "coins", amount: 75 },
+    { kind: "ammo", magazines: 4 },
     { kind: "mines", count: 4 },
     { kind: "maxHp", pct: 0.1 },
     { kind: "speed", pct: 0.06 },
@@ -104,8 +108,11 @@ export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
     { kind: "repair", pct: 0.4 },
     { kind: "weapon", weaponId: "hunting" },
     { kind: "weapon", weaponId: "scattergun" },
-    { kind: "skin", skinId: "hunter" },
-    { kind: "skin", skinId: "ember" },
+    { kind: "skin", skinId: "skier" },
+    { kind: "skin", skinId: "viking" },
+    { kind: "skin", skinId: "zombie" },
+    { kind: "skin", skinId: "knight" },
+    { kind: "skin", skinId: "chef" },
   ],
   epic: [
     { kind: "coins", amount: 150 },
@@ -114,13 +121,17 @@ export const SHOP_POOLS: Record<ShopRarity, ShopReward[]> = {
     { kind: "towerTier", tier: 3 },
     { kind: "weapon", weaponId: "pipeGun" },
     { kind: "weapon", weaponId: "boneBow" },
-    { kind: "skin", skinId: "arctic" },
-    { kind: "skin", skinId: "shadow" },
+    { kind: "skin", skinId: "werewolf" },
+    { kind: "skin", skinId: "snowman" },
+    { kind: "skin", skinId: "yeti" },
+    { kind: "skin", skinId: "pumpkin" },
   ],
   legendary: [
     { kind: "coins", amount: 400 },
     { kind: "weapon", weaponId: "iceLance" },
-    { kind: "skin", skinId: "gold" },
+    { kind: "skin", skinId: "santa" },
+    { kind: "skin", skinId: "astronaut" },
+    { kind: "skin", skinId: "penguin" },
   ],
 };
 
@@ -132,5 +143,7 @@ export const CHEST_POOL: { rarity: Rarity; reward: ShopReward }[] = [
   { rarity: "epic", reward: { kind: "weapon", weaponId: "boneBow" } },
   { rarity: "epic", reward: { kind: "mines", count: 8 } },
   { rarity: "legendary", reward: { kind: "weapon", weaponId: "iceLance" } },
-  { rarity: "legendary", reward: { kind: "skin", skinId: "gold" } },
+  { rarity: "legendary", reward: { kind: "skin", skinId: "santa" } },
+  { rarity: "legendary", reward: { kind: "skin", skinId: "penguin" } },
+  { rarity: "epic", reward: { kind: "skin", skinId: "werewolf" } },
 ];

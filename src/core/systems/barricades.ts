@@ -114,7 +114,7 @@ export function buildBarricade(
   state.players[playerId].wood -= B.levels[0].cost;
   const id = state.nextId++;
   const hp = B.levels[0].maxHp;
-  state.barricades.push({ id, ownerId: playerId, pos: { ...pos }, rotation, level: 1, door: false, hp, maxHp: hp });
+  state.barricades.push({ id, ownerId: playerId, pos: { ...pos }, rotation, level: 1, door: false, broken: false, hp, maxHp: hp });
   events.push({ type: "barricadePlaced", id });
   return true;
 }
@@ -147,6 +147,7 @@ export function canUpgradeBarricade(state: GameState, playerId: PlayerId, id: En
   const player = state.players[playerId];
   if (!b || !player) return "Zid inexistent";
   if (b.ownerId !== playerId) return "Nu e zidul tău";
+  if (b.broken) return "Repară-l întâi (stai lângă el)";
   if (to === "door" && b.door) return "E deja ușă";
   if (to === "reinforce" && b.level >= B.levels.length) return "Nivel maxim";
   const cost = to === "door" ? B.doorCost : B.levels[b.level].cost;
@@ -184,15 +185,21 @@ export function demolishBarricade(state: GameState, playerId: PlayerId, id: Enti
   const spent = B.levels.slice(0, b.level).reduce((a, l) => a + l.cost, 0) + (b.door ? B.doorCost : 0);
   state.players[playerId].wood += Math.floor(spent * B.refund);
   state.barricades.splice(state.barricades.indexOf(b), 1);
-  events.push({ type: "barricadeDestroyed", id, pos: { ...b.pos } });
+  events.push({ type: "structureRemoved", id, pos: { ...b.pos } });
   return true;
 }
 
-export function damageBarricade(state: GameState, b: Barricade, amount: number, events: GameEvent[]): void {
+/**
+ * Zidul lovit pierde viață; la 0 nu dispare, ci rămâne dărâmat (țăruși rupți, nu mai oprește
+ * pe nimeni) până îl repară un erou. Trei stări: întreg, crăpat (< 60%), dărâmat.
+ */
+export function damageBarricade(_state: GameState, b: Barricade, amount: number, events: GameEvent[]): void {
+  if (b.broken) return;
   b.hp -= amount;
   events.push({ type: "barricadeHit", id: b.id, pos: { ...b.pos } });
   if (b.hp > 0) return;
-  state.barricades.splice(state.barricades.indexOf(b), 1);
+  b.hp = 0;
+  b.broken = true;
   events.push({ type: "barricadeDestroyed", id: b.id, pos: { ...b.pos } });
 }
 

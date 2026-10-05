@@ -133,51 +133,94 @@ export function buildFlame(scene: Scene, mats: Materials): Mesh {
 
 // ---------- Ziduri ----------
 
+export type WallState = "intact" | "cracked" | "broken";
+
 /**
- * Un segment de zid (lungimea pe axa x). level 1 = gard de pari, 2 = palisadă pe piatră.
- * door = ușă (scânduri orizontale pe un cadru).
+ * Un segment de zid (lungimea pe axa x), din țăruși, scânduri și zăpadă — fără piatră.
+ * level 1 = gard de pari, 2 = palisadă dublă cu benzi de fier și țepi. door = ușă din scânduri.
+ * Trei stări ale aceluiași obiect, ca să se vadă că se strică și se repară:
+ *   întreg · crăpat (pari aplecați, o scândură căzută, așchii) · dărâmat (cioturi și scânduri pe jos).
  */
-export function buildWall(scene: Scene, mats: Materials, level: number, door: boolean): Mesh[] {
+export function buildWall(scene: Scene, mats: Materials, level: number, door: boolean, state: WallState = "intact"): Mesh[] {
   const k = new ModelKit(scene, mats, 800 + level * 10 + (door ? 1 : 0));
   const L = CONFIG.barricade.length;
   const strong = level >= 2;
-  const stakeH = strong ? 2.1 : 1.6;
-  if (strong) {
-    k.box(L, 0.5, 0.65, { p: [0, 0.25, 0] }, { color: PAL.stone, wear: 0.22, frost: 0.7 });
-  }
-  const baseY = strong ? 0.45 : 0;
-  const stake = (x: number, h: number) => {
-    k.cyl(h, 0.3, 0.34, 5, { p: [x, baseY + h / 2, 0], r: [k.rand(-0.05, 0.05), 0, k.rand(-0.06, 0.06)] }, { color: mix(PAL.burntWood, PAL.oldWood, k.rand(0, 0.6)), wear: 0.2 });
-    k.cyl(0.4, 0, 0.3, 5, { p: [x, baseY + h + 0.2, 0] }, { color: PAL.oldWood, wear: 0.2, frost: 0.6, frostNormal: 0.3 });
-  };
+  const stakeH = strong ? 2.0 : 1.6;
+  const cracked = state === "cracked";
+  const broken = state === "broken";
+  const wood = (t: number) => mix(PAL.burntWood, PAL.oldWood, t);
 
-  if (door) {
-    // Cadru (doi pari groși + grindă) și ușa din scânduri cu benzi de fier.
-    for (const x of [-L / 2 + 0.2, L / 2 - 0.2]) stake(x, stakeH + 0.2);
-    k.box(L, 0.22, 0.3, { p: [0, baseY + stakeH + 0.05, 0] }, { color: PAL.darkWood, wear: 0.2, frost: 0.8 });
-    const dw = L - 0.75;
-    for (let i = 0; i < 4; i++) {
-      k.box(dw, 0.3, 0.14, { p: [0, baseY + 0.25 + i * 0.34, 0], r: [0, 0, k.rand(-0.02, 0.02)] }, { color: mix(PAL.oldWood, PAL.burntWood, k.rand(0, 0.5)), wear: 0.2, frost: 0.5, frostNormal: 0.7 });
+  // Un par ascuțit; `snap` = rupt (ciot cu vârf așchiat), `lean` = aplecat.
+  const stake = (x: number, h: number, z = 0, thick = 0.32, snap = false, lean = 0) => {
+    const hh = snap ? h * k.rand(0.25, 0.45) : h;
+    k.cyl(hh, thick * 0.92, thick, 6, { p: [x + lean * hh * 0.5, hh / 2, z], r: [k.rand(-0.05, 0.05), 0, -lean + k.rand(-0.05, 0.05)] }, { color: wood(k.rand(0, 0.7)), wear: 0.25, frost: 0.4, frostNormal: 0.75 });
+    if (snap) {
+      for (let i = 0; i < 3; i++) k.cyl(0.25, 0, 0.08, 3, { p: [x + k.rand(-0.08, 0.08), hh + 0.08, z + k.rand(-0.06, 0.06)], r: [k.rand(-0.4, 0.4), 0, k.rand(-0.4, 0.4)] }, { color: PAL.oldWood });
+    } else {
+      k.cyl(0.38, 0, thick * 0.92, 6, { p: [x + lean * (hh + 0.2), hh + 0.18, z], r: [0, 0, -lean] }, { color: PAL.oldWood, wear: 0.2, frost: 0.7, frostNormal: 0.3 });
     }
-    for (const x of [-dw / 3, dw / 3]) k.box(0.12, 1.3, 0.05, { p: [x, baseY + 0.75, 0.09] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
-    k.cyl(0.04, 0.2, 0.2, 8, { p: [0.3, baseY + 0.75, 0.12], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal" });
-  } else {
-    const n = 6;
-    for (let i = 0; i < n; i++) stake(-L / 2 + 0.2 + (i * (L - 0.4)) / (n - 1), stakeH + k.rand(-0.15, 0.15));
-    for (const y of [0.45, stakeH - 0.35]) {
-      k.box(L + 0.1, 0.16, 0.12, { p: [0, baseY + y, 0.2], r: [0, 0, k.rand(-0.04, 0.04)] }, { color: PAL.darkWood, wear: 0.2, frost: 0.7, frostNormal: 0.7 });
+  };
+  // Scândură pe jos (căzută).
+  const fallen = (x: number, z: number, len: number) =>
+    k.box(len, 0.08, 0.22, { p: [x, 0.06, z], r: [0, k.rand(-0.6, 0.6), k.rand(-0.08, 0.08)] }, { color: wood(k.rand(0.2, 0.8)), wear: 0.25, frost: 0.6 });
+
+  const n = door ? 2 : strong ? 7 : 6;
+  const xs = door ? [-L / 2 + 0.2, L / 2 - 0.2] : Array.from({ length: n }, (_, i) => -L / 2 + 0.2 + (i * (L - 0.4)) / (n - 1));
+  const rows = strong ? [0, 0.26] : [0];
+  xs.forEach((x, i) => {
+    for (const z of rows) {
+      const h = (door ? stakeH + 0.25 : stakeH) + k.rand(-0.15, 0.15) - (z > 0 ? 0.3 : 0);
+      const snap = broken ? true : cracked && (i === 2 || (strong && i === 5)) && z === 0;
+      const lean = cracked && i % 3 === 1 ? k.rand(0.12, 0.22) * (i % 2 ? 1 : -1) : 0;
+      stake(x, h, z, strong ? 0.36 : 0.32, snap, lean);
     }
-    if (strong) {
-      for (const x of [-0.8, 0, 0.8]) k.box(0.5, 0.1, 0.42, { p: [x, baseY + stakeH * 0.55, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
-      // Țepi îndreptați spre exterior.
-      for (const x of [-0.9, -0.3, 0.3, 0.9]) {
-        k.cyl(0.9, 0, 0.14, 4, { p: [x, baseY + 0.6, 0.55], r: [1.1, 0, 0] }, { color: PAL.oldWood, wear: 0.2 });
+  });
+
+  if (!broken) {
+    if (door) {
+      // Cadrul ușii și ușa din scânduri, cu benzi de fier.
+      k.box(L, 0.22, 0.3, { p: [0, stakeH + 0.05, 0] }, { color: PAL.darkWood, wear: 0.2, frost: 0.8 });
+      const dw = L - 0.75;
+      for (let i = 0; i < 4; i++) {
+        if (cracked && i === 1) continue;
+        k.box(dw, 0.3, 0.14, { p: [0, 0.25 + i * 0.34, 0], r: [0, 0, cracked ? k.rand(-0.08, 0.08) : k.rand(-0.02, 0.02)] }, { color: wood(k.rand(0, 0.5)), wear: 0.2, frost: 0.5, frostNormal: 0.7 });
+      }
+      for (const x of [-dw / 3, dw / 3]) k.box(0.12, 1.3, 0.05, { p: [x, 0.75, 0.09] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+      k.cyl(0.04, 0.2, 0.2, 8, { p: [0.3, 0.75, 0.12], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal" });
+    } else {
+      // Scânduri prinse orizontal peste pari (la crăpat: una lipsește, una atârnă strâmb).
+      const ys = strong ? [0.4, 1.0, stakeH - 0.4] : [0.45, stakeH - 0.35];
+      ys.forEach((y, i) => {
+        if (cracked && i === 1) return;
+        const tilt = cracked && i === 0 ? 0.18 : k.rand(-0.04, 0.04);
+        k.box(L + 0.1, 0.18, 0.1, { p: [0, y, 0.2], r: [0, 0, tilt] }, { color: PAL.darkWood, wear: 0.22, frost: 0.7, frostNormal: 0.7 });
+      });
+      if (strong) {
+        // Benzi de fier peste pari și țepi îndreptați spre exterior.
+        for (const y of [0.7, stakeH - 0.6]) k.box(L, 0.08, 0.4, { p: [0, y, 0.12] }, { color: PAL.iron, mat: "metal", wear: 0.35 });
+        for (const x of [-0.9, -0.3, 0.3, 0.9]) {
+          if (cracked && x === 0.3) continue;
+          k.cyl(0.9, 0, 0.14, 4, { p: [x, 0.6, 0.6], r: [1.1, 0, 0] }, { color: PAL.oldWood, wear: 0.2 });
+        }
       }
     }
   }
+  if (cracked) {
+    fallen(0.2, 0.55, L * 0.6);
+    for (let i = 0; i < 4; i++) k.box(0.18, 0.04, 0.06, { p: [k.rand(-1, 1), 0.04, k.rand(0.3, 0.8)], r: [0, k.rand(0, 3), 0] }, { color: PAL.oldWood });
+  }
+  if (broken) {
+    // Dărâmat: doar cioturi, scânduri împrăștiate și zăpadă peste ele.
+    fallen(-0.4, 0.5, L * 0.7);
+    fallen(0.5, -0.4, L * 0.55);
+    fallen(0.1, 0.9, L * 0.45);
+    if (strong) fallen(-0.2, -0.8, L * 0.6);
+    for (let i = 0; i < 6; i++) k.box(0.2, 0.05, 0.07, { p: [k.rand(-1.2, 1.2), 0.04, k.rand(-0.9, 0.9)], r: [0, k.rand(0, 3), 0] }, { color: PAL.oldWood });
+    k.ico(0.7, { p: [k.rand(-0.5, 0.5), 0.02, 0.1], s: [2.4, 0.3, 1.4] }, { color: PAL.snow, wear: 0.03 });
+  }
   // Troian de zăpadă la bază.
   k.ico(0.6, { p: [k.rand(-0.6, 0.6), 0.02, 0.3], s: [2.2, 0.35, 0.9] }, { color: PAL.snow, wear: 0.03 });
-  return k.build(`wall${level}${door ? "door" : ""}`);
+  return k.build(`wall${level}${door ? "door" : ""}${state}`);
 }
 
 // ---------- Mine și monede ----------
@@ -249,16 +292,39 @@ export function buildIceShell(scene: Scene, mats: Materials): Mesh {
 
 // ---------- Cufărul boss-ului ----------
 
-export function buildChest(scene: Scene, mats: Materials): Mesh[] {
+/** Lumina de chihlimbar (ca monedele), nu aur de fantasy. */
+export const AMBER = hex("#ffb347");
+
+/**
+ * Cufărul: lemn ars legat cu fier, pe jumătate îngropat în zăpadă, cu balama de os.
+ * Corpul și capacul sunt separate (capacul se rotește când se deschide, pivot în balama).
+ */
+export function buildChest(scene: Scene, mats: Materials): { base: Mesh[]; lid: Mesh[]; glow: Mesh } {
   const k = new ModelKit(scene, mats, 1700);
-  k.box(1.2, 0.6, 0.8, { p: [0, 0.3, 0] }, { color: PAL.burntWood, wear: 0.25, frost: 0.5 });
-  k.cyl(1.2, 0.8, 0.8, 10, { p: [0, 0.6, 0], r: [0, 0, Math.PI / 2], s: [0.55, 1, 1] }, { color: PAL.oldWood, wear: 0.25, frost: 0.7 });
-  for (const x of [-0.45, 0, 0.45]) {
-    k.box(0.1, 0.62, 0.84, { p: [x, 0.3, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
-    k.cyl(0.1, 0.84, 0.84, 10, { p: [x, 0.6, 0], r: [0, 0, Math.PI / 2], s: [0.56, 1, 1.02] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
-  }
-  // Lumina aurie care iese printre scânduri și încuietoarea de os.
-  k.box(1.1, 0.05, 0.82, { p: [0, 0.6, 0] }, { color: PAL.gold, mat: "glow" });
-  k.box(0.22, 0.26, 0.08, { p: [0, 0.48, 0.43] }, { color: PAL.bone });
-  return k.build("chest");
+  const W = 1.3;
+  const D = 0.85;
+  // Corpul, înfipt strâmb în zăpadă.
+  k.box(W, 0.62, D, { p: [0, 0.18, 0] }, { color: PAL.burntWood, wear: 0.3, frost: 0.4 });
+  for (let i = 0; i < 4; i++) k.box(W + 0.02, 0.02, 0.02, { p: [0, -0.05 + i * 0.13, D / 2 + 0.005] }, { color: PAL.darkWood });
+  for (const x of [-0.5, 0.5]) k.box(0.1, 0.64, D + 0.04, { p: [x, 0.18, 0] }, { color: PAL.iron, mat: "metal", wear: 0.35 });
+  // Încuietoare de fier ruginit.
+  k.box(0.22, 0.24, 0.08, { p: [0, 0.38, D / 2 + 0.04] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
+  // Balama de os la spate.
+  for (const x of [-0.35, 0.35]) k.cyl(0.22, 0.09, 0.09, 6, { p: [x, 0.5, -D / 2 - 0.02], r: [0, 0, Math.PI / 2] }, { color: PAL.bone, wear: 0.1 });
+  // Troian care acoperă jumătate din cufăr.
+  k.ico(0.9, { p: [0.15, -0.1, 0.25], s: [1.3, 0.55, 1.0] }, { color: PAL.snow, wear: 0.03 });
+  k.ico(0.7, { p: [-0.5, -0.05, -0.2], s: [1, 0.5, 1] }, { color: PAL.snow, wear: 0.03 });
+  const base = k.build("chestBase");
+
+  // Capacul (pivot în balama: y = 0.5, z = -D/2), cu zăpadă deasupra.
+  const l = new ModelKit(scene, mats, 1701);
+  l.cyl(W, D, D, 10, { p: [0, 0.02, D / 2], r: [0, 0, Math.PI / 2], s: [0.4, 1, 1] }, { color: PAL.oldWood, wear: 0.3, frost: 0.8, frostNormal: 0.4 });
+  for (const x of [-0.5, 0.5]) l.cyl(0.1, D + 0.04, D + 0.04, 10, { p: [x, 0.02, D / 2], r: [0, 0, Math.PI / 2], s: [0.42, 1, 1] }, { color: PAL.iron, mat: "metal", wear: 0.35 });
+  const lid = l.build("chestLid");
+
+  // Lumina dinăuntru (se vede doar când e deschis).
+  const g = new ModelKit(scene, mats, 1702);
+  g.box(W - 0.15, 0.06, D - 0.15, { p: [0, 0.45, 0] }, { color: AMBER, mat: "glow" });
+  const glow = g.buildOne("chestGlow");
+  return { base, lid, glow };
 }

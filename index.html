@@ -23,11 +23,22 @@
         </div>
         <div class="bar big"><div id="hero-bar" class="fill hero"></div><span id="hero-text" class="bar-text"></span></div>
         <div class="bar big"><div id="xp-bar" class="fill xp"></div><span id="xp-text" class="bar-text"></span></div>
+        <!-- Supraviețuire: foamea și căldura -->
+        <div id="survival-bars" class="survival-bars hidden">
+          <div class="bar small" title="Foame"><div id="hunger-bar" class="fill hunger"></div><span class="bar-text">🍖</span></div>
+          <div class="bar small" title="Căldură"><div id="warmth-bar" class="fill warmth"></div><span class="bar-text">🔥</span></div>
+        </div>
+        <!-- Resursele: lemn, turnuri, ziduri -->
+        <div class="resources left-res">
+          <span title="Lemn (pentru construcții)">🪵 <b id="wood-text">0</b></span>
+          <span title="Turnuri">🗼 <b id="towers-text">0/0</b></span>
+          <span title="Ziduri">🧱 <b id="barricades-text">0/0</b></span>
+        </div>
       </div>
 
       <!-- Bara de viață a minei de plasmă (plutește deasupra ei) -->
       <div id="mine-hp" class="world-bar">
-        <div class="wb-label">⚡ Mina de plasmă <b id="mine-text"></b></div>
+        <div class="wb-label">⚡ Mina <b id="mine-text"></b></div>
         <div class="bar"><div id="mine-fill" class="fill plasma"></div></div>
       </div>
 
@@ -39,6 +50,7 @@
           <div class="bar thin"><div id="phase-bar" class="fill phase"></div></div>
           <button id="start-wave" class="small-btn">🌙 Începe noaptea</button>
         </div>
+        <div id="weather-chip" class="weather-chip"></div>
         <div id="boss-panel" class="panel boss-panel hidden">
           <div class="bar-label">☠ Lich-ul de gheață</div>
           <div class="bar"><div id="boss-bar" class="fill boss"></div></div>
@@ -47,24 +59,23 @@
 
       <!-- Dreapta sus: magazin + meniu -->
       <div class="top-right">
-        <button id="shop-btn" class="round-btn" title="Magazin (C)">🎲</button>
+        <button id="shop-btn" class="round-btn" title="Magazin (C)">🎲<span id="coins-text" class="coin-badge">0</span></button>
         <button id="menu-btn" class="round-btn" title="Meniu (Esc)">☰</button>
       </div>
 
-      <!-- Jos: resursele -->
-      <div class="panel resources bottom-res">
-        <div title="Lemn (pentru construcții)">🪵 <span id="wood-text">0</span></div>
-        <div title="Monede (pentru magazin)">🪙 <span id="coins-text">0</span></div>
-        <div title="Turnuri">🗼 <span id="towers-text">0/0</span></div>
-        <div title="Ziduri">🧱 <span id="barricades-text">0/0</span></div>
+      <!-- Jos: bara rapidă (inventar). Apeși ca să folosești. -->
+      <div id="quickbar" class="quickbar hidden">
+        <button id="qb-cookedMeat" class="qb-slot" title="Carne friptă: mănânci"><span class="qb-ico">🍗</span><b class="qb-n">0</b></button>
+        <button id="qb-rawMeat" class="qb-slot" title="Carne crudă: o pui pe focul de lângă tine (sau o mănânci crudă)"><span class="qb-ico">🥩</span><b class="qb-n">0</b></button>
+        <div class="qb-slot info" title="Gloanțe în rezervă"><span class="qb-ico">📦</span><b id="qb-ammo" class="qb-n">0</b></div>
       </div>
 
       <!-- Dreapta jos: doar două butoane — trage (și ochește) și construiește -->
       <div class="action-buttons">
-        <button id="build-btn" class="action build" title="Construiește (B)">🔨</button>
+        <button id="build-btn" class="action build" title="Construiește (B)"><svg class="ico-svg" viewBox="0 0 48 48" aria-hidden="true"><g transform="rotate(-38 24 24)"><rect x="21.5" y="15" width="5" height="29" rx="2" fill="currentColor" opacity=".85"/><path d="M10 7h24l4 3v7H10z" fill="currentColor"/><rect x="10" y="17" width="4" height="3" fill="currentColor"/></g></svg></button>
         <div id="fire-stick" class="fire-stick">
           <div id="fire-knob" class="fire-knob">
-            <span class="fire-icon">✛</span>
+            <span class="fire-icon"><svg class="ico-svg" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="13" fill="none" stroke="currentColor" stroke-width="3"/><path d="M24 4v10M24 34v10M4 24h10M34 24h10" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/><circle cx="24" cy="24" r="3" fill="currentColor"/></svg></span>
             <span id="ammo-text" class="ammo-text">0/0</span>
           </div>
           <svg class="reload-ring" viewBox="0 0 100 100"><circle id="reload-arc" cx="50" cy="50" r="46" /></svg>
@@ -77,6 +88,9 @@
         <button id="pick-tower" class="build-choice"><span class="ico">🗼</span>Turn<small id="tower-cost"></small></button>
         <button id="pick-wall" class="build-choice"><span class="ico">🧱</span>Zid<small id="wall-cost"></small></button>
         <button id="pick-mine" class="build-choice"><span class="ico">💣</span>Mină<small id="mine-cost"></small></button>
+        <button id="pick-campfire" class="build-choice survival-only"><span class="ico">🔥</span>Foc<small id="campfire-cost"></small></button>
+        <button id="pick-farmChicken" class="build-choice survival-only"><span class="ico">🐔</span>Coteț<small id="chicken-cost"></small></button>
+        <button id="pick-farmPig" class="build-choice survival-only"><span class="ico">🐖</span>Țarc<small id="pig-cost"></small></button>
         <button id="palette-close" class="build-choice close">✖</button>
       </div>
 
@@ -88,11 +102,11 @@
         <button id="wall-done" class="wall-btn">✖ Înapoi</button>
       </div>
 
-      <div id="build-banner" class="banner hidden">Atinge un turn/zid de-al tău ca să-l modifici</div>
       <div id="build-menu" class="build-menu hidden"></div>
 
       <div id="damage" class="damage"></div>
       <div id="toast" class="toast"></div>
+      <div id="announce" class="announce"></div>
       <div id="hint" class="hint"></div>
       <div id="joystick-zone"></div>
     </div>
@@ -104,13 +118,33 @@
       <div class="menu-card">
         <label class="menu-label" for="player-name">Numele tău</label>
         <input id="player-name" class="name-input" maxlength="16" placeholder="Supraviețuitor" autocomplete="off" />
+        <div class="menu-label">Mod de joc</div>
+        <div id="mode" class="modes"></div>
         <div class="menu-label">Dificultate</div>
         <div id="difficulty" class="difficulty"></div>
         <div class="menu-row">
           <button id="menu-sound" class="toggle-btn"></button>
           <button id="menu-music" class="toggle-btn"></button>
         </div>
-        <button id="menu-start" class="primary-btn">▶ Start</button>
+        <div class="menu-row">
+          <button id="menu-start" class="primary-btn">▶ Start</button>
+          <button id="menu-board" class="secondary-btn board-btn">🏆 Clasament</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clasamentul (salvat pe dispozitiv) -->
+    <div id="board" class="overlay hidden">
+      <div class="menu-card board-card">
+        <header class="shop-head">
+          <h2>🏆 Clasament</h2>
+          <button id="board-close" class="close-btn">✖</button>
+        </header>
+        <div id="board-tabs" class="board-tabs"></div>
+        <div class="board-cols">
+          <section><h3>Cei mai buni</h3><ol id="board-best" class="board-list"></ol></section>
+          <section><h3>Ultimele 5</h3><ol id="board-last" class="board-list"></ol></section>
+        </div>
       </div>
     </div>
 
@@ -139,7 +173,7 @@
       <div class="modal shop">
         <header class="shop-head">
           <h2>🎰 Magazinul norocului</h2>
-          <div class="shop-wallet">🪙 <span id="shop-coins">0</span></div>
+          <div class="shop-wallet"><i class="coin"></i> <span id="shop-coins">0</span></div>
           <button id="shop-close" class="close-btn">✖</button>
         </header>
         <div class="shop-body">

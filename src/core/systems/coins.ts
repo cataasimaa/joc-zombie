@@ -1,7 +1,6 @@
 import { CONFIG } from "../config";
 import { dist, moveTowards } from "../math";
 import type { GameEvent, GameState } from "../types";
-import { openChest } from "./shop";
 
 /** Monedele sunt colectate individual: le primește jucătorul al cărui erou trece peste ele. */
 export function updateCoins(state: GameState, dt: number, events: GameEvent[]): void {
@@ -31,14 +30,12 @@ export function updateCoins(state: GameState, dt: number, events: GameEvent[]): 
   }
 }
 
-/** Cufărul boss-ului: îl deschide primul erou care trece peste el. */
-export function updateChests(state: GameState, events: GameEvent[]): void {
+/** Cufărul deschis stă puțin pe hartă (se vede deschis), apoi dispare. */
+export function updateChests(state: GameState, dt: number): void {
   for (let i = state.chests.length - 1; i >= 0; i--) {
     const chest = state.chests[i];
-    const hero = state.heroes.find((h) => h.alive && dist(h.pos, chest.pos) <= CONFIG.coins.pickupRadius + 0.4);
-    if (!hero) continue;
-    state.chests.splice(i, 1);
-    const { rarity, reward } = openChest(state, state.players[hero.playerId]);
-    events.push({ type: "chestOpened", playerId: hero.playerId, pos: { ...chest.pos }, rarity, reward });
+    if (chest.openedFor === null) continue;
+    chest.openedFor += dt;
+    if (chest.openedFor >= CONFIG.chest.openTime) state.chests.splice(i, 1);
   }
 }

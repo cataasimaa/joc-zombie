@@ -1,10 +1,10 @@
 // Comenzile sunt SINGURA cale prin care un jucător poate schimba jocul.
 // Acum le trimite input-ul local; în multiplayer le va trimite clientul la server.
 
-import type { TowerKind } from "./config";
+import type { ItemKind, TowerKind } from "./config";
 import type { EntityId, PlayerId } from "./types";
 
-export type BuildKind = "tower" | "barricade";
+export type BuildKind = "tower" | "barricade" | "campfire" | "farmChicken" | "farmPig";
 
 export type Command =
   /** Direcția joystick-ului (x = dreapta, z = înainte), lungime 0..1. */
@@ -26,9 +26,15 @@ export type Command =
    * Ochire + tragere. (x, z) = direcția de ochire. `firing` = ține apăsat pe „trage”.
    * `auto` = ochire automată spre cel mai apropiat zombie (când nu tragi de buton).
    */
-  | { type: "aim"; playerId: PlayerId; x: number; z: number; firing: boolean; auto: boolean }
+  | { type: "aim"; playerId: PlayerId; x: number; z: number; firing: boolean; auto: boolean; dist?: number }
   /** Reîncarcă manual (altfel se reîncarcă singur când se golește încărcătorul). */
   | { type: "reload"; playerId: PlayerId }
+  /** Bara rapidă: mănânci (sau pui carnea crudă pe focul de lângă tine). */
+  | { type: "useItem"; playerId: PlayerId; item: ItemKind }
+  /** Pui lemne pe foc. */
+  | { type: "addFuel"; playerId: PlayerId; fireId: EntityId }
+  /** Demolezi un foc sau o fermă. */
+  | { type: "demolishBuilding"; playerId: PlayerId; buildingId: EntityId }
   /** O încercare la magazin (gambling). */
   | { type: "shopRoll"; playerId: PlayerId }
   /** Sare peste restul zilei și începe noaptea. */

@@ -21,9 +21,10 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { CONFIG, GAME_MAP } from "../core";
+import { CONFIG, GAME_MAP, type Weather } from "../core";
 import type { Materials } from "./ModelKit";
 import { PLASMA, buildHouse, buildPine, buildRock, buildShelter, buildTree } from "./models/environment";
+import { buildDeadTree, buildDinoSkeleton } from "./models/survival";
 import { rng } from "./noise";
 import { PAL, hex, mix } from "./palette";
 import { createTerrain, terrainHeight } from "./Terrain";
@@ -56,9 +57,9 @@ export class World {
   readonly lantern: PointLight;
   private hemi: HemisphericLight;
   private sun: DirectionalLight;
-  private fireLight: PointLight;
   private plasmaLight: PointLight;
   private crystals: Mesh[] = [];
+  private rain: ParticleSystem;
   private flames: Mesh[];
   private snow: ParticleSystem;
   private snowEmitter = new Vector3();
@@ -133,10 +134,6 @@ export class World {
     this.plasmaLight.diffuse = PLASMA;
     this.plasmaLight.specular = Color3.Black();
     this.plasmaLight.range = 11;
-    this.fireLight = new PointLight("fire", new Vector3(...shelter.firePos), scene);
-    this.fireLight.diffuse = PAL.fire;
-    this.fireLight.specular = Color3.Black();
-    this.fireLight.range = 16;
 
     this.lantern = new PointLight("lantern", Vector3.Zero(), scene);
     this.lantern.diffuse = mix(PAL.fire, PAL.window, 0.5);
@@ -147,6 +144,50 @@ export class World {
     this.fogMat = new StandardMaterial("fogMat", scene);
     this.createEdgeFog();
     this.snow = this.createSnowfall();
+    this.rain = this.createRain();
+  }
+
+  /** Lapovița: picături lungi, reci, care cad repede. */
+  private createRain(): ParticleSystem {
+    const tex = new DynamicTexture("drop", { width: 8, height: 64 }, this.scene, false);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    g.addColorStop(0, "rgba(200,220,240,0)");
+    g.addColorStop(1, "rgba(220,235,255,0.9)");
+    ctx.fillStyle = g;
+    ctx.fillRect(3, 0, 2, 64);
+    tex.update();
+    tex.hasAlpha = true;
+    const rain = new ParticleSystem("rain", 1500, this.scene);
+    rain.particleTexture = tex;
+    rain.emitter = this.snowEmitter;
+    rain.minEmitBox = new Vector3(-30, 0, -26);
+    rain.maxEmitBox = new Vector3(30, 4, 26);
+    rain.direction1 = new Vector3(0.6, -1, 0);
+    rain.direction2 = new Vector3(0.9, -1, 0.1);
+    rain.minEmitPower = 22;
+    rain.maxEmitPower = 28;
+    rain.minLifeTime = 0.8;
+    rain.maxLifeTime = 1.1;
+    rain.minSize = 0.6;
+    rain.maxSize = 0.9;
+    rain.minScaleX = 0.05;
+    rain.maxScaleX = 0.08;
+    rain.billboardMode = ParticleSystem.BILLBOARDMODE_STRETCHED;
+    rain.emitRate = 0;
+    rain.color1 = new Color4(0.8, 0.88, 1, 0.55);
+    rain.color2 = new Color4(0.7, 0.8, 0.95, 0.4);
+    rain.colorDead = new Color4(1, 1, 1, 0);
+    rain.start();
+    return rain;
+  }
+
+  private weatherKind: Weather = "clear";
+  private weatherMix = { fog: 1, snow: 1, rain: 0, wind: 0, frost: 0 };
+
+  /** Vremea curentă (o schimbăm lin, nu brusc). */
+  setWeather(w: Weather): void {
+    this.weatherKind = w;
   }
 
   // ---------- Decor ----------
@@ -164,7 +205,21 @@ export class World {
       node.scaling.setAll(scale);
       variants[i % 3].instance(`tree${i}`, node);
     };
-    GAME_MAP.trees.forEach((t, i) => place(pines, t.pos.x, t.pos.z, t.scale, i));
+    // Unul din cinci copaci din sat e mort: fără ace, cu crengi rupte și țurțuri.
+    const dead = [1, 2].map((seed) => new Prefab(buildDeadTree(this.scene, mats, seed)));
+    for (const v of dead) for (const s of v.sources) this.shadows.addShadowCaster(s);
+    GAME_MAP.trees.forEach((t, i) => place(i % 5 === 2 ? [...dead, dead[0]] : pines, t.pos.x, t.pos.z, t.scale, i));
+    // Schelete de dinozaur, pe jumătate îngropate.
+    GAME_MAP.fossils.forEach((f, i) => {
+      const node = new TransformNode(`fossil${i}`, this.scene);
+      node.position.set(f.pos.x, terrainHeight(f.pos.x, f.pos.z) - 0.1, f.pos.z);
+      node.rotation.y = f.rotation;
+      node.scaling.setAll(f.scale);
+      for (const m of buildDinoSkeleton(this.scene, mats, f.seed)) {
+        m.parent = node;
+        this.shadows.addShadowCaster(m);
+      }
+    });
     // Pădure deasă de pini pe dealurile din afara hărții: zombii ies din ea.
     const H = CONFIG.map.halfSize;
     let i = 1000;
@@ -336,10 +391,29 @@ export class World {
     const sky = night < 0.5 ? mix(SKY_DAY, SKY_DUSK, night * 2) : mix(SKY_DUSK, SKY_NIGHT, (night - 0.5) * 2);
     this.scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
     this.scene.fogColor = sky;
-    this.scene.fogDensity = 0.011 + night * 0.012;
+    // Vremea: ceață mai deasă la viscol / lapoviță, ninsoare mai multă sau deloc, vânt lateral.
+    const W = CONFIG.weather[this.weatherKind];
+    const target = {
+      fog: W.fog,
+      snow: this.weatherKind === "rain" ? 0 : this.weatherKind === "blizzard" ? 4 : this.weatherKind === "clear" ? 0.25 : this.weatherKind === "frost" ? 0.35 : this.weatherKind === "wind" ? 1.6 : 1,
+      rain: this.weatherKind === "rain" ? 1 : 0,
+      wind: this.weatherKind === "blizzard" ? 1 : this.weatherKind === "wind" ? 0.8 : 0,
+      frost: this.weatherKind === "frost" ? 1 : 0,
+    };
+    const lerp = Math.min(1, dt * 0.5);
+    for (const key of Object.keys(target) as (keyof typeof target)[]) this.weatherMix[key] += (target[key] - this.weatherMix[key]) * lerp;
+    const wm = this.weatherMix;
+    this.scene.fogDensity = (0.011 + night * 0.012) * wm.fog;
+    this.snow.emitRate = 230 * wm.snow;
+    this.rain.emitRate = 900 * wm.rain;
+    const side = 1.2 + wm.wind * 5;
+    this.snow.direction1.set(side, -1, 0.2);
+    this.snow.direction2.set(side + 0.8, -1, -0.2);
+    this.snow.minEmitPower = 3 + wm.wind * 4;
+    this.snow.maxEmitPower = 5 + wm.wind * 6;
 
-    // Ambient: alb-albastru ziua, albastru închis noaptea.
-    this.hemi.diffuse = mix(hex("#e4edf5"), hex("#4d6a9c"), night);
+    // Ambient: alb-albastru ziua, albastru închis noaptea (la ger, și mai rece).
+    this.hemi.diffuse = mix(mix(hex("#e4edf5"), hex("#4d6a9c"), night), hex("#9cc8ff"), this.weatherMix.frost * 0.35);
     this.hemi.groundColor = mix(hex("#9aabb8"), hex("#1b2436"), night);
     this.hemi.intensity = 0.72 - night * 0.3;
 
@@ -353,7 +427,7 @@ export class World {
 
     // Focul pâlpâie, mai puternic noaptea.
     const flicker = 0.85 + Math.sin(t * 13) * 0.08 + Math.sin(t * 7.3) * 0.07;
-    this.fireLight.intensity = (1.1 + night * 2.2) * flicker;
+    void flicker; // focul de tabără are acum lumina lui (vezi SurvivalView)
     this.flames.forEach((f, i) => {
       f.scaling.set(0.85 + Math.sin(t * 9 + i) * 0.15, 0.8 + Math.sin(t * 11 + i * 2) * 0.25, 0.85 + Math.cos(t * 8 + i) * 0.15);
       f.rotation.y = t * (0.5 + i * 0.3);

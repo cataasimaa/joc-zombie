@@ -1,19 +1,20 @@
 // Ziua și noaptea. Ziua (60 s) construiești; noaptea atacă zombii.
 // Fiecare noapte e mai lungă decât precedenta. În zori, zombii rămași iau foc și mor încet.
 
-import { CONFIG, type Difficulty, type ZombieType } from "../config";
+import { CONFIG, type Difficulty, type GameMode, type Weather, type ZombieType } from "../config";
 import { nextRandom } from "../math";
 import type { GameEvent, GameState } from "../types";
+import { gunStats, respawnHero } from "./heroes";
 import { spawnZombie } from "./zombies";
 
 /**
  * Compoziția unei nopți: ce zombi apar, în ordine.
  * Crește cu numărul nopții și cu numărul de jucători.
  */
-export function waveComposition(wave: number, playerCount: number, difficulty: Difficulty = "easy"): ZombieType[] {
+export function waveComposition(wave: number, playerCount: number, difficulty: Difficulty = "easy", mode: GameMode = "defend"): ZombieType[] {
   const w = CONFIG.waves;
   const total = Math.round(
-    (w.baseCount + (wave - 1) * w.countPerWave) * (1 + (playerCount - 1) * w.extraPerPlayer) * CONFIG.difficulty[difficulty].zombieCount,
+    (w.baseCount + (wave - 1) * w.countPerWave) * (1 + (playerCount - 1) * w.extraPerPlayer) * CONFIG.difficulty[difficulty].zombieCount * CONFIG.modes[mode].zombieCount,
   );
   const share = (from: number, pct: number) => (wave >= from ? Math.max(1, Math.round(total * pct)) : 0);
   const runners = share(w.runnersFromWave, w.runnerShare);
@@ -53,11 +54,12 @@ export function startNight(state: GameState, events: GameEvent[]): void {
   state.wave++;
   state.phase = "night";
   state.phaseDuration = state.phaseTimer = nightDuration(state.wave);
-  state.spawnQueue = waveComposition(state.wave, Object.keys(state.players).length, state.difficulty);
+  state.spawnQueue = waveComposition(state.wave, Object.keys(state.players).length, state.difficulty, state.mode);
   // Zombii apar în hoarde, uniform în prima parte a nopții.
   const hordes = Math.ceil(state.spawnQueue.length / hordeSize(state.wave));
   state.spawnInterval = (state.phaseDuration * CONFIG.waves.spawnWindow) / Math.max(1, hordes);
   state.spawnTimer = 0;
+  changeWeather(state, events);
   events.push({ type: "nightStarted", wave: state.wave, boss: state.spawnQueue.includes("boss") });
 }
 
@@ -65,6 +67,11 @@ function startDay(state: GameState, events: GameEvent[]): void {
   state.wavesCompleted++;
   const wood = woodIncomeFor(state.wave, state.difficulty);
   for (const p of Object.values(state.players)) p.wood += wood;
+  // Aprovizionarea din zori: câteva încărcătoare pentru fiecare erou.
+  for (const h of state.heroes) {
+    const gun = gunStats(state, h);
+    h.reserve = Math.min(gun.magazine * CONFIG.ammo.maxMagazines, h.reserve + Math.round(gun.magazine * CONFIG.ammo.dawnMagazines));
+  }
   // Zombii rămași iau foc în lumina zilei și mor încet.
   state.spawnQueue = [];
   for (const z of state.zombies) z.burning = true;
@@ -76,6 +83,27 @@ function startDay(state: GameState, events: GameEvent[]): void {
   }
   state.phase = "day";
   state.phaseDuration = state.phaseTimer = CONFIG.waves.day;
+  changeWeather(state, events);
+  // Supraviețuire: cei căzuți reapar în zori (dacă a rezistat cineva peste noapte).
+  if (state.mode === "survival") for (const h of state.heroes) if (!h.alive) respawnHero(state, h, events);
+}
+
+/** Vremea se schimbă la fiecare zi și noapte (alegere ponderată, cu RNG-ul jocului). */
+function changeWeather(state: GameState, events: GameEvent[]): void {
+  const entries = Object.entries(CONFIG.weather) as [Weather, (typeof CONFIG.weather)[Weather]][];
+  const total = entries.reduce((a, [, w]) => a + w.weight, 0);
+  let roll = nextRandom(state) * total;
+  let pick: Weather = "clear";
+  for (const [id, w] of entries) {
+    roll -= w.weight;
+    if (roll <= 0) {
+      pick = id;
+      break;
+    }
+  }
+  if (pick === state.weather) return;
+  state.weather = pick;
+  events.push({ type: "weatherChanged", weather: pick });
 }
 
 export function updateWaves(state: GameState, dt: number, events: GameEvent[]): void {

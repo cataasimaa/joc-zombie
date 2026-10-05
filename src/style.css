@@ -1398,3 +1398,431 @@ button {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 38px);
   }
 }
+
+/* =====================================================================
+   Pasul 4: butoane în stilul jocului, resurse în stânga, bara rapidă,
+   vreme, anunțuri, moduri de joc, clasament, monedă aurie
+   ===================================================================== */
+
+/* Moneda: un ban de aur desenat (nu emoji, care pe unele telefoane arată ca o lună). */
+i.coin {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  vertical-align: -0.12em;
+  background: radial-gradient(circle at 35% 30%, #fff3b0 0 12%, #ffd34a 30%, #c9961a 70%, #8a6410 100%);
+  box-shadow: inset 0 0 0 1.5px rgba(120, 80, 10, 0.7), 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.coin-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  min-width: 22px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #2a1a02;
+  background: linear-gradient(180deg, #ffe07a, #c9961a);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  text-shadow: none;
+}
+
+#shop-btn {
+  position: relative;
+}
+
+/* Resursele, sub numele eroului. */
+.left-res {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.left-res b {
+  font-variant-numeric: tabular-nums;
+}
+
+.survival-bars {
+  display: flex;
+  gap: 4px;
+}
+
+.survival-bars .bar.small {
+  flex: 1;
+  position: relative;
+  height: 11px;
+  margin: 1px 0 2px;
+}
+
+.fill.hunger {
+  background: linear-gradient(90deg, #a8541a, #f0a040);
+}
+
+.fill.warmth {
+  background: linear-gradient(90deg, #2a6ab8, #ff8a3d);
+}
+
+.bar.small.alert {
+  animation: pulse 0.7s infinite;
+  box-shadow: 0 0 0 1px #ff5040;
+}
+
+#hud:not(.survival) .survival-only {
+  display: none;
+}
+
+/* Eticheta minei: mică, chiar deasupra ei. */
+.world-bar {
+  width: 92px;
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
+.world-bar .bar {
+  height: 5px;
+}
+
+/* Vremea, sub cronometru. */
+.weather-chip {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 9px;
+  background: rgba(14, 22, 34, 0.55);
+  border: 1px solid rgba(126, 200, 255, 0.3);
+  white-space: nowrap;
+}
+
+/* ---------- Bara rapidă (inventar) ---------- */
+
+.quickbar {
+  position: absolute;
+  left: 50%;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+}
+
+.qb-slot {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
+  border: 2px solid #6b5a44;
+  background: radial-gradient(circle at 50% 35%, #3a3128, #1c1712);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qb-slot.info {
+  border-color: #4a5560;
+}
+
+.qb-slot:disabled {
+  opacity: 0.45;
+}
+
+.qb-ico {
+  font-size: 24px;
+}
+
+.qb-n {
+  position: absolute;
+  right: 4px;
+  bottom: 1px;
+  font-size: 12px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #000;
+}
+
+#build-palette,
+#place-bar {
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 62px);
+}
+
+/* ---------- Butoanele de acțiune: fier, lemn și os (în stilul jocului) ---------- */
+
+.fire-stick {
+  width: 104px;
+  height: 104px;
+  background:
+    radial-gradient(circle, rgba(20, 24, 30, 0.15) 55%, rgba(20, 24, 30, 0.55) 56%, rgba(20, 24, 30, 0.35) 100%);
+  border: 3px solid rgba(160, 175, 190, 0.45);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+.fire-knob {
+  width: 66px;
+  height: 66px;
+  /* Un disc de fier forjat cu nituri, cu centrul de lemn ars. */
+  background:
+    radial-gradient(circle at 50% 50%, #4a2c1c 0 42%, transparent 43%),
+    radial-gradient(circle at 35% 30%, #8a96a3, #3c4650 60%, #232a31);
+  border: 2px solid #1a1f24;
+  box-shadow: 0 0 0 2px rgba(217, 208, 191, 0.55), 0 4px 10px rgba(0, 0, 0, 0.6);
+  color: #e9e1cf;
+}
+
+.fire-stick.active .fire-knob {
+  background:
+    radial-gradient(circle at 50% 50%, #8a2a1c 0 42%, transparent 43%),
+    radial-gradient(circle at 35% 30%, #a4b0bc, #4a5560 60%, #2a3138);
+  color: #ffd9a0;
+}
+
+.fire-stick.aiming {
+  border-color: rgba(255, 138, 61, 0.8);
+}
+
+.fire-stick.empty .fire-knob {
+  filter: grayscale(0.8) brightness(0.7);
+}
+
+.fire-icon {
+  display: flex;
+}
+
+.ico-svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.ammo-text {
+  font-size: 11px;
+  margin-top: 0;
+}
+
+.action {
+  width: 50px;
+  height: 50px;
+  margin-bottom: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e9e1cf;
+  border: 2px solid #1a1f24;
+  background: radial-gradient(circle at 35% 30%, #7a5a3e, #4a3324 65%, #2a1c12);
+  box-shadow: 0 0 0 2px rgba(160, 175, 190, 0.5), 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.action .ico-svg {
+  width: 28px;
+  height: 28px;
+}
+
+.action.build.active {
+  background: radial-gradient(circle at 35% 30%, #5fd08a, #2f7a4c 65%, #1a4a2c);
+  box-shadow: 0 0 0 2px #e9e1cf, 0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- Anunțuri (Double Kill, Rampage...) ---------- */
+
+.announce {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.6);
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  color: #ffe9b0;
+  text-shadow: 0 0 14px rgba(255, 120, 40, 0.9), 0 3px 0 #6b1d24, 0 6px 12px rgba(0, 0, 0, 0.8);
+  transition: opacity 0.25s, transform 0.25s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+.announce.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.announce.tier2 {
+  font-size: 50px;
+}
+
+.announce.tier3 {
+  font-size: 62px;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(255, 60, 40, 1), 0 0 40px rgba(126, 200, 255, 0.6), 0 4px 0 #6b1d24, 0 8px 16px rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- Meniu: moduri de joc, clasament ---------- */
+
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: #243246;
+  color: #fff;
+  font-size: 15px;
+  text-align: left;
+}
+
+.mode-btn small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.mode-btn.selected {
+  border-color: #fff;
+  background: linear-gradient(135deg, #3a5a7a, #243246);
+  box-shadow: 0 0 12px rgba(126, 200, 255, 0.35);
+}
+
+.board-btn {
+  flex: 0 0 auto;
+}
+
+.board-card {
+  width: min(640px, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.board-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.board-tab {
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--frost);
+  background: #1c2838;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.board-tab.selected {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.board-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  text-align: left;
+}
+
+.board-cols h3 {
+  margin: 6px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.board-list {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13px;
+}
+
+.board-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.board-list .b-name {
+  font-weight: 800;
+}
+
+.board-list .b-val {
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-list li.empty {
+  list-style: none;
+  color: var(--muted);
+}
+
+/* Meniul principal: transparent, ca să se vadă scena 3D din spate. */
+.overlay.menu {
+  background: radial-gradient(ellipse at 50% 20%, rgba(20, 40, 70, 0.15), rgba(4, 8, 16, 0.75) 80%);
+}
+
+.game-title {
+  font-family: Georgia, "Times New Roman", serif;
+  color: #dff2ff;
+  text-shadow: 0 0 20px rgba(126, 200, 255, 0.9), 0 0 40px rgba(126, 200, 255, 0.5), 0 3px 0 #1a2a40, 0 6px 14px rgba(0, 0, 0, 0.9) !important;
+}
+
+@media (max-height: 450px) {
+  .fire-stick {
+    width: 92px;
+    height: 92px;
+  }
+  .fire-knob {
+    width: 58px;
+    height: 58px;
+  }
+  .action {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 48px;
+  }
+  .qb-slot {
+    width: 44px;
+    height: 44px;
+  }
+  .announce {
+    font-size: 32px;
+  }
+  .announce.tier2 {
+    font-size: 40px;
+  }
+  .announce.tier3 {
+    font-size: 50px;
+  }
+  .menu-card .modes .mode-btn {
+    padding: 5px 8px;
+  }
+  .mode-btn small {
+    display: none;
+  }
+  #build-palette,
+  #place-bar {
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 54px);
+  }
+}
+
+/* Meniul stă în dreapta, ca să se vadă scena (lich-ul și zombii) în stânga. */
+@media (min-width: 700px) {
+  #main-menu.overlay.menu {
+    align-items: flex-end;
+    padding-right: max(4vw, env(safe-area-inset-right));
+    background: linear-gradient(90deg, rgba(4, 8, 16, 0) 0%, rgba(4, 8, 16, 0.25) 40%, rgba(4, 8, 16, 0.85) 100%);
+  }
+  #main-menu .game-title,
+  #main-menu .subtitle {
+    width: min(460px, 92vw);
+    text-align: center;
+  }
+}

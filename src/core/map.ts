@@ -29,11 +29,20 @@ export interface Tree {
   radius: number;
 }
 
+/** Schelet uriaș de dinozaur, pe jumătate îngropat (doar decor, fără coliziune). */
+export interface Fossil {
+  pos: Vec2;
+  rotation: number;
+  scale: number;
+  seed: number;
+}
+
 export interface GameMap {
   halfSize: number;
   houses: House[];
   trees: Tree[];
   rocks: Rock[];
+  fossils: Fossil[];
 }
 
 /** Lățimea minimă a culoarelor dintre obstacole (diametrul boss-ului + o marjă). */
@@ -94,7 +103,20 @@ function generateMap(): GameMap {
     rocks.push({ pos: { x, z }, size: 0.3 + rand() * 0.8, seed: Math.floor(rand() * 1e6) });
   }
 
-  return { halfSize, houses, trees, rocks };
+  // Câteva schelete de dinozaur prin zăpadă (ca în Warcraft), departe de sat și de case.
+  const fossils: Fossil[] = [];
+  for (let attempts = 0; fossils.length < 4 && attempts < 400; attempts++) {
+    const a = rand() * Math.PI * 2;
+    const d = 25 + rand() * 10;
+    const pos = { x: Math.cos(a) * d, z: Math.sin(a) * d };
+    const free =
+      houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + 5) &&
+      trees.every((t) => Math.hypot(t.pos.x - pos.x, t.pos.z - pos.z) > t.radius + 3) &&
+      fossils.every((f) => Math.hypot(f.pos.x - pos.x, f.pos.z - pos.z) > 14);
+    if (free) fossils.push({ pos, rotation: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.5, seed: fossils.length });
+  }
+
+  return { halfSize, houses, trees, rocks, fossils };
 }
 
 export const GAME_MAP: GameMap = generateMap();

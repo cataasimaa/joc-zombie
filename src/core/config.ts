@@ -8,6 +8,41 @@ export type ShopRarity = "nothing" | Rarity;
 /** Turnul de bază e arbaleta; din ea faci upgrade în celelalte. */
 export type TowerKind = "crossbow" | "rocket" | "cannon" | "tesla" | "frost";
 export type Difficulty = "easy" | "medium" | "hard" | "nightmare";
+/** defend = apeși mina de plasmă; survival = supraviețuiești tu (foame, frig, vânătoare). */
+export type GameMode = "defend" | "survival";
+export type Weather = "clear" | "snow" | "blizzard" | "frost" | "rain" | "wind";
+export type AnimalKind = "deer" | "bear" | "chicken" | "pig";
+export type ItemKind = "rawMeat" | "cookedMeat";
+
+export interface WeatherStats {
+  name: string;
+  icon: string;
+  /** Ce face vremea (text pentru HUD). */
+  effect: string;
+  heroSpeed: number;
+  zombieSpeed: number;
+  /** Cât de repede te răcești (supraviețuire). */
+  cold: number;
+  /** Cât de repede arde lemnul din foc. */
+  fuel: number;
+  /** Ceața (doar vizual): 1 = normal. */
+  fog: number;
+  /** Șansa (pondere) să vină vremea asta. */
+  weight: number;
+}
+
+export interface AnimalStats {
+  hp: number;
+  speed: number;
+  radius: number;
+  /** Carne crudă lăsată la moarte. */
+  meat: number;
+  /** Ursul atacă: damage și raza de la care te vede. */
+  damage: number;
+  aggroRadius: number;
+  /** Căprioara fuge când te apropii. */
+  fleeRadius: number;
+}
 
 export interface TowerStats {
   name: string;
@@ -85,6 +120,87 @@ export const CONFIG = {
     radius: 2.2,
   },
 
+  modes: {
+    defend: { name: "Apără mina", icon: "⚡", text: "Zombii vor plasma. Dacă mina cade, ai pierdut.", zombieCount: 1, zombieHp: 1 },
+    // În Supraviețuire moartea e pe bune (reapari doar în zori), deci hoardele sunt puțin mai mici.
+    survival: { name: "Supraviețuire", icon: "🔥", text: "Doar tu contezi: foame, frig, vânătoare, foc.", zombieCount: 0.8, zombieHp: 0.85 },
+  } satisfies Record<GameMode, { name: string; icon: string; text: string; zombieCount: number; zombieHp: number }>,
+
+  /** Muniția nu e nelimitată: rezervă + cutii lăsate de zombi. */
+  ammo: {
+    /** Câte încărcătoare ai în rezervă la start. */
+    startMagazines: 4,
+    /** Șansa ca un zombie să lase o cutie de gloanțe și cât din încărcător conține. */
+    dropChance: 0.55,
+    dropMagazine: 0.7,
+    /** În fiecare zori primești o „aprovizionare” (atâtea încărcătoare). */
+    dawnMagazines: 2,
+    /** Cel mult atâtea încărcătoare în rezervă. */
+    maxMagazines: 8,
+  },
+
+  /** Obiecte pe jos (gloanțe, carne): dispar după atâtea secunde. */
+  dropLifetime: 40,
+
+  survival: {
+    /** Foamea și căldura: 100 = bine, 0 = pierzi viață. */
+    hungerPerSec: 0.32,
+    coldPerSec: 0.45,
+    starveDamage: 3,
+    freezeDamage: 3,
+    /** Lângă foc te încălzești. */
+    fireWarmRadius: 4.5,
+    fireWarmPerSec: 9,
+    rawMeatFood: 12,
+    rawMeatHurt: 6,
+    cookedMeatFood: 45,
+    cookTime: 15,
+    /** Focul: costă lemn, arde lemn (100 = plin), 1 punct pe secundă. */
+    campfireCost: 15,
+    campfireFuel: 100,
+    fuelPerWood: 6,
+    addWood: 5,
+    maxCampfires: 3,
+    /** Fermele: dau găini sau porci din când în când, limitat (să nu facă lag). */
+    farmCost: 40,
+    maxFarms: 2,
+    chickenEvery: 35,
+    pigEvery: 60,
+    maxPerFarm: 3,
+    /** Animalele sălbatice care trec prin hartă. */
+    maxDeer: 4,
+    maxBears: 1,
+    animalSpawnEvery: 12,
+  },
+
+  animals: {
+    deer: { hp: 40, speed: 6.5, radius: 0.6, meat: 2, damage: 0, aggroRadius: 0, fleeRadius: 9 },
+    bear: { hp: 220, speed: 4.2, radius: 1.0, meat: 5, damage: 24, aggroRadius: 9, fleeRadius: 0 },
+    chicken: { hp: 8, speed: 1.6, radius: 0.3, meat: 1, damage: 0, aggroRadius: 0, fleeRadius: 0 },
+    pig: { hp: 30, speed: 1.4, radius: 0.55, meat: 3, damage: 0, aggroRadius: 0, fleeRadius: 0 },
+  } satisfies Record<AnimalKind, AnimalStats>,
+
+  /** Vremea: se schimbă la fiecare zi / noapte și face ceva mai greu. */
+  weather: {
+    clear: { name: "Senin", icon: "☀", effect: "Liniște. Profită.", heroSpeed: 1, zombieSpeed: 1, cold: 0.8, fuel: 1, fog: 0.8, weight: 3 },
+    snow: { name: "Ninsoare", icon: "❄", effect: "Zombii se aud mai greu", heroSpeed: 1, zombieSpeed: 1.05, cold: 1, fuel: 1, fog: 1.2, weight: 4 },
+    blizzard: { name: "Viscol", icon: "🌨", effect: "Nu vezi departe · urmele îi trădează", heroSpeed: 0.85, zombieSpeed: 1.1, cold: 1.4, fuel: 1.3, fog: 3, weight: 2 },
+    frost: { name: "Ger", icon: "🥶", effect: "Stai mai des lângă foc", heroSpeed: 1, zombieSpeed: 0.9, cold: 2.2, fuel: 1.3, fog: 0.9, weight: 2 },
+    rain: { name: "Lapoviță", icon: "🌧", effect: "Focul se stinge de 2× mai repede", heroSpeed: 0.95, zombieSpeed: 1, cold: 1.2, fuel: 2, fog: 1.4, weight: 2 },
+    wind: { name: "Vânt", icon: "🌬", effect: "Mergi mai greu, focul arde repede", heroSpeed: 0.88, zombieSpeed: 1.05, cold: 1.5, fuel: 1.6, fog: 1, weight: 2 },
+  } satisfies Record<Weather, WeatherStats>,
+
+  /** Cufărul boss-ului: îl împuști ca să-l deschizi. */
+  chest: {
+    hp: 60,
+    radius: 0.9,
+    wood: 60,
+    ammoMagazines: 3,
+    meat: 3,
+    /** Cât stă deschis înainte să dispară. */
+    openTime: 8,
+  },
+
   difficulty: {
     easy: { name: "Easy", zombieHp: 1, zombieCount: 1, zombieDamage: 1, wood: 1 },
     medium: { name: "Medium", zombieHp: 1.12, zombieCount: 1.1, zombieDamage: 1.1, wood: 1 },
@@ -160,11 +276,11 @@ export const CONFIG = {
     /** Eroii din apropiere repară și turnurile (HP/s) — doar ziua. */
     repairRate: 10,
     kinds: {
-      crossbow: { name: "Arbaletă", cost: 30, damage: 14, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 200 },
-      rocket: { name: "Rachete", cost: 50, damage: 34, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 220 },
-      cannon: { name: "Tun", cost: 55, damage: 24, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 280 },
-      tesla: { name: "Tesla", cost: 60, damage: 25, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 190 },
-      frost: { name: "Gheață", cost: 45, damage: 7, range: 9, fireInterval: 1.0, shellSpeed: 22, splash: 0, abilityCooldown: 10, hp: 230 },
+      crossbow: { name: "Arbaletă", cost: 30, damage: 14, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 120 },
+      rocket: { name: "Rachete", cost: 50, damage: 34, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 132 },
+      cannon: { name: "Tun", cost: 55, damage: 24, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 168 },
+      tesla: { name: "Tesla", cost: 60, damage: 25, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 114 },
+      frost: { name: "Gheață", cost: 45, damage: 7, range: 9, fireInterval: 1.0, shellSpeed: 22, splash: 0, abilityCooldown: 10, hp: 138 },
     } satisfies Record<TowerKind, TowerStats>,
     /** Abilitățile turnurilor (se declanșează singure). */
     abilities: {
@@ -200,6 +316,8 @@ export const CONFIG = {
     ],
     /** Transformarea într-o ușă (eroii trec, zombii nu). */
     doorCost: 10,
+    /** Un zid dărâmat se ridică la loc când e reparat până la atât din viață. */
+    rebuildAt: 0.4,
     /** Cât lemn primești înapoi când demolezi. */
     refund: 0.5,
     /** Capetele aflate la mai puțin de atât se „lipesc” automat. */

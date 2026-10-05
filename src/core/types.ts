@@ -1,7 +1,7 @@
 // Starea completă a jocului: doar date simple (fără clase, fără Babylon).
 // Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
-import type { Difficulty, HeroClass, Rarity, ShopRarity, TowerKind, ZombieType } from "./config";
+import type { AnimalKind, Difficulty, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
 import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
@@ -35,6 +35,10 @@ export interface Player {
   skin: string | null;
   /** Recompensele de magazin deja câștigate în runda asta (se primesc o singură dată). */
   unlocked: string[];
+  /** Zombi omorâți (pentru scor și clasament). */
+  kills: number;
+  /** Inventarul (bara rapidă de jos): carne crudă, carne friptă. */
+  inventory: Record<ItemKind, number>;
 }
 
 export interface Hero {
@@ -63,6 +67,13 @@ export interface Hero {
   ammo: number;
   /** Secunde rămase din reîncărcare (0 = nu reîncarcă). */
   reloadTimer: number;
+  /** Gloanțe în rezervă (muniția nu e nelimitată). */
+  reserve: number;
+  /** Cât de departe e punctul ochit (glonțul se oprește acolo dacă nu lovește nimic). 0 = toată raza. */
+  aimDist: number;
+  /** Supraviețuire: 100 = sătul / cald, 0 = pierzi viață. */
+  hunger: number;
+  warmth: number;
 }
 
 export interface Zombie {
@@ -81,6 +92,8 @@ export interface Zombie {
   burning: boolean;
   /** Turnul care l-a lovit: zombiul îl atacă întâi pe el, apoi merge spre mină. */
   aggroTowerId: EntityId | null;
+  /** Eroul care l-a lovit ultima dată (cine primește kill-ul). */
+  lastHitBy: EntityId | null;
   /** Răcit de un turn de gheață (secunde rămase): merge și atacă mai încet. */
   chillTimer: number;
   /** Înghețat complet (secunde rămase). */
@@ -139,10 +152,57 @@ export interface FirePatch {
   ownerHeroId: EntityId | null;
 }
 
-/** Cufărul lăsat de boss: îl ia primul erou care trece peste el. */
+/** Cufărul lăsat de boss: îl împuști ca să se deschidă. */
 export interface Chest {
   id: EntityId;
   pos: Vec2;
+  hp: number;
+  /** Secunde de când s-a deschis (null = încă închis). */
+  openedFor: number | null;
+}
+
+/** Foc de tabără construit de jucător: te încălzește și gătește carnea. */
+export interface Campfire {
+  id: EntityId;
+  ownerId: PlayerId;
+  pos: Vec2;
+  /** Lemnul rămas (0 = stins). */
+  fuel: number;
+  /** Bucăți de carne pe foc: secunde rămase până se gătesc. */
+  cooking: number[];
+}
+
+/** Fermă: coteț de găini sau țarc de porci. */
+export interface Farm {
+  id: EntityId;
+  ownerId: PlayerId;
+  pos: Vec2;
+  kind: "chicken" | "pig";
+  timer: number;
+}
+
+export interface Animal {
+  id: EntityId;
+  kind: AnimalKind;
+  pos: Vec2;
+  facing: number;
+  hp: number;
+  maxHp: number;
+  /** Unde merge acum (plimbare / fugă). */
+  goal: Vec2;
+  timer: number;
+  attackTimer: number;
+  /** Ferma de care aparține (găinile și porcii stau lângă ea). */
+  farmId: EntityId | null;
+}
+
+/** Obiecte pe jos: cutii de gloanțe și carne. Le iei mergând peste ele. */
+export interface Drop {
+  id: EntityId;
+  pos: Vec2;
+  kind: "ammo" | ItemKind;
+  amount: number;
+  age: number;
 }
 
 /** Un zid = un segment centrat în `pos`, rotit cu `rotation` (radiani, ca `facing`). */
@@ -155,6 +215,8 @@ export interface Barricade {
   level: number;
   /** Ușă: eroii trec prin ea, zombii nu. */
   door: boolean;
+  /** Dărâmat: rămân doar țăruși rupți (nu mai oprește pe nimeni); eroii îl pot repara. */
+  broken: boolean;
   hp: number;
   maxHp: number;
 }
@@ -183,7 +245,9 @@ export interface Shelter {
 
 export interface GameState {
   time: number;
+  mode: GameMode;
   difficulty: Difficulty;
+  weather: Weather;
   phase: Phase;
   /** Numărul nopții curente (ziua: ultima noapte trecută). 0 = încă n-a început. */
   wave: number;
@@ -209,6 +273,12 @@ export interface GameState {
   shells: Shell[];
   fires: FirePatch[];
   chests: Chest[];
+  campfires: Campfire[];
+  farms: Farm[];
+  animals: Animal[];
+  drops: Drop[];
+  /** Secunde până intră pe hartă un nou animal sălbatic. */
+  wildTimer: number;
   nextId: EntityId;
   rngState: number;
 }
@@ -228,7 +298,7 @@ export type GameEvent =
   | { type: "reloadStart"; heroId: EntityId; time: number }
   | { type: "reloadDone"; heroId: EntityId }
   | { type: "zombieHit"; id: EntityId; pos: Vec2; from: Vec2 }
-  | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType; burned: boolean }
+  | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType; burned: boolean; killerHeroId: EntityId | null }
   | { type: "zombieAttack"; id: EntityId; zombieType: ZombieType; pos: Vec2 }
   | { type: "spit"; id: EntityId; from: Vec2; to: Vec2 }
   | { type: "projectileHit"; pos: Vec2 }
@@ -239,6 +309,9 @@ export type GameEvent =
   | { type: "barricadeChanged"; id: EntityId }
   | { type: "barricadeDestroyed"; id: EntityId; pos: Vec2 }
   | { type: "barricadeHit"; id: EntityId; pos: Vec2 }
+  | { type: "barricadeRepaired"; id: EntityId; pos: Vec2 }
+  /** Construcție demolată de jucător (dispare, fără prăbușire). */
+  | { type: "structureRemoved"; id: EntityId; pos: Vec2 }
   | { type: "mineExploded"; pos: Vec2; radius: number }
   | { type: "nightStarted"; wave: number; boss: boolean }
   | { type: "dawn"; wave: number; wood: number }
@@ -250,6 +323,20 @@ export type GameEvent =
   | { type: "healed"; pos: Vec2; amount: number }
   | { type: "shopRoll"; playerId: PlayerId; rarity: ShopRarity; reward: ShopReward }
   | { type: "chestDropped"; id: EntityId; pos: Vec2 }
-  | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward }
+  | { type: "chestHit"; id: EntityId; pos: Vec2 }
+  | { type: "weatherChanged"; weather: Weather }
+  | { type: "noAmmo"; heroId: EntityId }
+  | { type: "picked"; playerId: PlayerId; kind: Drop["kind"]; amount: number; pos: Vec2 }
+  | { type: "ate"; playerId: PlayerId; cooked: boolean }
+  | { type: "cooked"; fireId: EntityId; pos: Vec2 }
+  | { type: "fireOut"; fireId: EntityId; pos: Vec2 }
+  | { type: "fuelAdded"; fireId: EntityId; pos: Vec2 }
+  | { type: "buildingPlaced"; id: EntityId; pos: Vec2 }
+  | { type: "animalHit"; id: EntityId; pos: Vec2; from: Vec2 }
+  | { type: "animalDied"; id: EntityId; kind: AnimalKind; pos: Vec2 }
+  | { type: "animalAttack"; id: EntityId; pos: Vec2 }
+  | { type: "starving"; heroId: EntityId }
+  | { type: "freezing"; heroId: EntityId }
+  | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward; wood: number; ammo: number; meat: number }
   | { type: "gameOver" }
   | { type: "victory" };

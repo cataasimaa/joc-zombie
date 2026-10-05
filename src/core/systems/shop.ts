@@ -5,7 +5,7 @@
 import { CONFIG, type Rarity, type ShopRarity } from "../config";
 import { CHEST_POOL, REPEATABLE, SHOP_POOLS, type ShopReward, WEAPONS, rewardKey } from "../items";
 import { nextRandom } from "../math";
-import type { GameEvent, GameState, Player, PlayerId } from "../types";
+import type { Chest, GameEvent, GameState, Hero, Player, PlayerId } from "../types";
 import { gunStats, heroById, recomputeMaxHp } from "./heroes";
 
 const RARITY_RANK = { start: 0, common: 1, rare: 2, epic: 3, legendary: 4 } as const;
@@ -33,7 +33,23 @@ export function shopRoll(state: GameState, playerId: PlayerId, events: GameEvent
   return true;
 }
 
-/** Deschide cufărul boss-ului: o recompensă epică sau legendară pe care nu o ai încă. */
+/**
+ * Cufărul boss-ului a fost spart: o recompensă epică/legendară pe care nu o ai, plus lemn,
+ * gloanțe și carne friptă pentru jucătorul care l-a deschis.
+ */
+export function openBossChest(state: GameState, chest: Chest, hero: Hero, events: GameEvent[]): void {
+  const player = state.players[hero.playerId];
+  const { rarity, reward } = openChest(state, player);
+  const c = CONFIG.chest;
+  player.wood += c.wood;
+  const gun = gunStats(state, hero);
+  const ammo = c.ammoMagazines * gun.magazine;
+  hero.reserve = Math.min(gun.magazine * CONFIG.ammo.maxMagazines, hero.reserve + ammo);
+  player.inventory.cookedMeat += c.meat;
+  events.push({ type: "chestOpened", playerId: player.id, pos: { ...chest.pos }, rarity, reward, wood: c.wood, ammo, meat: c.meat });
+}
+
+/** O recompensă epică sau legendară pe care jucătorul nu o are încă. */
 export function openChest(state: GameState, player: Player): { rarity: Rarity; reward: ShopReward } {
   const options = CHEST_POOL.filter((o) => isUseful(player, o.reward));
   const pick = options.length > 0
@@ -84,6 +100,14 @@ function applyReward(state: GameState, player: Player, r: ShopReward): void {
     case "coins":
       player.coins += r.amount;
       break;
+    case "ammo": {
+      const hero = heroById(state, player.heroId);
+      if (hero) {
+        const gun = gunStats(state, hero);
+        hero.reserve = Math.min(gun.magazine * CONFIG.ammo.maxMagazines, hero.reserve + r.magazines * gun.magazine);
+      }
+      break;
+    }
     case "mines":
       player.mines += r.count;
       break;

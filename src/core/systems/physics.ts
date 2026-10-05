@@ -21,7 +21,7 @@ export function resolveCollisions(state: GameState, pos: Vec2, radius: number, o
   const mode = opts.barricades ?? "none";
   if (mode !== "none") {
     for (const b of state.barricades) {
-      if (mode === "walls" && b.door) continue;
+      if (b.broken || (mode === "walls" && b.door)) continue;
       const [a, c] = barricadeEnds(b);
       pushOutOf(pos, radius, closestPointOnSegment(pos, a, c), CONFIG.barricade.thickness / 2);
     }

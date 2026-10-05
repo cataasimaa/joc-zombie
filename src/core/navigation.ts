@@ -26,7 +26,7 @@ const fields = new Map<number, FlowField>();
 const cellCenter = (i: number) => -HALF + (i + 0.5) * CELL;
 const toCell = (v: number) => Math.min(N - 1, Math.max(0, Math.floor((v + HALF) / CELL)));
 
-function buildField(radius: number): FlowField {
+function buildField(radius: number, targets: Vec2[] | null = null): FlowField {
   const blocked = new Uint8Array(N * N);
   const dist = new Float32Array(N * N).fill(Infinity);
   const shelterR = CONFIG.shelter.radius;
@@ -49,14 +49,22 @@ function buildField(radius: number): FlowField {
     }
   }
 
-  // Dijkstra simplu pornind de la pătrățelele din jurul adăpostului.
+  // Dijkstra simplu pornind de la pătrățelele din jurul adăpostului (sau al țintelor date).
   const open: number[] = [];
-  for (let j = 0; j < N; j++) {
-    for (let i = 0; i < N; i++) {
-      const d = Math.hypot(cellCenter(i), cellCenter(j));
-      if (d <= shelterR + radius + 1 && !blocked[j * N + i]) {
-        dist[j * N + i] = 0;
-        open.push(j * N + i);
+  if (targets) {
+    for (const t of targets) {
+      const c = toCell(t.z) * N + toCell(t.x);
+      dist[c] = 0;
+      open.push(c);
+    }
+  } else {
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const d = Math.hypot(cellCenter(i), cellCenter(j));
+        if (d <= shelterR + radius + 1 && !blocked[j * N + i]) {
+          dist[j * N + i] = 0;
+          open.push(j * N + i);
+        }
       }
     }
   }
@@ -107,8 +115,8 @@ export function canReachShelter(pos: Vec2, radius: number): boolean {
  * Direcția (vector unitate) în care trebuie să meargă un zombie de raza dată ca să ajungă
  * la adăpost pe drumul cel mai scurt. Null dacă nu există drum (atunci merge direct).
  */
-export function flowDirection(pos: Vec2, radius: number): Vec2 | null {
-  const f = fieldFor(radius);
+export function flowDirection(pos: Vec2, radius: number, field: FlowField = fieldFor(radius)): Vec2 | null {
+  const f = field;
   const ci = toCell(pos.x);
   const cj = toCell(pos.z);
   // Căutăm vecinul cu distanța cea mai mică (într-o fereastră mai mare dacă suntem pe o celulă blocată).
@@ -136,6 +144,21 @@ export function flowDirection(pos: Vec2, radius: number): Vec2 | null {
   const dz = cellCenter(bj) - pos.z;
   const len = Math.hypot(dx, dz) || 1;
   return { x: dx / len, z: dz / len };
+}
+
+/**
+ * Supraviețuire: zombii vânează eroii, deci câmpul pornește din pozițiile eroilor.
+ * Îl recalculăm cel mult de două ori pe secundă (`stamp`), per mărime de zombie.
+ */
+const heroFields = new Map<number, { stamp: string; field: FlowField }>();
+export function flowToTargets(pos: Vec2, radius: number, targets: Vec2[], stamp: string): Vec2 | null {
+  const key = Math.ceil(radius * 2) / 2;
+  let entry = heroFields.get(key);
+  if (!entry || entry.stamp !== stamp) {
+    entry = { stamp, field: buildField(key + 0.05, targets) };
+    heroFields.set(key, entry);
+  }
+  return flowDirection(pos, radius, entry.field);
 }
 
 class MinHeap {

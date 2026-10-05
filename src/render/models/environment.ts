@@ -87,6 +87,14 @@ export function buildRock(scene: Scene, mats: Materials, seed: number): Mesh[] {
   if (seed % 2 === 0) {
     k.ico(0.55, { p: [0.9, -0.1, 0.3], s: [1, 0.7, 1], r: [0, k.rand(0, 3), 0] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.9, frostNormal: 0.55 });
   }
+  // Bolovani mai mici crăpați, cu pete de mușchi și o dâră de gheață care „curge” pe ei.
+  for (let i = 0; i < 3; i++) {
+    const a = k.rand(0, Math.PI * 2);
+    k.ico(k.rand(0.35, 0.55), { p: [Math.cos(a) * 0.7, k.rand(0.1, 0.4), Math.sin(a) * 0.6], s: [1, k.rand(1.0, 1.5), 1], r: [k.rand(-0.3, 0.3), a, 0] }, { color: mix(PAL.stoneDark, PAL.stone, k.rand(0, 1)), wear: 0.25, frost: 0.85, frostNormal: 0.6 });
+  }
+  for (let i = 0; i < 4; i++) k.sphere(0.25, 5, { p: [k.rand(-0.8, 0.8), k.rand(0.05, 0.45), k.rand(0.3, 0.7)], s: [1, 0.3, 1] }, { color: hex("#6a7a3a"), wear: 0.3, smooth: true });
+  const sx = k.rand(-0.3, 0.3);
+  k.box(0.18, 0.75, 0.06, { p: [sx, 0.15, 0.62], r: [-0.45, 0, k.rand(-0.2, 0.2)] }, { color: mix(PAL.ice, PAL.snow, 0.15), mat: "glow" });
   return k.build(`rock${seed}`);
 }
 
@@ -291,27 +299,10 @@ export function buildShelter(scene: Scene, mats: Materials): ShelterParts {
   // Vagonet cu minereu de plasmă.
   k.box(1.0, 0.5, 0.7, { p: [-1.9, 0.75, -1.2], r: [0, 0.4, 0] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
   for (let i = 0; i < 4; i++) k.ico(0.18, { p: [-1.9 + k.rand(-0.3, 0.3), 1.05, -1.2 + k.rand(-0.2, 0.2)] }, { color: PLASMA, mat: "glow" });
-  // Foc de tabără în fața minei.
-  const fire: [number, number, number] = [1.6, 0, -3.7];
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    k.ico(0.26, { p: [fire[0] + Math.cos(a) * 0.7, 0.08, fire[2] + Math.sin(a) * 0.7], s: [1, 0.7, 1] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.4 });
-  }
-  for (let i = 0; i < 3; i++) {
-    k.cyl(1.0, 0.15, 0.15, 6, { p: [fire[0], 0.18, fire[2]], r: [Math.PI / 2, (i * Math.PI) / 3, 0.25] }, { color: PAL.darkWood, wear: 0.3 });
-  }
-  k.cyl(0.1, 0.8, 0.8, 8, { p: [fire[0], 0.05, fire[2]] }, { color: PAL.fire, mat: "glow" });
   const meshes = k.build("shelter");
 
+  // Focul de lângă mină e acum o entitate din joc (se vede prin SurvivalView).
   const flames: Mesh[] = [];
-  for (let i = 0; i < 3; i++) {
-    const fk = new ModelKit(scene, mats, 200 + i);
-    const color = i === 0 ? PAL.fire : i === 1 ? mix(PAL.fire, PAL.gold, 0.6) : mix(PAL.fire, PAL.blood, 0.3);
-    fk.cyl(1.1 - i * 0.25, 0, 0.55 - i * 0.12, 5, { p: [0, (1.1 - i * 0.25) / 2, 0] }, { color, mat: "glow" });
-    const f = fk.build(`flame${i}`)[0];
-    f.position.set(fire[0] + (i - 1) * 0.12, 0.1, fire[2] + (i % 2) * 0.1);
-    flames.push(f);
-  }
   // Cristalele de plasmă: ies dintre pietre, pulsează (le animăm).
   const crystals: Mesh[] = [];
   for (let i = 0; i < 7; i++) {
@@ -325,7 +316,7 @@ export function buildShelter(scene: Scene, mats: Materials): ShelterParts {
     c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
     crystals.push(c);
   }
-  return { meshes, flames, crystals, firePos: [fire[0], 1, fire[2]], plasmaPos: [0, 1.6, 0] };
+  return { meshes, flames, crystals, firePos: [1.6, 1, -3.7], plasmaPos: [0, 1.6, 0] };
 }
 
 /** Plasma extraterestră din mină: verde-cyan rece. */
