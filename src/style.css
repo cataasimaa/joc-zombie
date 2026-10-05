@@ -1,0 +1,335 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #c7d9ed;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #fff;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* Respectă „notch”-ul de pe iPhone. */
+  padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+
+#hud button {
+  pointer-events: auto;
+}
+
+.panel {
+  position: absolute;
+  background: rgba(20, 30, 45, 0.55);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.top-left {
+  top: max(10px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  width: 210px;
+}
+
+.top-center {
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  min-width: 180px;
+}
+
+.top-right {
+  top: max(10px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+#wave-text {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+#timer-text {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-label {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.bar {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 2px 0 4px;
+}
+
+.bar.thin {
+  height: 4px;
+}
+
+.fill {
+  height: 100%;
+  width: 100%;
+  transition: width 0.15s;
+}
+
+.fill.shelter {
+  background: linear-gradient(90deg, #e2553d, #f2a33a);
+}
+.fill.hero {
+  background: linear-gradient(90deg, #3bb36b, #7fe08a);
+}
+.fill.xp {
+  background: #8fb8ff;
+}
+
+.small-btn {
+  margin-top: 4px;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  background: #f2a33a;
+  color: #241405;
+}
+
+.abilities {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(3, 58px);
+  grid-template-rows: repeat(2, 58px);
+  gap: 10px;
+}
+
+.ability {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: rgba(20, 30, 45, 0.6);
+  color: #fff;
+  font-size: 24px;
+}
+
+.ability:disabled {
+  opacity: 0.35;
+}
+
+.ability.ult {
+  border-color: #f2c94c;
+}
+
+.ability.build {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  height: 126px;
+  border-radius: 29px;
+  background: rgba(242, 163, 58, 0.85);
+}
+
+.ability.build.active {
+  background: #3bb36b;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.banner {
+  position: absolute;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(59, 179, 107, 0.85);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.build-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(20, 30, 45, 0.85);
+  padding: 8px;
+  border-radius: 10px;
+  transform: translate(-50%, calc(-100% - 20px));
+  pointer-events: auto;
+  min-width: 150px;
+}
+
+.build-menu button {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  background: #3bb36b;
+  color: #fff;
+  text-align: left;
+}
+
+.build-menu button:disabled {
+  background: #555;
+  opacity: 0.7;
+}
+
+.build-menu button.cancel {
+  background: #8a3b3b;
+  text-align: center;
+}
+
+.build-error {
+  font-size: 12px;
+  color: #ff9a8a;
+  min-height: 0;
+}
+
+.toast {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 36px;
+  font-weight: 900;
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.3s;
+  white-space: nowrap;
+}
+
+.toast.show {
+  opacity: 1;
+}
+
+#joystick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  height: 65%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.joystick-base {
+  position: fixed;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  display: none;
+}
+
+.joystick-base.active {
+  display: block;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  transform: translate(-50%, -50%);
+}
+
+.end-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 15, 25, 0.75);
+  text-align: center;
+}
+
+.end-screen h1 {
+  font-size: 40px;
+  margin: 0 0 8px;
+}
+
+.end-screen button {
+  margin-top: 16px;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 28px;
+  font-size: 20px;
+  font-weight: 800;
+  background: #f2a33a;
+  color: #241405;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate-hint {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1d2a3a;
+    font-size: 22px;
+    z-index: 10;
+  }
+}
+
+/* Ecrane mici (telefon landscape): HUD mai compact. */
+@media (max-height: 450px) {
+  .panel {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  .top-left {
+    width: 170px;
+  }
+  #timer-text {
+    font-size: 18px;
+  }
+}

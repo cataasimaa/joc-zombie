@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#c7d9ed" />
+    <link rel="icon" href="data:," />
+    <title>Iarna Morților</title>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <!-- Stânga sus: adăpost + erou -->
+      <div class="panel top-left">
+        <div class="bar-label">🏠 Adăpost <span id="shelter-text"></span></div>
+        <div class="bar"><div id="shelter-bar" class="fill shelter"></div></div>
+        <div class="bar-label">🧍 Erou <span id="hero-level"></span> <span id="hero-text"></span></div>
+        <div class="bar"><div id="hero-bar" class="fill hero"></div></div>
+        <div class="bar thin"><div id="xp-bar" class="fill xp"></div></div>
+      </div>
+
+      <!-- Sus centru: valul și cronometrul -->
+      <div class="panel top-center">
+        <div id="wave-text"></div>
+        <div id="timer-text"></div>
+        <button id="start-wave" class="small-btn">▶ Pornește acum</button>
+      </div>
+
+      <!-- Dreapta sus: resurse -->
+      <div class="panel top-right">
+        <div>🪙 <span id="coins-text">0</span></div>
+        <div>🗼 <span id="slots-text">0/0</span></div>
+      </div>
+
+      <!-- Dreapta jos: abilități + construcție -->
+      <div class="abilities">
+        <button class="ability" disabled title="În curând">💣</button>
+        <button class="ability" disabled title="În curând">⚡</button>
+        <button class="ability" disabled title="În curând">🛡</button>
+        <button class="ability ult" disabled title="În curând">★</button>
+        <button id="build-btn" class="ability build">🔨</button>
+      </div>
+
+      <div id="build-banner" class="banner hidden">Mod construcție: atinge un loc liber</div>
+      <div id="build-menu" class="build-menu hidden">
+        <button id="build-tower">🗼 Turn <small>🪙<span id="tower-cost"></span></small></button>
+        <button disabled>🧱 Baricadă <small>curând</small></button>
+        <div id="build-error" class="build-error"></div>
+        <button id="build-cancel" class="cancel">✖</button>
+      </div>
+
+      <div id="toast" class="toast"></div>
+      <div id="joystick-zone"></div>
+    </div>
+
+    <div id="end-screen" class="end-screen hidden">
+      <h1 id="end-title"></h1>
+      <p id="end-text"></p>
+      <button id="restart-btn">Joacă din nou</button>
+    </div>
+
+    <div id="rotate-hint">↻ Rotește telefonul (landscape)</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
