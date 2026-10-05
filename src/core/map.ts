@@ -11,6 +11,16 @@ export interface House {
   rotation: number;
   /** Coliziunea casei e aproximată cu un cerc (simplu și rapid). */
   radius: number;
+  /** Doar pentru aspect: fiecare casă arată altfel. */
+  variant: "normal" | "collapsed" | "boarded";
+  seed: number;
+}
+
+/** Pietre pe jumătate îngropate în zăpadă (doar decor, fără coliziune). */
+export interface Rock {
+  pos: Vec2;
+  size: number;
+  seed: number;
 }
 
 export interface Tree {
@@ -23,6 +33,7 @@ export interface GameMap {
   halfSize: number;
   houses: House[];
   trees: Tree[];
+  rocks: Rock[];
 }
 
 /** Lățimea minimă a culoarelor dintre obstacole (diametrul boss-ului + o marjă). */
@@ -50,6 +61,8 @@ function generateMap(): GameMap {
       depth,
       rotation: -angle + Math.PI / 2,
       radius: Math.max(width, depth) * 0.55,
+      variant: i === 2 ? "collapsed" : i === 5 ? "boarded" : "normal",
+      seed: Math.floor(rand() * 1e6),
     });
   }
 
@@ -73,7 +86,15 @@ function generateMap(): GameMap {
     trees.push({ pos: { x, z }, scale, radius });
   }
 
-  return { halfSize, houses, trees };
+  const rocks: Rock[] = [];
+  for (let i = 0; i < 45; i++) {
+    const x = (rand() * 2 - 1) * (halfSize - 1);
+    const z = (rand() * 2 - 1) * (halfSize - 1);
+    if (Math.hypot(x, z) < 7) continue;
+    rocks.push({ pos: { x, z }, size: 0.3 + rand() * 0.8, seed: Math.floor(rand() * 1e6) });
+  }
+
+  return { halfSize, houses, trees, rocks };
 }
 
 export const GAME_MAP: GameMap = generateMap();

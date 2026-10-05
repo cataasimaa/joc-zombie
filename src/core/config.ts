@@ -4,6 +4,7 @@
 export type HeroClass = "assault" | "sniper" | "tank" | "healer";
 export type ZombieType = "walker" | "runner" | "brute" | "boss";
 export type Rarity = "common" | "rare" | "epic" | "legendary";
+export type ShopRarity = "nothing" | Rarity;
 
 export interface HeroStats {
   maxHp: number;
@@ -25,7 +26,7 @@ export const CONFIG = {
   },
 
   shelter: {
-    maxHp: 1500,
+    maxHp: 1200,
     radius: 3.5,
   },
 
@@ -63,7 +64,7 @@ export const CONFIG = {
 
   zombieCommon: {
     /** HP-ul crește cu 18% la fiecare val. */
-    hpGrowthPerWave: 0.18,
+    hpGrowthPerWave: 0.24,
     /** Dacă un erou e mai aproape de atât, zombiul îl atacă pe el în loc de adăpost. */
     aggroRadius: 5,
     /** Fiecare jucător în plus: +25% HP la zombi. */
@@ -82,9 +83,28 @@ export const CONFIG = {
   },
 
   barricade: {
-    cost: 10,
-    maxHp: 300,
-    radius: 1.3,
+    /** Un zid e un segment: lungime × grosime. Se leagă cap la cap cu altele. */
+    length: 2.6,
+    thickness: 0.5,
+    /** Nivelul 1 = gard de lemn, nivelul 2 = palisadă întărită. */
+    levels: [
+      { maxHp: 250, cost: 10 },
+      { maxHp: 750, cost: 20 },
+    ],
+    /** Transformarea într-o ușă (eroii trec, zombii nu). */
+    doorCost: 10,
+    /** Cât lemn primești înapoi când demolezi. */
+    refund: 0.5,
+    /** Capetele aflate la mai puțin de atât se „lipesc” automat. */
+    snapDistance: 1.4,
+  },
+
+  mines: {
+    triggerRadius: 1.3,
+    blastRadius: 3.8,
+    damage: 160,
+    /** Secunde după plasare până devine activă. */
+    armTime: 1,
   },
 
   economy: {
@@ -94,10 +114,10 @@ export const CONFIG = {
     woodIncomeBase: 30,
     woodIncomePerWave: 10,
     startTowerSlots: 3,
-    startBarricadeSlots: 4,
+    startBarricadeSlots: 8,
     /** La fiecare N valuri terminate: +1 slot de turn și +2 sloturi de baricadă. */
     slotEveryWaves: 3,
-    barricadeSlotsPerStep: 2,
+    barricadeSlotsPerStep: 4,
   },
 
   coins: {
@@ -110,7 +130,7 @@ export const CONFIG = {
   xp: {
     perLevel: 100,
     /** Cât XP în plus cere fiecare nivel următor. */
-    perLevelGrowth: 20,
+    perLevelGrowth: 45,
     /** +10% damage la fiecare nivel. */
     damagePerLevel: 0.1,
     hpPerLevel: 0.1,
@@ -118,33 +138,40 @@ export const CONFIG = {
 
   waves: {
     count: 10,
-    /** Pauza dinaintea primului val (secunde). */
-    firstDelay: 30,
-    /** Pauza dintre valuri (secunde). */
-    pause: 60,
+    /** Prima zi (secunde) — un pic mai scurtă, ca să intri repede în acțiune. */
+    firstDay: 45,
+    /** Ziua: timp de construit. */
+    day: 60,
+    /** Noaptea: atacă zombii. Devine tot mai lungă cu fiecare noapte. */
+    nightBase: 75,
+    nightPerWave: 15,
+    /** Zombii apar în primele 75% din noapte. */
+    spawnWindow: 0.75,
     /** Fiecare jucător în plus adaugă +50% zombi. */
     extraPerPlayer: 0.5,
-    baseCount: 8,
-    countPerWave: 4,
+    baseCount: 12,
+    countPerWave: 7,
     runnersFromWave: 3,
     runnerShare: 0.25,
-    brutesFromWave: 5,
-    bruteShare: 0.12,
-    /** Valurile care au un boss la final. */
+    brutesFromWave: 4,
+    bruteShare: 0.15,
+    /** Nopțile care au un boss. */
     bossWaves: [5, 10],
   },
 
-  chest: {
-    cost: 30,
-    /** Șansele fiecărei rarități (suma = 1). Se afișează în joc. */
+  shop: {
+    /** Cât costă o încercare la magazin. */
+    cost: 25,
+    /** Șansele (suma = 1). Se afișează în joc. „nothing” = nu primești nimic. */
     odds: [
-      { rarity: "common", chance: 0.6 },
-      { rarity: "rare", chance: 0.28 },
-      { rarity: "epic", chance: 0.1 },
+      { rarity: "nothing", chance: 0.2 },
+      { rarity: "common", chance: 0.46 },
+      { rarity: "rare", chance: 0.23 },
+      { rarity: "epic", chance: 0.09 },
       { rarity: "legendary", chance: 0.02 },
-    ] as { rarity: Rarity; chance: number }[],
-    /** Bonusul de damage al armei pentru fiecare raritate. */
-    weaponBonus: { common: 0.05, rare: 0.12, epic: 0.25, legendary: 0.5 } satisfies Record<Rarity, number>,
-    commonWood: 25,
+    ] as { rarity: ShopRarity; chance: number }[],
+    /** Limite, ca bonusurile să nu strice jocul. */
+    maxSpeedBonus: 0.5,
+    maxRepairBonus: 3,
   },
 } as const;

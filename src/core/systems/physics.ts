@@ -1,23 +1,27 @@
 import { CONFIG } from "../config";
 import { OBSTACLES } from "../map";
-import { type Vec2, clamp } from "../math";
+import { type Vec2, clamp, closestPointOnSegment } from "../math";
 import type { GameState } from "../types";
+import { barricadeEnds } from "./barricades";
 
-/**
- * Împinge un cerc (pos, radius) afară din obstacole și din adăpost, și îl ține pe hartă.
- * Baricadele blochează doar zombii (eroii trec printre ele).
- */
-export function resolveCollisions(
-  state: GameState,
-  pos: Vec2,
-  radius: number,
-  blockedByBarricades = false,
-  ignoreObstacles = false,
-): void {
+export interface CollisionOptions {
+  /** Zombii sunt opriți de toate zidurile; eroii trec doar prin uși. */
+  barricades?: "all" | "walls" | "none";
+  /** Plasa de siguranță anti-blocare: ignoră casele și brazii. */
+  ignoreObstacles?: boolean;
+}
+
+/** Împinge un cerc (pos, radius) afară din obstacole, adăpost și ziduri, și îl ține pe hartă. */
+export function resolveCollisions(state: GameState, pos: Vec2, radius: number, opts: CollisionOptions = {}): void {
   pushOutOf(pos, radius, state.shelter.pos, state.shelter.radius);
-  if (!ignoreObstacles) for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
-  if (blockedByBarricades) {
-    for (const b of state.barricades) pushOutOf(pos, radius, b.pos, CONFIG.barricade.radius);
+  if (!opts.ignoreObstacles) for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
+  const mode = opts.barricades ?? "none";
+  if (mode !== "none") {
+    for (const b of state.barricades) {
+      if (mode === "walls" && b.door) continue;
+      const [a, c] = barricadeEnds(b);
+      pushOutOf(pos, radius, closestPointOnSegment(pos, a, c), CONFIG.barricade.thickness / 2);
+    }
   }
   const limit = CONFIG.map.halfSize - radius;
   pos.x = clamp(pos.x, -limit, limit);

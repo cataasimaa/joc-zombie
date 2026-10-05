@@ -24,40 +24,50 @@
         <div class="bar thin"><div id="xp-bar" class="fill xp"></div></div>
       </div>
 
-      <!-- Sus centru: valul și cronometrul -->
+      <!-- Sus centru: zi/noapte și cronometrul -->
       <div class="top-center">
         <div class="panel wave-panel">
           <div id="wave-text"></div>
           <div id="timer-text"></div>
-          <button id="start-wave" class="small-btn">▶ Pornește acum</button>
+          <div class="bar thin"><div id="phase-bar" class="fill phase"></div></div>
+          <button id="start-wave" class="small-btn">🌙 Începe noaptea</button>
         </div>
         <div id="boss-panel" class="panel boss-panel hidden">
-          <div class="bar-label">☠ Boss</div>
+          <div class="bar-label">☠ Abominația</div>
           <div class="bar"><div id="boss-bar" class="fill boss"></div></div>
         </div>
       </div>
 
-      <!-- Dreapta sus: resurse + cufăr + sunet -->
+      <!-- Dreapta sus: resurse + magazin + sunet -->
       <div class="top-right">
         <div class="panel resources">
           <div title="Lemn (pentru construcții)">🪵 <span id="wood-text">0</span></div>
-          <div title="Monede (pentru cufere)">🪙 <span id="coins-text">0</span></div>
+          <div title="Monede (pentru magazin)">🪙 <span id="coins-text">0</span></div>
           <div title="Turnuri">🗼 <span id="towers-text">0/0</span></div>
-          <div title="Baricade">🧱 <span id="barricades-text">0/0</span></div>
+          <div title="Ziduri">🧱 <span id="barricades-text">0/0</span></div>
         </div>
         <div class="corner-buttons">
-          <button id="chest-btn" class="round-btn" title="Cufere">🎁</button>
+          <button id="shop-btn" class="round-btn" title="Magazin">🎲</button>
           <button id="mute-btn" class="round-btn" title="Sunet">🔊</button>
         </div>
       </div>
 
-      <!-- Dreapta jos: abilități + construcție -->
+      <!-- Dreapta jos: mine, abilități, construcție -->
       <div class="abilities">
+        <button id="mine-btn" class="ability mine" title="Pune o mină (M)">💣<span id="mine-count" class="badge">0</span></button>
         <div id="ability-buttons" class="ability-grid"></div>
         <button id="build-btn" class="ability build">🔨</button>
       </div>
 
-      <div id="build-banner" class="banner hidden">Mod construcție: atinge un loc liber sau un turn de-al tău</div>
+      <!-- Bara de plasare a zidurilor -->
+      <div id="wall-bar" class="wall-bar hidden">
+        <span id="wall-hint" class="wall-hint"></span>
+        <button id="wall-rotate" class="wall-btn">↻ Rotește</button>
+        <button id="wall-place" class="wall-btn primary">✔ Pune</button>
+        <button id="wall-done" class="wall-btn">✖ Gata</button>
+      </div>
+
+      <div id="build-banner" class="banner hidden">Construcție: atinge un loc liber, un turn sau un zid de-al tău</div>
       <div id="build-menu" class="build-menu hidden"></div>
 
       <div id="toast" class="toast"></div>
@@ -72,15 +82,17 @@
       <div id="hero-cards" class="hero-cards"></div>
     </div>
 
-    <!-- Cufere -->
-    <div id="chest-modal" class="overlay hidden">
-      <div class="modal">
-        <button id="chest-close" class="close-btn">✖</button>
-        <h2>🎁 Cufăr</h2>
-        <div id="chest-odds" class="odds"></div>
-        <div id="chest-result" class="chest-result"></div>
-        <button id="chest-open" class="primary-btn"></button>
-        <div id="chest-owned" class="owned"></div>
+    <!-- Magazinul norocului -->
+    <div id="shop-modal" class="overlay hidden">
+      <div class="modal shop">
+        <button id="shop-close" class="close-btn">✖</button>
+        <h2>🎲 Magazinul norocului</h2>
+        <p class="shop-sub">Dai monede, tragi la noroc. Poți pleca și cu mâna goală.</p>
+        <div id="shop-odds" class="odds"></div>
+        <div class="reel-wrap"><div id="shop-reel" class="reel"></div></div>
+        <div id="shop-result" class="shop-result"></div>
+        <button id="shop-roll" class="primary-btn"></button>
+        <div id="shop-stats" class="owned"></div>
       </div>
     </div>
 

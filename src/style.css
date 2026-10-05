@@ -1,13 +1,15 @@
 :root {
-  --panel: rgba(20, 30, 45, 0.6);
-  --panel-strong: rgba(18, 26, 40, 0.92);
-  --accent: #f2a33a;
-  --accent-ink: #241405;
+  --panel: rgba(16, 24, 34, 0.62);
+  --panel-strong: rgba(14, 20, 30, 0.94);
+  --frost: rgba(126, 200, 255, 0.35);
+  --accent: #ff8a3d;
+  --accent-ink: #2a1206;
+  --nothing: #8a96a3;
   --good: #3bb36b;
   --bad: #e2553d;
   --text: #fff;
   --muted: #b8c4d4;
-  --common: #b0b8c0;
+  --common: #d9d0bf;
   --rare: #4aa3ff;
   --epic: #b061ff;
   --legendary: #ffb627;
@@ -59,6 +61,7 @@ button {
 
 .panel {
   background: var(--panel);
+  border: 1px solid var(--frost);
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 14px;
@@ -126,7 +129,7 @@ button {
   color: var(--text);
 }
 
-#chest-btn.can-open {
+#shop-btn.can-open {
   background: var(--accent);
   animation: pulse 1.2s infinite;
 }
@@ -181,7 +184,16 @@ button {
   background: #8fb8ff;
 }
 .fill.boss {
-  background: linear-gradient(90deg, #7b2fa0, #d04fd0);
+  background: linear-gradient(90deg, #6b1d24, #7ec8ff);
+}
+.fill.phase {
+  background: linear-gradient(90deg, #f2d27a, #ff8a3d);
+}
+#hud.is-night .fill.phase {
+  background: linear-gradient(90deg, #3a5a9a, #7ec8ff);
+}
+#hud.is-night .panel {
+  background: rgba(8, 12, 22, 0.7);
 }
 
 .small-btn {
@@ -567,7 +579,7 @@ button {
 
 .odds {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
 }
 
@@ -584,32 +596,6 @@ button {
   display: block;
   font-size: 17px;
   color: var(--text);
-}
-
-.chest-result {
-  min-height: 64px;
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-}
-
-.chest-result .rarity {
-  font-size: 13px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.chest-result .reward {
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.chest-result.pop {
-  animation: pop 0.45s ease-out;
 }
 
 @keyframes pop {
@@ -633,6 +619,9 @@ button {
   line-height: 1.5;
 }
 
+.r-nothing {
+  color: var(--nothing);
+}
 .r-common {
   color: var(--common);
 }
@@ -726,5 +715,198 @@ button {
 @media (max-width: 700px) {
   .hero-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Mine ---------- */
+
+.ability.mine {
+  align-self: flex-end;
+  width: 50px;
+  height: 50px;
+  font-size: 20px;
+  overflow: visible;
+}
+
+.ability.mine.empty {
+  opacity: 0.4;
+}
+
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 20px;
+}
+
+/* ---------- Bara de plasare a zidurilor ---------- */
+
+.wall-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-strong);
+  border: 1px solid var(--frost);
+  border-radius: 12px;
+  padding: 6px;
+  pointer-events: auto;
+}
+
+.wall-hint {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--panel);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.wall-hint.bad {
+  color: #ffb3a8;
+}
+
+.wall-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 11px;
+  font-size: 13px;
+  white-space: nowrap;
+  font-weight: 800;
+  background: #2c3a4c;
+  color: #fff;
+}
+
+.wall-btn.primary {
+  background: var(--good);
+}
+
+.wall-btn:disabled {
+  background: #555;
+  opacity: 0.7;
+}
+
+/* ---------- Magazinul norocului ---------- */
+
+.modal.shop {
+  width: min(520px, 100%);
+}
+
+.shop-sub {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.odds .odd span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+.reel-wrap {
+  margin: 12px auto 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid var(--frost);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reel {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.reel.spinning {
+  animation: shake 0.12s infinite;
+  filter: blur(0.5px);
+}
+
+@keyframes shake {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+.shop-result {
+  min-height: 46px;
+  margin-top: 8px;
+}
+
+.shop-result .rarity {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.shop-result .reward {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.shop-result.pop {
+  animation: pop 0.45s ease-out;
+}
+
+@media (max-height: 450px) {
+  .reel-wrap {
+    width: 64px;
+    height: 64px;
+    margin-top: 8px;
+  }
+  .reel {
+    font-size: 34px;
+  }
+  .modal {
+    padding: 10px 14px;
+  }
+  .modal h2 {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .primary-btn {
+    margin-top: 8px;
+    padding: 10px 20px;
+    font-size: 16px;
+  }
+  .ability.mine {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-height: 450px) {
+  .build-menu {
+    gap: 4px;
+    padding: 6px;
+  }
+  .build-menu button {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .build-menu button small {
+    font-size: 10px;
   }
 }

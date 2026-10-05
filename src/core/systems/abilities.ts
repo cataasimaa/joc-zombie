@@ -22,6 +22,10 @@ export function abilityBlockedReason(state: GameState, hero: Hero, slot: number)
       return findNearestZombie(state, hero.pos, ABILITY.headshot.range) ? null : "Niciun zombie în rază";
     case "pierce":
       return findNearestZombie(state, hero.pos, ABILITY.pierce.length) ? null : "Niciun zombie în rază";
+    case "molotov":
+      return findNearestZombie(state, hero.pos, ABILITY.molotov.range) ? null : "Niciun zombie în rază";
+    case "iceShot":
+      return findNearestZombie(state, hero.pos, ABILITY.iceShot.range) ? null : "Niciun zombie în rază";
     case "heal":
       return healTarget(state, hero) ? null : "Toți sunt sănătoși";
     case "revive":
@@ -46,14 +50,24 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
       const at = { ...target.pos };
       fx(hero.pos, ABILITY.grenade.radius, at);
       for (const z of zombiesInRadius(state, at, ABILITY.grenade.radius)) {
-        damageZombie(state, z, ABILITY.grenade.damage * power, events, hero.id);
+        damageZombie(state, z, ABILITY.grenade.damage * power, events, hero.id, hero.pos);
       }
       break;
     }
-    case "rapidFire":
-      hero.buffs.rapidFire = ABILITY.rapidFire.duration;
-      fx(hero.pos, 1.5);
+    case "molotov": {
+      const target = findNearestZombie(state, hero.pos, ABILITY.molotov.range)!;
+      fx(hero.pos, ABILITY.molotov.radius, target.pos);
+      state.zones.push({
+        id: state.nextId++,
+        kind: "fire",
+        ownerHeroId: hero.id,
+        pos: { ...target.pos },
+        radius: ABILITY.molotov.radius,
+        timer: ABILITY.molotov.duration,
+        power: ABILITY.molotov.damagePerSecond * power,
+      });
       break;
+    }
     case "spray": {
       const { range, coneDegrees, damage } = ABILITY.spray;
       const half = (coneDegrees / 2) * (Math.PI / 180);
@@ -66,14 +80,14 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
         const d = Math.hypot(dx, dz);
         if (d > range || d === 0) continue;
         const cos = (dx * dirX + dz * dirZ) / d;
-        if (cos >= Math.cos(half)) damageZombie(state, z, damage * power, events, hero.id);
+        if (cos >= Math.cos(half)) damageZombie(state, z, damage * power, events, hero.id, hero.pos);
       }
       break;
     }
     case "airstrike":
       fx(hero.pos, ABILITY.airstrike.radius);
       for (const z of zombiesInRadius(state, hero.pos, ABILITY.airstrike.radius)) {
-        damageZombie(state, z, ABILITY.airstrike.damage * power, events, hero.id);
+        damageZombie(state, z, ABILITY.airstrike.damage * power, events, hero.id, hero.pos);
       }
       break;
 
@@ -82,7 +96,7 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
       const target = strongestZombies(state, hero.pos, ABILITY.headshot.range, 1)[0];
       events.push({ type: "shot", from: { ...hero.pos }, to: { ...target.pos }, source: "hero", crit: true });
       fx(target.pos, 1);
-      damageZombie(state, target, ABILITY.headshot.damage * power, events, hero.id);
+      damageZombie(state, target, ABILITY.headshot.damage * power, events, hero.id, hero.pos);
       break;
     }
     case "pierce": {
@@ -99,20 +113,28 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
         const along = dx * dirX + dz * dirZ;
         const across = Math.abs(dx * dirZ - dz * dirX);
         if (along >= 0 && along <= length && across <= width + CONFIG.zombies[z.type].radius) {
-          damageZombie(state, z, damage * power, events, hero.id);
+          damageZombie(state, z, damage * power, events, hero.id, hero.pos);
         }
       }
       break;
     }
-    case "focus":
-      hero.buffs.focus = ABILITY.focus.duration;
-      fx(hero.pos, 1.5);
+    case "iceShot": {
+      const { range, radius, damage, freeze } = ABILITY.iceShot;
+      const target = findNearestZombie(state, hero.pos, range)!;
+      const at = { ...target.pos };
+      events.push({ type: "shot", from: { ...hero.pos }, to: at, source: "hero", crit: true, heroId: hero.id });
+      fx(hero.pos, radius, at);
+      for (const z of zombiesInRadius(state, at, radius)) {
+        z.slowTimer = Math.max(z.slowTimer, freeze);
+        damageZombie(state, z, damage * power, events, hero.id, hero.pos);
+      }
       break;
+    }
     case "assassinate":
       fx(hero.pos, 2);
       for (const z of strongestZombies(state, hero.pos, ABILITY.assassinate.range, ABILITY.assassinate.targets)) {
         events.push({ type: "shot", from: { ...hero.pos }, to: { ...z.pos }, source: "hero", crit: true });
-        damageZombie(state, z, ABILITY.assassinate.damage * power, events, hero.id);
+        damageZombie(state, z, ABILITY.assassinate.damage * power, events, hero.id, hero.pos);
       }
       break;
 
@@ -129,7 +151,7 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
       fx(hero.pos, ABILITY.slam.radius);
       for (const z of zombiesInRadius(state, hero.pos, ABILITY.slam.radius)) {
         z.slowTimer = ABILITY.slam.slowDuration;
-        damageZombie(state, z, ABILITY.slam.damage * power, events, hero.id);
+        damageZombie(state, z, ABILITY.slam.damage * power, events, hero.id, hero.pos);
       }
       break;
     case "fortress":
@@ -150,6 +172,7 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
       state.zones.push({
         id: state.nextId++,
         kind: "heal",
+        ownerHeroId: hero.id,
         pos: { ...hero.pos },
         radius: ABILITY.healZone.radius,
         timer: ABILITY.healZone.duration,
@@ -171,7 +194,7 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
       sh.hp = Math.min(sh.maxHp, sh.hp + shelterHeal * power);
       events.push({ type: "healed", pos: { ...sh.pos }, amount: shelterHeal });
       for (const z of zombiesInRadius(state, hero.pos, radius)) {
-        damageZombie(state, z, damage * power, events, hero.id);
+        damageZombie(state, z, damage * power, events, hero.id, hero.pos);
       }
       break;
     }
@@ -181,13 +204,19 @@ export function useAbility(state: GameState, hero: Hero, slot: number, events: G
   return true;
 }
 
-/** Zonele de vindecare: vindecă eroii și baricadele din interior. */
-export function updateZones(state: GameState, dt: number): void {
+/** Zonele de pe hartă: vindecarea (eroi + ziduri) și focul de la Molotov (arde zombii). */
+export function updateZones(state: GameState, dt: number, events: GameEvent[]): void {
   for (let i = state.zones.length - 1; i >= 0; i--) {
     const zone = state.zones[i];
     zone.timer -= dt;
     if (zone.timer <= 0) {
       state.zones.splice(i, 1);
+      continue;
+    }
+    if (zone.kind === "fire") {
+      for (const z of zombiesInRadius(state, zone.pos, zone.radius)) {
+        damageZombie(state, z, zone.power * dt, events, zone.ownerHeroId, zone.pos);
+      }
       continue;
     }
     for (const h of state.heroes) {

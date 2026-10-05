@@ -4,8 +4,8 @@
 import type { HeroClass, Rarity } from "./config";
 
 export type AbilityId =
-  | "grenade" | "rapidFire" | "spray" | "airstrike"
-  | "headshot" | "pierce" | "focus" | "assassinate"
+  | "grenade" | "molotov" | "spray" | "airstrike"
+  | "headshot" | "pierce" | "iceShot" | "assassinate"
   | "taunt" | "shield" | "slam" | "fortress"
   | "heal" | "healZone" | "revive" | "holyLight";
 
@@ -30,12 +30,12 @@ export interface HeroDef {
 export const ABILITY = {
   levelScaling: 0.15,
   grenade: { range: 14, radius: 3.5, damage: 60 },
-  rapidFire: { duration: 5, speedMultiplier: 2.2 },
+  molotov: { range: 12, radius: 3.2, duration: 6, damagePerSecond: 22 },
   spray: { range: 11, coneDegrees: 70, damage: 35 },
   airstrike: { radius: 10, damage: 160 },
   headshot: { range: 24, damage: 220 },
   pierce: { length: 26, width: 1.4, damage: 90 },
-  focus: { duration: 6, critBonus: 0.4, speedMultiplier: 1.6 },
+  iceShot: { range: 22, radius: 3.5, damage: 40, freeze: 4 },
   assassinate: { range: 30, targets: 5, damage: 600 },
   taunt: { radius: 11, duration: 5 },
   shield: { duration: 5, damageReduction: 0.7 },
@@ -52,10 +52,10 @@ export const HERO_DEFS: Record<HeroClass, HeroDef> = {
     name: "Assault Rifle",
     icon: "🔫",
     role: "Damage constant",
-    description: "Trage rapid și lovește câte doi zombi deodată. Bun la curățat valuri.",
+    description: "Supraviețuitor cu pușcă din țevi. Trage des și lovește câte doi zombi deodată.",
     abilities: [
       { id: "grenade", name: "Grenadă", icon: "💣", cooldown: 8, description: "Aruncă o grenadă în cel mai apropiat zombie (damage în zonă)." },
-      { id: "rapidFire", name: "Foc rapid", icon: "⚡", cooldown: 15, description: "Trage de 2 ori mai repede, 5 secunde." },
+      { id: "molotov", name: "Molotov", icon: "🔥", cooldown: 14, description: "Aruncă o sticlă cu foc: zona arde zombii 6 secunde." },
       { id: "spray", name: "Rafală", icon: "🌪", cooldown: 10, description: "Lovește toți zombii dintr-un con în fața ta." },
       { id: "airstrike", name: "Bombardament", icon: "✈", cooldown: 60, description: "ULTIMATE: damage mare tuturor zombilor din jurul tău." },
     ],
@@ -68,7 +68,7 @@ export const HERO_DEFS: Record<HeroClass, HeroDef> = {
     abilities: [
       { id: "headshot", name: "Lovitură în cap", icon: "💀", cooldown: 10, description: "Lovește zombiul cu cel mai mult HP din rază." },
       { id: "pierce", name: "Glonț perforant", icon: "➶", cooldown: 12, description: "Glonțul trece prin toți zombii dintr-o linie." },
-      { id: "focus", name: "Concentrare", icon: "👁", cooldown: 18, description: "6 secunde: mai multe critice și foc mai rapid." },
+      { id: "iceShot", name: "Glonț de gheață", icon: "❄", cooldown: 16, description: "Îngheață (încetinește puternic) zombii din jurul țintei." },
       { id: "assassinate", name: "Asasinare", icon: "☠", cooldown: 60, description: "ULTIMATE: lovește cei mai puternici 5 zombi de pe hartă." },
     ],
   },
@@ -106,17 +106,18 @@ export interface SkinDef {
   color: [number, number, number];
 }
 
+/** Culoarea mantiei/hainei fiecărei clase (pielea, blana și armele au culorile lor). */
 export const DEFAULT_SKIN_COLOR: Record<HeroClass, [number, number, number]> = {
-  assault: [0.2, 0.45, 0.95],
-  sniper: [0.55, 0.3, 0.8],
-  tank: [0.5, 0.42, 0.32],
-  healer: [0.95, 0.95, 0.85],
+  assault: [0.24, 0.3, 0.36],
+  sniper: [0.27, 0.32, 0.22],
+  tank: [0.35, 0.22, 0.16],
+  healer: [0.62, 0.6, 0.55],
 };
 
 export const SKINS: SkinDef[] = [
-  { id: "hunter", name: "Vânător", rarity: "rare", color: [0.2, 0.4, 0.2] },
-  { id: "ember", name: "Jar", rarity: "rare", color: [0.9, 0.35, 0.15] },
-  { id: "arctic", name: "Arctic", rarity: "epic", color: [0.75, 0.9, 1] },
-  { id: "shadow", name: "Umbră", rarity: "epic", color: [0.12, 0.12, 0.18] },
-  { id: "gold", name: "Aur legendar", rarity: "legendary", color: [1, 0.78, 0.15] },
+  { id: "hunter", name: "Vânător", rarity: "rare", color: [0.22, 0.28, 0.16] },
+  { id: "ember", name: "Jar", rarity: "rare", color: [0.48, 0.18, 0.1] },
+  { id: "arctic", name: "Lup alb", rarity: "epic", color: [0.85, 0.88, 0.9] },
+  { id: "shadow", name: "Umbră", rarity: "epic", color: [0.1, 0.1, 0.13] },
+  { id: "gold", name: "Rege al iernii", rarity: "legendary", color: [0.62, 0.45, 0.12] },
 ];

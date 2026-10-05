@@ -1,10 +1,14 @@
+// Ziua și noaptea. Ziua (60 s) construiești; noaptea atacă zombii.
+// Fiecare noapte e mai lungă decât precedenta. În zori, zombii rămași fug.
+
 import { CONFIG, type ZombieType } from "../config";
+import { nextRandom } from "../math";
 import type { GameEvent, GameState } from "../types";
 import { spawnZombie } from "./zombies";
 
 /**
- * Compoziția unui val: ce zombi apar, în ordine.
- * Crește cu numărul valului și cu numărul de jucători.
+ * Compoziția unei nopți: ce zombi apar, în ordine.
+ * Crește cu numărul nopții și cu numărul de jucători.
  */
 export function waveComposition(wave: number, playerCount: number): ZombieType[] {
   const w = CONFIG.waves;
@@ -24,55 +28,74 @@ export function waveComposition(wave: number, playerCount: number): ZombieType[]
   return list;
 }
 
-export function spawnIntervalFor(wave: number): number {
-  return Math.max(0.35, 1.3 - (wave - 1) * 0.09);
+/** Câți zombi vin deodată, din același loc. Hoardele cresc de la o noapte la alta. */
+export function hordeSize(wave: number): number {
+  return 2 + Math.floor(wave / 2);
+}
+
+export function nightDuration(wave: number): number {
+  return CONFIG.waves.nightBase + (wave - 1) * CONFIG.waves.nightPerWave;
 }
 
 export function woodIncomeFor(wave: number): number {
   return CONFIG.economy.woodIncomeBase + wave * CONFIG.economy.woodIncomePerWave;
 }
 
-export function startNextWave(state: GameState, events: GameEvent[]): void {
-  if (state.phase !== "build") return;
+export function startNight(state: GameState, events: GameEvent[]): void {
+  if (state.phase !== "day") return;
   state.wave++;
-  state.phase = "wave";
-  state.phaseTimer = 0;
+  state.phase = "night";
+  state.phaseDuration = state.phaseTimer = nightDuration(state.wave);
   state.spawnQueue = waveComposition(state.wave, Object.keys(state.players).length);
-  state.spawnInterval = spawnIntervalFor(state.wave);
+  // Zombii apar în hoarde, uniform în prima parte a nopții.
+  const hordes = Math.ceil(state.spawnQueue.length / hordeSize(state.wave));
+  state.spawnInterval = (state.phaseDuration * CONFIG.waves.spawnWindow) / Math.max(1, hordes);
   state.spawnTimer = 0;
-  events.push({ type: "waveStarted", wave: state.wave, boss: state.spawnQueue.includes("boss") });
+  events.push({ type: "nightStarted", wave: state.wave, boss: state.spawnQueue.includes("boss") });
+}
+
+function startDay(state: GameState, events: GameEvent[]): void {
+  state.wavesCompleted++;
+  const wood = woodIncomeFor(state.wave);
+  for (const p of Object.values(state.players)) p.wood += wood;
+  // Zombii rămași fug de lumină.
+  state.spawnQueue = [];
+  for (const z of state.zombies) z.fleeing = true;
+  events.push({ type: "dawn", wave: state.wave, wood });
+  if (state.wave >= state.totalWaves) {
+    state.phase = "victory";
+    events.push({ type: "victory" });
+    return;
+  }
+  state.phase = "day";
+  state.phaseDuration = state.phaseTimer = CONFIG.waves.day;
 }
 
 export function updateWaves(state: GameState, dt: number, events: GameEvent[]): void {
-  if (state.phase === "build") {
-    state.phaseTimer -= dt;
-    if (state.phaseTimer <= 0) startNextWave(state, events);
+  state.phaseTimer -= dt;
+
+  if (state.phase === "day") {
+    if (state.phaseTimer <= 0) startNight(state, events);
     return;
   }
+  if (state.phase !== "night") return;
 
-  if (state.phase !== "wave") return;
-
-  // Apar zombii unul câte unul, la interval fix.
   if (state.spawnQueue.length > 0) {
     state.spawnTimer -= dt;
     if (state.spawnTimer <= 0) {
       state.spawnTimer = state.spawnInterval;
-      spawnZombie(state, state.spawnQueue.shift()!);
+      // O hoardă: primul zombie alege locul, ceilalți apar în jurul lui.
+      const size = Math.min(hordeSize(state.wave), state.spawnQueue.length);
+      const leader = spawnZombie(state, state.spawnQueue.shift()!);
+      for (let i = 1; i < size; i++) {
+        const z = spawnZombie(state, state.spawnQueue.shift()!, leader.pos);
+        z.pos.x += (nextRandom(state) - 0.5) * 4;
+        z.pos.z += (nextRandom(state) - 0.5) * 4;
+      }
     }
   }
 
-  // Valul se termină când toți zombii au apărut și au murit.
-  if (state.spawnQueue.length === 0 && state.zombies.length === 0) {
-    state.wavesCompleted++;
-    const wood = woodIncomeFor(state.wave);
-    for (const p of Object.values(state.players)) p.wood += wood;
-    events.push({ type: "waveCleared", wave: state.wave, wood });
-    if (state.wave >= state.totalWaves) {
-      state.phase = "victory";
-      events.push({ type: "victory" });
-    } else {
-      state.phase = "build";
-      state.phaseTimer = CONFIG.waves.pause;
-    }
-  }
+  // Zorii vin când se termină noaptea, sau mai devreme dacă ai omorât tot ce a venit.
+  const allDead = state.spawnQueue.length === 0 && state.zombies.every((z) => z.fleeing);
+  if (state.phaseTimer <= 0 || allDead) startDay(state, events);
 }

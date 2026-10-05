@@ -46,3 +46,44 @@ export function nextRandom(seedHolder: { rngState: number }): number {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
+
+// ---------- Segmente (pentru zidurile de baricadă) ----------
+
+/** Capetele unui segment de lungime `length`, centrat în `center`, rotit cu `rotation`. */
+export function segmentEnds(center: Vec2, rotation: number, length: number): [Vec2, Vec2] {
+  // rotation = direcția în care „privește” zidul; zidul se întinde perpendicular (stânga-dreapta).
+  const hx = Math.cos(rotation) * (length / 2);
+  const hz = -Math.sin(rotation) * (length / 2);
+  return [
+    { x: center.x - hx, z: center.z - hz },
+    { x: center.x + hx, z: center.z + hz },
+  ];
+}
+
+export function closestPointOnSegment(p: Vec2, a: Vec2, b: Vec2): Vec2 {
+  const abx = b.x - a.x;
+  const abz = b.z - a.z;
+  const lenSq = abx * abx + abz * abz;
+  const t = lenSq === 0 ? 0 : clamp(((p.x - a.x) * abx + (p.z - a.z) * abz) / lenSq, 0, 1);
+  return { x: a.x + abx * t, z: a.z + abz * t };
+}
+
+export function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  return dist(p, closestPointOnSegment(p, a, b));
+}
+
+/** Distanța minimă dintre două segmente (0 dacă se intersectează). */
+export function segmentDistance(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): number {
+  const cross = (o: Vec2, p: Vec2, q: Vec2) => (p.x - o.x) * (q.z - o.z) - (p.z - o.z) * (q.x - o.x);
+  const d1 = cross(b1, b2, a1);
+  const d2 = cross(b1, b2, a2);
+  const d3 = cross(a1, a2, b1);
+  const d4 = cross(a1, a2, b2);
+  if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+  return Math.min(
+    distToSegment(a1, b1, b2),
+    distToSegment(a2, b1, b2),
+    distToSegment(b1, a1, a2),
+    distToSegment(b2, a1, a2),
+  );
+}

@@ -6,11 +6,19 @@ import type { Command } from "./commands";
 import { CONFIG, type HeroClass } from "./config";
 import { clamp } from "./math";
 import { updateZones, useAbility } from "./systems/abilities";
-import { openChest } from "./systems/chests";
+import {
+  buildBarricade,
+  defaultBarricadeRotation,
+  demolishBarricade,
+  moveBarricade,
+  upgradeBarricade,
+} from "./systems/barricades";
 import { updateCoins } from "./systems/coins";
 import { heroById, updateHeroes } from "./systems/heroes";
-import { build, updateTowers, upgradeTower } from "./systems/towers";
-import { startNextWave, updateWaves } from "./systems/waves";
+import { placeMine, updateMines } from "./systems/mines";
+import { shopRoll } from "./systems/shop";
+import { buildTower, updateTowers, upgradeTower } from "./systems/towers";
+import { startNight, updateWaves } from "./systems/waves";
 import { updateZombies } from "./systems/zombies";
 import type { GameEvent, GameState, PlayerId } from "./types";
 
@@ -53,7 +61,8 @@ export class GameSimulation {
     updateHeroes(s, dt, this.events);
     updateTowers(s, dt, this.events);
     updateZombies(s, dt, this.events);
-    updateZones(s, dt);
+    updateMines(s, dt, this.events);
+    updateZones(s, dt, this.events);
     updateCoins(s, dt, this.events);
 
     if (s.shelter.hp <= 0) {
@@ -84,22 +93,37 @@ export class GameSimulation {
         hero.moveInput = { x: clamp(cmd.x * scale, -1, 1), z: clamp(cmd.z * scale, -1, 1) };
         break;
       }
-      case "build":
-        build(s, cmd.playerId, cmd.kind, { x: cmd.x, z: cmd.z }, this.events);
+      case "build": {
+        const pos = { x: cmd.x, z: cmd.z };
+        if (cmd.kind === "tower") buildTower(s, cmd.playerId, pos, this.events);
+        else buildBarricade(s, cmd.playerId, pos, cmd.rotation ?? defaultBarricadeRotation(pos), this.events);
         break;
+      }
       case "upgradeTower":
         upgradeTower(s, cmd.playerId, cmd.towerId, this.events);
+        break;
+      case "moveBarricade":
+        moveBarricade(s, cmd.playerId, cmd.barricadeId, { x: cmd.x, z: cmd.z }, cmd.rotation, this.events);
+        break;
+      case "upgradeBarricade":
+        upgradeBarricade(s, cmd.playerId, cmd.barricadeId, cmd.to, this.events);
+        break;
+      case "demolish":
+        demolishBarricade(s, cmd.playerId, cmd.barricadeId, this.events);
+        break;
+      case "placeMine":
+        placeMine(s, cmd.playerId);
         break;
       case "useAbility": {
         const hero = heroById(s, player.heroId);
         if (hero) useAbility(s, hero, cmd.slot, this.events);
         break;
       }
-      case "openChest":
-        openChest(s, cmd.playerId, this.events);
+      case "shopRoll":
+        shopRoll(s, cmd.playerId, this.events);
         break;
-      case "startWaveNow":
-        startNextWave(s, this.events);
+      case "startNightNow":
+        startNight(s, this.events);
         break;
     }
   }
@@ -108,11 +132,12 @@ export class GameSimulation {
 function createInitialState({ players, seed = Date.now() }: GameOptions): GameState {
   const state: GameState = {
     time: 0,
-    phase: "build",
+    phase: "day",
     wave: 0,
     totalWaves: CONFIG.waves.count,
     wavesCompleted: 0,
-    phaseTimer: CONFIG.waves.firstDelay,
+    phaseTimer: CONFIG.waves.firstDay,
+    phaseDuration: CONFIG.waves.firstDay,
     spawnQueue: [],
     spawnTimer: 0,
     spawnInterval: 1,
@@ -122,6 +147,7 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
     zombies: [],
     towers: [],
     barricades: [],
+    mines: [],
     coins: [],
     zones: [],
     nextId: 1,
@@ -139,8 +165,14 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
       heroId,
       coins: 0,
       wood: CONFIG.economy.startWood,
-      weaponBonus: 0,
+      weapon: "rusty",
       towerTier: 1,
+      extraTowerSlots: 0,
+      mines: 0,
+      maxHpBonus: 0,
+      speedBonus: 0,
+      regenPerSec: 0,
+      repairBonus: 0,
       skins: [],
       skin: null,
     };
@@ -159,7 +191,7 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
       xp: 0,
       moveInput: { x: 0, z: 0 },
       cooldowns: [0, 0, 0, 0],
-      buffs: { rapidFire: 0, focus: 0, shield: 0, invulnerable: 0 },
+      buffs: { shield: 0, invulnerable: 0 },
     });
   });
 

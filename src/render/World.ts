@@ -1,153 +1,311 @@
-// Decorul static al hărții: zăpadă, adăpost, case, brazi, ninsoare.
-// Se construiește o singură dată; nu depinde de starea jocului (în afară de tremuratul adăpostului).
+// Lumea statică și atmosfera: teren, brazi, pietre, case, adăpost, lumini, zi/noapte, ceață, ninsoare.
 
 import {
   Color3,
   Color4,
+  DirectionalLight,
   DynamicTexture,
-  Mesh,
+  GlowLayer,
+  HemisphericLight,
+  ImageProcessingConfiguration,
+  type InstancedMesh,
+  type Mesh,
   MeshBuilder,
   ParticleSystem,
+  PointLight,
   type Scene,
+  ShadowGenerator,
   StandardMaterial,
+  Texture,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG, GAME_MAP } from "../core";
+import type { Materials } from "./ModelKit";
+import { buildHouse, buildRock, buildShelter, buildTree } from "./models/environment";
+import { rng } from "./noise";
+import { PAL, hex, mix } from "./palette";
+import { createTerrain, terrainHeight } from "./Terrain";
 
-export function makeMaterial(scene: Scene, name: string, color: Color3, emissive = 0, alpha = 1): StandardMaterial {
-  const m = new StandardMaterial(name, scene);
-  m.diffuseColor = color;
-  m.specularColor = Color3.Black();
-  if (emissive) m.emissiveColor = color.scale(emissive);
-  if (alpha < 1) m.alpha = alpha;
-  return m;
-}
-
-export class World {
-  readonly shelter: TransformNode;
-  private snowEmitter = new Vector3();
-
-  constructor(private scene: Scene) {
-    const snow = makeMaterial(scene, "snow", new Color3(0.95, 0.97, 1));
-    const wood = makeMaterial(scene, "wood", new Color3(0.45, 0.28, 0.15));
-    const darkWood = makeMaterial(scene, "darkWood", new Color3(0.3, 0.18, 0.1));
-    const roofMat = makeMaterial(scene, "roof", new Color3(0.85, 0.9, 0.95));
-    const pine = makeMaterial(scene, "pine", new Color3(0.13, 0.35, 0.22));
-    const shelterMat = makeMaterial(scene, "shelterWood", new Color3(0.55, 0.35, 0.2));
-    const windowMat = makeMaterial(scene, "window", new Color3(1, 0.8, 0.4), 0.9);
-
-    const size = CONFIG.map.halfSize * 2;
-    const ground = MeshBuilder.CreateGround("ground", { width: size + 60, height: size + 60 }, scene);
-    ground.material = snow;
-
-    // Adăpostul: o casă mai mare în centru, cu fereastră luminată (familia e înăuntru).
-    const shelter = new TransformNode("shelter", scene);
-    const r = CONFIG.shelter.radius;
-    const body = MeshBuilder.CreateBox("shelterBody", { width: r * 1.5, depth: r * 1.5, height: 2.6 }, scene);
-    body.position.y = 1.3;
-    body.material = shelterMat;
-    body.parent = shelter;
-    const roof = MeshBuilder.CreateCylinder("shelterRoof", { diameter: r * 1.6, height: r * 1.8, tessellation: 3 }, scene);
-    roof.rotation.z = Math.PI / 2;
-    roof.rotation.y = Math.PI / 2;
-    roof.scaling.x = 0.8;
-    roof.position.y = 2.6 + 0.25 * r * 1.6 * 0.8;
-    roof.material = roofMat;
-    roof.parent = shelter;
-    const door = MeshBuilder.CreateBox("door", { width: 1, height: 1.6, depth: 0.1 }, scene);
-    door.position.set(0, 0.8, -r * 0.76);
-    door.material = darkWood;
-    door.parent = shelter;
-    const win = MeshBuilder.CreateBox("window", { width: 0.8, height: 0.6, depth: 0.1 }, scene);
-    win.position.set(1.2, 1.6, -r * 0.76);
-    win.material = windowMat;
-    win.parent = shelter;
-    this.shelter = shelter;
-
-    // Case de lemn: un template, apoi instanțe (mult mai ieftin pentru GPU).
-    const houseBody = MeshBuilder.CreateBox("houseBody", { size: 1 }, scene);
-    houseBody.material = wood;
-    const houseRoof = MeshBuilder.CreateCylinder("houseRoof", { diameter: 1, height: 1, tessellation: 3 }, scene);
-    houseRoof.material = roofMat;
-    for (const [i, h] of GAME_MAP.houses.entries()) {
-      const node = new TransformNode(`house${i}`, scene);
-      node.position.set(h.pos.x, 0, h.pos.z);
-      node.rotation.y = h.rotation;
-      const b = houseBody.createInstance(`houseBody${i}`);
-      b.parent = node;
-      b.scaling.set(h.width, 2.2, h.depth);
-      b.position.y = 1.1;
-      // Prisma triunghiulară culcată pe lungimea casei = acoperiș în două ape.
-      const rf = houseRoof.createInstance(`houseRoof${i}`);
-      rf.parent = node;
-      rf.rotation.z = Math.PI / 2;
-      rf.scaling.set(h.depth * 0.8, h.width * 1.1, h.depth * 1.2);
-      rf.position.y = 2.2 + 0.25 * h.depth * 0.8;
-    }
-    houseBody.setEnabled(false);
-    houseRoof.setEnabled(false);
-
-    // Brazi: con + trunchi, uniți într-un singur mesh, apoi instanțe.
-    const cone = MeshBuilder.CreateCylinder("cone", { diameterTop: 0, diameterBottom: 1.8, height: 3, tessellation: 6 }, scene);
-    cone.position.y = 2.3;
-    cone.material = pine;
-    const trunk = MeshBuilder.CreateCylinder("trunk", { diameter: 0.4, height: 0.9, tessellation: 5 }, scene);
-    trunk.position.y = 0.45;
-    trunk.material = darkWood;
-    const tree = Mesh.MergeMeshes([cone, trunk], true, true, undefined, false, true)!;
-    for (const [i, t] of GAME_MAP.trees.entries()) {
-      const inst = tree.createInstance(`tree${i}`);
-      inst.position.set(t.pos.x, 0, t.pos.z);
-      inst.scaling.setAll(t.scale);
-    }
-    // Brazi decorativi în afara hărții, ca marginea să nu pară goală.
-    for (let i = 0; i < 70; i++) {
-      const a = (i / 70) * Math.PI * 2;
-      const d = (CONFIG.map.halfSize + 3 + (i % 3) * 3) * 1.15;
-      const inst = tree.createInstance(`border${i}`);
-      inst.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-      inst.scaling.setAll(1 + (i % 4) * 0.2);
-    }
-    tree.setEnabled(false);
-
-    this.createSnowfall();
+/** Un model refolosit prin instanțe (aceeași geometrie, desenată de multe ori dintr-un singur apel). */
+export class Prefab {
+  constructor(readonly sources: Mesh[]) {
+    for (const s of sources) s.isVisible = false;
   }
 
-  private createSnowfall(): void {
-    // Textură generată din cod: un punct alb moale (fără fișiere externe).
+  instance(name: string, parent: TransformNode | null = null): InstancedMesh[] {
+    return this.sources.map((s) => {
+      const inst = s.createInstance(name);
+      inst.parent = parent;
+      inst.isPickable = false;
+      return inst;
+    });
+  }
+}
+
+const SKY_DAY = hex("#c9d6e0");
+const SKY_DUSK = hex("#6b6f86");
+const SKY_NIGHT = hex("#0c1422");
+
+export class World {
+  readonly shadows: ShadowGenerator;
+  readonly glow: GlowLayer;
+  readonly shelter: TransformNode;
+  /** Felinarul eroului local (se aprinde noaptea). */
+  readonly lantern: PointLight;
+  private hemi: HemisphericLight;
+  private sun: DirectionalLight;
+  private fireLight: PointLight;
+  private flames: Mesh[];
+  private snow: ParticleSystem;
+  private snowEmitter = new Vector3();
+  private fogPlanes: Mesh[] = [];
+  private fogMat: StandardMaterial;
+  private time = 0;
+
+  constructor(private scene: Scene, mats: Materials) {
+    // Corecție de culoare „de film” (tone mapping) + vignetă discretă.
+    const ip = scene.imageProcessingConfiguration;
+    ip.toneMappingEnabled = true;
+    ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+    ip.exposure = 1.0;
+    ip.contrast = 1.2;
+    ip.vignetteEnabled = true;
+    ip.vignetteWeight = 1.6;
+    ip.vignetteColor = new Color4(0.05, 0.08, 0.14, 0);
+
+    scene.fogMode = 2; // Scene.FOGMODE_EXP2
+    scene.fogDensity = 0.014;
+
+    // Lumini: cer (ambient albăstrui), soare/lună (cu umbre), focul adăpostului, felinarul eroului.
+    this.hemi = new HemisphericLight("sky", new Vector3(0.2, 1, -0.3), scene);
+    this.sun = new DirectionalLight("sun", new Vector3(-0.45, -1, 0.55).normalize(), scene);
+    this.sun.autoUpdateExtends = false;
+    this.sun.orthoLeft = -34;
+    this.sun.orthoRight = 34;
+    this.sun.orthoTop = 34;
+    this.sun.orthoBottom = -34;
+    this.sun.shadowMinZ = 1;
+    this.sun.shadowMaxZ = 120;
+
+    this.shadows = new ShadowGenerator(1024, this.sun);
+    this.shadows.usePercentageCloserFiltering = true;
+    this.shadows.filteringQuality = ShadowGenerator.QUALITY_LOW;
+    this.shadows.bias = 0.004;
+    this.shadows.normalBias = 0.03;
+    this.shadows.setDarkness(0.35);
+
+    this.glow = new GlowLayer("glow", scene, { mainTextureRatio: 0.35, blurKernelSize: 32 });
+    this.glow.intensity = 0.6;
+
+    createTerrain(scene);
+    this.placeTrees(mats);
+    this.placeRocks(mats);
+    this.placeHouses(mats);
+
+    const shelter = buildShelter(scene, mats);
+    this.shelter = new TransformNode("shelter", scene);
+    for (const m of shelter.meshes) {
+      m.parent = this.shelter;
+      this.shadows.addShadowCaster(m);
+    }
+    this.flames = shelter.flames;
+    this.fireLight = new PointLight("fire", new Vector3(...shelter.firePos), scene);
+    this.fireLight.diffuse = PAL.fire;
+    this.fireLight.specular = Color3.Black();
+    this.fireLight.range = 16;
+
+    this.lantern = new PointLight("lantern", Vector3.Zero(), scene);
+    this.lantern.diffuse = mix(PAL.fire, PAL.window, 0.5);
+    this.lantern.specular = Color3.Black();
+    this.lantern.range = 9;
+    this.lantern.intensity = 0;
+
+    this.fogMat = new StandardMaterial("fogMat", scene);
+    this.createEdgeFog();
+    this.snow = this.createSnowfall();
+  }
+
+  // ---------- Decor ----------
+
+  private placeTrees(mats: Materials): void {
+    const variants = [1, 2, 3].map((seed) => new Prefab(buildTree(this.scene, mats, seed * 17)));
+    for (const v of variants) for (const s of v.sources) this.shadows.addShadowCaster(s);
+    const r = rng(42);
+    const place = (x: number, z: number, scale: number, i: number) => {
+      const node = new TransformNode(`tree${i}`, this.scene);
+      node.position.set(x, terrainHeight(x, z) - 0.1, z);
+      node.rotation.y = r() * Math.PI * 2;
+      node.scaling.setAll(scale);
+      variants[i % 3].instance(`tree${i}`, node);
+    };
+    GAME_MAP.trees.forEach((t, i) => place(t.pos.x, t.pos.z, t.scale, i));
+    // Pădure deasă de pini pe dealurile din afara hărții: valurile ies din ea.
+    const H = CONFIG.map.halfSize;
+    let i = 1000;
+    for (let ring = 0; ring < 3; ring++) {
+      const d = H + 3 + ring * 4.5;
+      const step = 3.2 + ring * 0.6;
+      for (let s = -d; s <= d; s += step) {
+        for (const [x, z] of [[s, d], [s, -d], [d, s], [-d, s]]) {
+          const jx = x + (r() - 0.5) * 2.5;
+          const jz = z + (r() - 0.5) * 2.5;
+          place(jx, jz, 1.1 + r() * 0.9 + ring * 0.2, i++);
+        }
+      }
+    }
+  }
+
+  private placeRocks(mats: Materials): void {
+    const variants = [5, 6, 7].map((seed) => new Prefab(buildRock(this.scene, mats, seed)));
+    GAME_MAP.rocks.forEach((rock, i) => {
+      const node = new TransformNode(`rock${i}`, this.scene);
+      node.position.set(rock.pos.x, terrainHeight(rock.pos.x, rock.pos.z), rock.pos.z);
+      node.rotation.y = rock.seed % 6;
+      node.scaling.setAll(rock.size);
+      variants[rock.seed % 3].instance(`rock${i}`, node);
+    });
+  }
+
+  private placeHouses(mats: Materials): void {
+    for (const h of GAME_MAP.houses) {
+      const node = new TransformNode(`house${h.seed}`, this.scene);
+      node.position.set(h.pos.x, terrainHeight(h.pos.x, h.pos.z) - 0.05, h.pos.z);
+      // Casele își arată fața spre adăpost.
+      node.rotation.y = Math.atan2(-h.pos.x, -h.pos.z);
+      for (const m of buildHouse(this.scene, mats, h).meshes) {
+        m.parent = node;
+        this.shadows.addShadowCaster(m);
+      }
+    }
+  }
+
+  /** Bancuri de ceață joasă la marginea hărții (plăci semi-transparente, mereu cu fața la cameră). */
+  private createEdgeFog(): void {
+    const tex = new DynamicTexture("fogTex", { width: 128, height: 64 }, this.scene, false);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    const g = ctx.createRadialGradient(64, 40, 4, 64, 40, 64);
+    g.addColorStop(0, "rgba(255,255,255,0.85)");
+    g.addColorStop(0.6, "rgba(255,255,255,0.35)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 64);
+    tex.update();
+    tex.hasAlpha = true;
+    tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+
+    const m = this.fogMat;
+    m.diffuseTexture = tex;
+    m.opacityTexture = tex;
+    m.disableLighting = true;
+    m.backFaceCulling = false;
+    m.fogEnabled = false;
+
+    const H = CONFIG.map.halfSize;
+    const r = rng(7);
+    for (let s = -H - 6; s <= H + 6; s += 7) {
+      for (const [x, z] of [[s, H + 3], [s, -H - 3], [H + 3, s], [-H - 3, s]]) {
+        const p = MeshBuilder.CreatePlane("fog", { width: 18, height: 7 }, this.scene);
+        p.billboardMode = TransformNode.BILLBOARDMODE_Y;
+        p.material = m;
+        p.isPickable = false;
+        p.position.set(x + (r() - 0.5) * 4, terrainHeight(x, z) + 2.2 + r() * 1.5, z + (r() - 0.5) * 4);
+        p.metadata = { phase: r() * 10, base: p.position.clone() };
+        this.fogPlanes.push(p);
+      }
+    }
+  }
+
+  private createSnowfall(): ParticleSystem {
     const tex = new DynamicTexture("flake", 32, this.scene, false);
     const ctx = tex.getContext() as CanvasRenderingContext2D;
     const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
     g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.4, "rgba(255,255,255,0.6)");
     g.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 32, 32);
     tex.update();
     tex.hasAlpha = true;
 
-    const snow = new ParticleSystem("snow", 600, this.scene);
+    const snow = new ParticleSystem("snow", 1400, this.scene);
     snow.particleTexture = tex;
     snow.emitter = this.snowEmitter;
-    snow.minEmitBox = new Vector3(-30, -2, -25);
-    snow.maxEmitBox = new Vector3(30, 2, 25);
-    snow.direction1 = new Vector3(-0.5, -1, 0);
-    snow.direction2 = new Vector3(0.5, -1, 0);
-    snow.minSize = 0.1;
-    snow.maxSize = 0.25;
+    snow.minEmitBox = new Vector3(-32, 0, -28);
+    snow.maxEmitBox = new Vector3(32, 4, 28);
+    // Vânt dinspre stânga: fulgii cad oblic.
+    snow.direction1 = new Vector3(1.2, -1, 0.2);
+    snow.direction2 = new Vector3(2.0, -1, -0.2);
+    snow.minSize = 0.08;
+    snow.maxSize = 0.24;
     snow.minLifeTime = 4;
-    snow.maxLifeTime = 6;
-    snow.emitRate = 100;
+    snow.maxLifeTime = 6.5;
+    snow.emitRate = 230;
     snow.minEmitPower = 3;
     snow.maxEmitPower = 5;
-    snow.color1 = new Color4(1, 1, 1, 0.9);
-    snow.color2 = new Color4(1, 1, 1, 0.6);
+    snow.minAngularSpeed = -2;
+    snow.maxAngularSpeed = 2;
+    snow.color1 = new Color4(1, 1, 1, 0.95);
+    snow.color2 = new Color4(0.85, 0.92, 1, 0.7);
     snow.colorDead = new Color4(1, 1, 1, 0);
     snow.start();
+    return snow;
   }
 
-  /** Ninsoarea cade mereu în jurul camerei. */
-  followCamera(cameraPos: Vector3): void {
-    this.snowEmitter.set(cameraPos.x, 14, cameraPos.z + 10);
+  // ---------- Pe fiecare cadru ----------
+
+  /**
+   * @param night 0 = zi senină, 1 = noapte deplină (valorile intermediare = amurg/zori)
+   * @param focus punctul urmărit de cameră (eroul)
+   */
+  update(dt: number, night: number, focus: Vector3, cameraPos: Vector3): void {
+    this.time += dt;
+    const t = this.time;
+    const dusk = Math.max(0, 1 - Math.abs(night - 0.5) * 2.5); // vârf la amurg
+
+    // Cer și ceață.
+    const sky = night < 0.5 ? mix(SKY_DAY, SKY_DUSK, night * 2) : mix(SKY_DUSK, SKY_NIGHT, (night - 0.5) * 2);
+    this.scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
+    this.scene.fogColor = sky;
+    this.scene.fogDensity = 0.011 + night * 0.012;
+
+    // Ambient: alb-albastru ziua, albastru închis noaptea.
+    this.hemi.diffuse = mix(hex("#e4edf5"), hex("#4d6a9c"), night);
+    this.hemi.groundColor = mix(hex("#9aabb8"), hex("#1b2436"), night);
+    this.hemi.intensity = 0.72 - night * 0.3;
+
+    // Soarele (jos, rece) devine portocaliu la amurg și lună albastră noaptea.
+    const sunColor = night < 0.5 ? mix(hex("#fff1df"), hex("#ff9a5a"), dusk) : mix(hex("#ff9a5a"), hex("#8fb4ff"), (night - 0.5) * 2);
+    this.sun.diffuse = sunColor;
+    this.sun.intensity = 1.55 - night * 0.75;
+    this.shadows.setDarkness(0.25 + night * 0.3);
+    // Lumina de umbre urmărește camera.
+    this.sun.position = focus.subtract(this.sun.direction.scale(50));
+
+    // Focul pâlpâie, mai puternic noaptea.
+    const flicker = 0.85 + Math.sin(t * 13) * 0.08 + Math.sin(t * 7.3) * 0.07;
+    this.fireLight.intensity = (1.1 + night * 2.2) * flicker;
+    this.flames.forEach((f, i) => {
+      f.scaling.set(0.85 + Math.sin(t * 9 + i) * 0.15, 0.8 + Math.sin(t * 11 + i * 2) * 0.25, 0.85 + Math.cos(t * 8 + i) * 0.15);
+      f.rotation.y = t * (0.5 + i * 0.3);
+    });
+    this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
+    this.glow.intensity = 0.45 + night * 0.6;
+
+    // Ceața de la margini: se mișcă încet, se întunecă noaptea.
+    this.fogMat.emissiveColor = mix(hex("#e3ebf1"), hex("#26334a"), night);
+    this.fogMat.alpha = 0.75 - night * 0.15;
+    for (const p of this.fogPlanes) {
+      const { phase, base } = p.metadata as { phase: number; base: Vector3 };
+      p.position.x = base.x + Math.sin(t * 0.15 + phase) * 2;
+      p.position.z = base.z + Math.cos(t * 0.12 + phase) * 2;
+    }
+
+    // Ninsoare în jurul camerei. Noaptea fulgii „prind” lumina (amestec aditiv).
+    this.snowEmitter.set(cameraPos.x - 10, 16, cameraPos.z + 16);
+    this.snow.blendMode = night > 0.5 ? ParticleSystem.BLENDMODE_ADD : ParticleSystem.BLENDMODE_STANDARD;
+    const flake = night > 0.5 ? new Color4(0.55, 0.65, 0.85, 0.6) : new Color4(1, 1, 1, 0.95);
+    this.snow.color1 = flake;
+    this.snow.color2 = new Color4(flake.r * 0.9, flake.g * 0.95, flake.b, flake.a * 0.7);
   }
 }

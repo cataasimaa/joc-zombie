@@ -1,33 +1,34 @@
 // Starea completă a jocului: doar date simple (fără clase, fără Babylon).
-// Așa poate fi trimisă prin rețea / sincronizată de server în faza 2.
+// Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
-import type { HeroClass, Rarity, ZombieType } from "./config";
+import type { HeroClass, ShopRarity, ZombieType } from "./config";
 import type { AbilityId } from "./heroDefs";
+import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
 export type EntityId = number;
 export type PlayerId = string;
 
-/** build = pauză între valuri, wave = val activ. */
-export type Phase = "build" | "wave" | "victory" | "gameover";
-
-export type ChestReward =
-  | { kind: "wood"; amount: number }
-  | { kind: "weapon"; bonus: number }
-  | { kind: "towerTier"; tier: number }
-  | { kind: "skin"; skinId: string };
+/** day = zi (construiești), night = noapte (atacă zombii). */
+export type Phase = "day" | "night" | "victory" | "gameover";
 
 export interface Player {
   id: PlayerId;
   heroId: EntityId;
-  /** Monede: pentru cufere. */
+  /** Monede: pentru magazin. */
   coins: number;
   /** Lemn: pentru turnuri și baricade. */
   wood: number;
-  /** Bonus de damage al armei, din cufere (0.12 = +12%). */
-  weaponBonus: number;
+  weapon: WeaponId;
   /** Cel mai mare tier de turn deblocat (1–4). */
   towerTier: number;
+  extraTowerSlots: number;
+  mines: number;
+  /** Bonusuri din magazin. */
+  maxHpBonus: number;
+  speedBonus: number;
+  regenPerSec: number;
+  repairBonus: number;
   skins: string[];
   /** Skin-ul activ (null = culoarea de bază a clasei). */
   skin: string | null;
@@ -35,8 +36,6 @@ export interface Player {
 
 /** Efecte temporare pe erou: secunde rămase (0 = inactiv). */
 export interface HeroBuffs {
-  rapidFire: number;
-  focus: number;
   shield: number;
   invulnerable: number;
 }
@@ -77,6 +76,8 @@ export interface Zombie {
   tauntTimer: number;
   /** Cât timp a stat blocat (pentru plasa de siguranță anti-blocare). */
   stuckTime: number;
+  /** În zori, zombii rămași fug spre marginea hărții. */
+  fleeing: boolean;
 }
 
 export interface Tower {
@@ -88,12 +89,25 @@ export interface Tower {
   fireTimer: number;
 }
 
+/** Un zid = un segment centrat în `pos`, rotit cu `rotation` (radiani, ca `facing`). */
 export interface Barricade {
   id: EntityId;
   ownerId: PlayerId;
   pos: Vec2;
+  rotation: number;
+  /** 1 = gard de lemn, 2 = palisadă întărită. */
+  level: number;
+  /** Ușă: eroii trec prin ea, zombii nu. */
+  door: boolean;
   hp: number;
   maxHp: number;
+}
+
+export interface Mine {
+  id: EntityId;
+  ownerId: PlayerId;
+  pos: Vec2;
+  armTimer: number;
 }
 
 export interface Coin {
@@ -102,10 +116,11 @@ export interface Coin {
   value: number;
 }
 
-/** Zonă cu efect pe hartă (ex. cercul de vindecare al Healer-ului). */
+/** Zonă cu efect pe hartă: vindecare (Healer) sau foc (Molotov). */
 export interface Zone {
   id: EntityId;
-  kind: "heal";
+  kind: "heal" | "fire";
+  ownerHeroId: EntityId;
   pos: Vec2;
   radius: number;
   timer: number;
@@ -122,13 +137,15 @@ export interface Shelter {
 export interface GameState {
   time: number;
   phase: Phase;
-  /** Numărul valului curent (în pauză: ultimul val terminat). 0 = încă n-a început. */
+  /** Numărul nopții curente (ziua: ultima noapte trecută). 0 = încă n-a început. */
   wave: number;
   totalWaves: number;
   wavesCompleted: number;
-  /** Secunde rămase din pauză (doar în faza "build"). */
+  /** Secunde rămase din zi sau din noapte. */
   phaseTimer: number;
-  /** Zombii care mai trebuie să apară în valul curent, în ordine. */
+  /** Durata totală a fazei curente (pentru UI și pentru cerul zi/noapte). */
+  phaseDuration: number;
+  /** Zombii care mai trebuie să apară în noaptea curentă, în ordine. */
   spawnQueue: ZombieType[];
   spawnTimer: number;
   spawnInterval: number;
@@ -138,6 +155,7 @@ export interface GameState {
   zombies: Zombie[];
   towers: Tower[];
   barricades: Barricade[];
+  mines: Mine[];
   coins: Coin[];
   zones: Zone[];
   nextId: EntityId;
@@ -146,16 +164,19 @@ export interface GameState {
 
 /** Evenimente unice („s-a întâmplat ceva”), folosite de randare, sunet și UI pentru efecte. */
 export type GameEvent =
-  | { type: "shot"; from: Vec2; to: Vec2; source: "hero" | "tower"; crit?: boolean }
-  | { type: "zombieHit"; id: EntityId }
+  | { type: "shot"; from: Vec2; to: Vec2; source: "hero" | "tower"; crit?: boolean; heroId?: EntityId }
+  | { type: "zombieHit"; id: EntityId; pos: Vec2; from: Vec2 }
   | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType }
   | { type: "coinPicked"; playerId: PlayerId; value: number }
   | { type: "towerPlaced"; id: EntityId }
   | { type: "towerUpgraded"; id: EntityId; tier: number }
   | { type: "barricadePlaced"; id: EntityId }
+  | { type: "barricadeChanged"; id: EntityId }
   | { type: "barricadeDestroyed"; id: EntityId; pos: Vec2 }
-  | { type: "waveStarted"; wave: number; boss: boolean }
-  | { type: "waveCleared"; wave: number; wood: number }
+  | { type: "barricadeHit"; id: EntityId; pos: Vec2 }
+  | { type: "mineExploded"; pos: Vec2; radius: number }
+  | { type: "nightStarted"; wave: number; boss: boolean }
+  | { type: "dawn"; wave: number; wood: number }
   | { type: "shelterHit" }
   | { type: "heroDied"; id: EntityId }
   | { type: "heroRespawned"; id: EntityId }
@@ -163,6 +184,6 @@ export type GameEvent =
   | { type: "levelUp"; heroId: EntityId; level: number }
   | { type: "ability"; heroId: EntityId; ability: AbilityId; pos: Vec2; radius: number; to?: Vec2 }
   | { type: "healed"; pos: Vec2; amount: number }
-  | { type: "chestOpened"; playerId: PlayerId; rarity: Rarity; reward: ChestReward }
+  | { type: "shopRoll"; playerId: PlayerId; rarity: ShopRarity; reward: ShopReward }
   | { type: "gameOver" }
   | { type: "victory" };

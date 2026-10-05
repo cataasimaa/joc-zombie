@@ -1,17 +1,18 @@
 import { CONFIG, type ZombieType } from "../config";
 import { type Vec2, angleOf, dist, nextRandom } from "../math";
-import type { Barricade, EntityId, GameEvent, GameState, Hero, Zombie } from "../types";
 import { canReachShelter, flowDirection } from "../navigation";
+import type { Barricade, EntityId, GameEvent, GameState, Hero, Zombie } from "../types";
+import { damageBarricade, distToBarricade } from "./barricades";
 import { damageHero, giveXp, heroById } from "./heroes";
 import { resolveCollisions, separateZombies } from "./physics";
 
-/** Creează un zombie într-un punct aleator de pe marginea hărții. */
-export function spawnZombie(state: GameState, type: ZombieType): Zombie {
+/** Creează un zombie într-un punct aleator de pe marginea hărții (sau lângă `near`, pentru hoarde). */
+export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | null = null): Zombie {
   const edge = CONFIG.map.halfSize - 1.5;
   const radius = CONFIG.zombies[type].radius;
   // Alegem un punct de pe margine din care există drum până la adăpost.
-  let pos: Vec2 = { x: 0, z: edge };
-  for (let attempt = 0; attempt < 20; attempt++) {
+  let pos: Vec2 = near ? { ...near } : { x: 0, z: edge };
+  for (let attempt = 0; attempt < (near ? 0 : 20); attempt++) {
     const side = Math.floor(nextRandom(state) * 4);
     const t = (nextRandom(state) * 2 - 1) * edge;
     pos =
@@ -38,6 +39,7 @@ export function spawnZombie(state: GameState, type: ZombieType): Zombie {
     tauntHeroId: null,
     tauntTimer: 0,
     stuckTime: 0,
+    fleeing: false,
   };
   state.zombies.push(zombie);
   return zombie;
@@ -53,6 +55,22 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
     zombie.attackTimer -= dt;
     zombie.slowTimer = Math.max(0, zombie.slowTimer - dt);
     zombie.tauntTimer = Math.max(0, zombie.tauntTimer - dt);
+    const speed = stats.speed * (zombie.slowTimer > 0 ? 0.45 : 1);
+
+    // În zori: fuge spre cea mai apropiată margine și dispare (fără monede).
+    if (zombie.fleeing) {
+      const edge = CONFIG.map.halfSize + 2;
+      const target = Math.abs(zombie.pos.x) > Math.abs(zombie.pos.z)
+        ? { x: Math.sign(zombie.pos.x) * edge, z: zombie.pos.z }
+        : { x: zombie.pos.x, z: Math.sign(zombie.pos.z) * edge };
+      const d = dist(zombie.pos, target) || 1;
+      zombie.facing = angleOf(target.x - zombie.pos.x, target.z - zombie.pos.z);
+      zombie.pos.x += ((target.x - zombie.pos.x) / d) * speed * 1.3 * dt;
+      zombie.pos.z += ((target.z - zombie.pos.z) / d) * speed * 1.3 * dt;
+      targets.push(null);
+      distBefore.push(0);
+      continue;
+    }
 
     // 1. Ținta: eroul care l-a provocat → eroul din raza de „aggro” → adăpostul.
     let hero: Hero | null = null;
@@ -78,7 +96,7 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
     zombie.facing = angleOf(dirX, dirZ);
 
     const reach = targetRadius + stats.radius + 0.3;
-    // 2. O baricadă în drum? O atacă pe ea.
+    // 2. Un zid în drum? Îl sparge.
     const blocking = d > reach ? barricadeInTheWay(state, zombie, dirX, dirZ) : null;
     const walking = d > reach && !blocking;
     targets.push(walking ? targetPos : null);
@@ -92,7 +110,6 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
       }
     } else if (d > reach) {
       // 3. Merge spre țintă.
-      const speed = stats.speed * (zombie.slowTimer > 0 ? 0.5 : 1);
       const step = Math.min(speed * dt, d - reach + 0.01);
       zombie.pos.x += dirX * step;
       zombie.pos.z += dirZ * step;
@@ -109,14 +126,20 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
   }
 
   separateZombies(state);
-  state.zombies.forEach((zombie, i) => {
+  const edge = CONFIG.map.halfSize;
+  // Mergem de la coadă la cap ca să putem scoate din listă zombii care au fugit.
+  for (let i = state.zombies.length - 1; i >= 0; i--) {
+    const zombie = state.zombies[i];
     const stats = CONFIG.zombies[zombie.type];
+    if (zombie.fleeing) {
+      if (Math.abs(zombie.pos.x) > edge || Math.abs(zombie.pos.z) > edge) state.zombies.splice(i, 1);
+      continue;
+    }
     // Plasă de siguranță: un zombie blocat de peste 2 secunde poate trece prin case și brazi,
-    // ca un val să nu rămână niciodată neterminat.
-    const ghost = zombie.stuckTime > 2;
-    resolveCollisions(state, zombie.pos, stats.radius, true, ghost);
+    // ca o noapte să nu rămână niciodată „agățată”.
+    resolveCollisions(state, zombie.pos, stats.radius, { barricades: "all", ignoreObstacles: zombie.stuckTime > 2 });
     const target = targets[i];
-    if (!target) return;
+    if (!target) continue;
     // Progresul spre țintă: dacă aproape nu se apropie, e blocat.
     const progress = distBefore[i] - dist(zombie.pos, target);
     if (progress < stats.speed * dt * 0.25) {
@@ -124,31 +147,26 @@ export function updateZombies(state: GameState, dt: number, events: GameEvent[])
     } else {
       zombie.stuckTime = Math.max(0, zombie.stuckTime - dt * 0.5);
     }
-  });
+  }
 }
 
-/** Baricada pe care zombiul o atinge și care e în direcția în care merge. */
+/** Zidul pe care zombiul îl atinge și care e în direcția în care merge. */
 function barricadeInTheWay(state: GameState, zombie: Zombie, dirX: number, dirZ: number): Barricade | null {
-  const r = CONFIG.zombies[zombie.type].radius + CONFIG.barricade.radius + 0.35;
+  const r = CONFIG.zombies[zombie.type].radius + 0.35;
   for (const b of state.barricades) {
+    if (distToBarricade(zombie.pos, b) > r) continue;
     const dx = b.pos.x - zombie.pos.x;
     const dz = b.pos.z - zombie.pos.z;
-    const d = Math.hypot(dx, dz);
-    if (d < r && (dx * dirX + dz * dirZ) / (d || 1) > 0.2) return b;
+    const d = Math.hypot(dx, dz) || 1;
+    // Zidul e lung: îl considerăm „în drum” dacă nu e în spatele zombiului.
+    if ((dx * dirX + dz * dirZ) / d > -0.3) return b;
   }
   return null;
 }
 
-export function damageBarricade(state: GameState, b: Barricade, amount: number, events: GameEvent[]): void {
-  b.hp -= amount;
-  if (b.hp > 0) return;
-  state.barricades.splice(state.barricades.indexOf(b), 1);
-  events.push({ type: "barricadeDestroyed", id: b.id, pos: { ...b.pos } });
-}
-
 /**
  * Aplică damage; dacă zombiul moare, îl scoate din joc, lasă monede și dă XP eroului care l-a omorât.
- * Returnează true la kill.
+ * `from` = de unde a venit lovitura (pentru direcția sângelui). Returnează true la kill.
  */
 export function damageZombie(
   state: GameState,
@@ -156,13 +174,13 @@ export function damageZombie(
   amount: number,
   events: GameEvent[],
   attackerHeroId: EntityId | null = null,
+  from: Vec2 | null = null,
 ): boolean {
-  if (zombie.hp <= 0) return false;
+  if (zombie.hp <= 0 || !state.zombies.includes(zombie)) return false;
   zombie.hp -= amount;
-  if (zombie.hp > 0) {
-    events.push({ type: "zombieHit", id: zombie.id });
-    return false;
-  }
+  events.push({ type: "zombieHit", id: zombie.id, pos: { ...zombie.pos }, from: from ? { ...from } : { ...zombie.pos } });
+  if (zombie.hp > 0) return false;
+
   const stats = CONFIG.zombies[zombie.type];
   state.zombies.splice(state.zombies.indexOf(zombie), 1);
   // Boss-ul lasă mai multe monede, împrăștiate.
@@ -178,13 +196,13 @@ export function damageZombie(
   }
   events.push({ type: "zombieDied", id: zombie.id, pos: { ...zombie.pos }, zombieType: zombie.type });
   const killer = attackerHeroId !== null ? heroById(state, attackerHeroId) : null;
-  if (killer) giveXp(killer, stats.xp, events);
+  if (killer) giveXp(state, killer, stats.xp, events);
   return true;
 }
 
-/** Toți zombii (în viață) dintr-un cerc. */
+/** Toți zombii (care nu fug) dintr-un cerc. */
 export function zombiesInRadius(state: GameState, center: Vec2, radius: number): Zombie[] {
-  return state.zombies.filter((z) => dist(z.pos, center) <= radius + CONFIG.zombies[z.type].radius);
+  return state.zombies.filter((z) => !z.fleeing && dist(z.pos, center) <= radius + CONFIG.zombies[z.type].radius);
 }
 
 function nearestLivingHero(state: GameState, from: Vec2, range: number): Hero | null {
