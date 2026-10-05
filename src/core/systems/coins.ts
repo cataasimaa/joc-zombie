@@ -7,6 +7,12 @@ export function updateCoins(state: GameState, dt: number, events: GameEvent[]): 
   const cfg = CONFIG.coins;
   for (let i = state.coins.length - 1; i >= 0; i--) {
     const coin = state.coins[i];
+    // Monedele neluate dispar după un timp (mai puține obiecte = mai puțin lag, joc mai greu).
+    coin.age += dt;
+    if (coin.age >= cfg.lifetime) {
+      state.coins.splice(i, 1);
+      continue;
+    }
     for (const hero of state.heroes) {
       if (!hero.alive) continue;
       const d = dist(coin.pos, hero.pos);

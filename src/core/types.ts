@@ -2,7 +2,6 @@
 // Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
 import type { HeroClass, ShopRarity, ZombieType } from "./config";
-import type { AbilityId } from "./heroDefs";
 import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
@@ -32,12 +31,8 @@ export interface Player {
   skins: string[];
   /** Skin-ul activ (null = culoarea de bază a clasei). */
   skin: string | null;
-}
-
-/** Efecte temporare pe erou: secunde rămase (0 = inactiv). */
-export interface HeroBuffs {
-  shield: number;
-  invulnerable: number;
+  /** Recompensele de magazin deja câștigate în runda asta (se primesc o singură dată). */
+  unlocked: string[];
 }
 
 export interface Hero {
@@ -56,9 +51,16 @@ export interface Hero {
   xp: number;
   /** Ultima direcție de mișcare cerută de jucător (lungime 0..1). */
   moveInput: Vec2;
-  /** Cooldown rămas pentru cele 4 abilități (secunde). */
-  cooldowns: [number, number, number, number];
-  buffs: HeroBuffs;
+  /** Direcția în care ochește jucătorul (vector unitate). */
+  aim: Vec2;
+  /** Ține apăsat pe „trage”. */
+  firing: boolean;
+  /** Ochire automată (a apăsat „trage” fără să tragă de buton): ținta e cel mai apropiat zombie. */
+  autoAim: boolean;
+  /** Gloanțe rămase în încărcător. */
+  ammo: number;
+  /** Secunde rămase din reîncărcare (0 = nu reîncarcă). */
+  reloadTimer: number;
 }
 
 export interface Zombie {
@@ -71,13 +73,19 @@ export interface Zombie {
   attackTimer: number;
   /** Încetinire: secunde rămase. */
   slowTimer: number;
-  /** Provocat de Tank: atacă doar eroul ăsta cât timp tauntTimer > 0. */
-  tauntHeroId: EntityId | null;
-  tauntTimer: number;
   /** Cât timp a stat blocat (pentru plasa de siguranță anti-blocare). */
   stuckTime: number;
-  /** În zori, zombii rămași fug spre marginea hărții. */
-  fleeing: boolean;
+  /** În zori, zombii rămași iau foc și mor încet. */
+  burning: boolean;
+}
+
+/** Scuipat de zombie (proiectil care zboară spre țintă). */
+export interface Projectile {
+  id: EntityId;
+  pos: Vec2;
+  vel: Vec2;
+  damage: number;
+  life: number;
 }
 
 export interface Tower {
@@ -114,17 +122,8 @@ export interface Coin {
   id: EntityId;
   pos: Vec2;
   value: number;
-}
-
-/** Zonă cu efect pe hartă: vindecare (Healer) sau foc (Molotov). */
-export interface Zone {
-  id: EntityId;
-  kind: "heal" | "fire";
-  ownerHeroId: EntityId;
-  pos: Vec2;
-  radius: number;
-  timer: number;
-  power: number;
+  /** Secunde de când a căzut (dispare după CONFIG.coins.lifetime). */
+  age: number;
 }
 
 export interface Shelter {
@@ -157,16 +156,22 @@ export interface GameState {
   barricades: Barricade[];
   mines: Mine[];
   coins: Coin[];
-  zones: Zone[];
+  projectiles: Projectile[];
   nextId: EntityId;
   rngState: number;
 }
 
 /** Evenimente unice („s-a întâmplat ceva”), folosite de randare, sunet și UI pentru efecte. */
 export type GameEvent =
-  | { type: "shot"; from: Vec2; to: Vec2; source: "hero" | "tower"; crit?: boolean; heroId?: EntityId }
+  | { type: "shot"; from: Vec2; to: Vec2; source: "hero" | "tower"; crit?: boolean; heroId?: EntityId; towerId?: EntityId }
+  | { type: "dryFire"; heroId: EntityId }
+  | { type: "reloadStart"; heroId: EntityId; time: number }
+  | { type: "reloadDone"; heroId: EntityId }
   | { type: "zombieHit"; id: EntityId; pos: Vec2; from: Vec2 }
-  | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType }
+  | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType; burned: boolean }
+  | { type: "zombieAttack"; id: EntityId; zombieType: ZombieType; pos: Vec2 }
+  | { type: "spit"; id: EntityId; from: Vec2; to: Vec2 }
+  | { type: "projectileHit"; pos: Vec2 }
   | { type: "coinPicked"; playerId: PlayerId; value: number }
   | { type: "towerPlaced"; id: EntityId }
   | { type: "towerUpgraded"; id: EntityId; tier: number }
@@ -178,11 +183,10 @@ export type GameEvent =
   | { type: "nightStarted"; wave: number; boss: boolean }
   | { type: "dawn"; wave: number; wood: number }
   | { type: "shelterHit" }
+  | { type: "heroHit"; id: EntityId; pos: Vec2; from: Vec2; amount: number }
   | { type: "heroDied"; id: EntityId }
   | { type: "heroRespawned"; id: EntityId }
-  | { type: "heroRevived"; id: EntityId; byHeroId: EntityId }
   | { type: "levelUp"; heroId: EntityId; level: number }
-  | { type: "ability"; heroId: EntityId; ability: AbilityId; pos: Vec2; radius: number; to?: Vec2 }
   | { type: "healed"; pos: Vec2; amount: number }
   | { type: "shopRoll"; playerId: PlayerId; rarity: ShopRarity; reward: ShopReward }
   | { type: "gameOver" }

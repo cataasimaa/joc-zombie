@@ -6,7 +6,23 @@
 //  - distorsiune (face împușcăturile „murdare”) și reverb (spațiu deschis, rece)
 // Pe iPhone, sunetul pornește doar după prima atingere a ecranului (regula browserului).
 
-import type { GameEvent, PlayerId, WeaponId } from "../core";
+import type { EntityId, GameEvent, PlayerId, ShopRarity, WeaponId } from "../core";
+import { Music } from "./Music";
+
+export interface SfxFrame {
+  events: GameEvent[];
+  localPlayer: PlayerId;
+  localHero: EntityId | null;
+  /** 0 = zi, 1 = noapte. */
+  night: number;
+  /** 0..1: cât de periculos e momentul (pentru muzică). */
+  danger: number;
+  /** Pașii făcuți de eroul local în cadrul ăsta. */
+  steps: number;
+  /** Arma fiecărui erou (pentru sunetul împușcăturii). */
+  weaponOf: (heroId: EntityId) => WeaponId;
+  dt: number;
+}
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -20,6 +36,7 @@ export class Sfx {
   private groanTimer = 4;
   private crackleTimer = 0;
   private last = new Map<string, number>();
+  private music: Music | null = null;
   muted = false;
 
   constructor() {
@@ -76,6 +93,10 @@ export class Sfx {
     this.distortion.connect(this.reverbSend);
 
     this.startWind();
+    const musicBus = ctx.createGain();
+    musicBus.gain.value = 0.55;
+    musicBus.connect(this.master);
+    this.music = new Music(ctx, musicBus, this.reverbSend, this.noise);
   }
 
   setMuted(m: boolean): void {
@@ -114,10 +135,12 @@ export class Sfx {
     this.wind = { gain, band, low };
   }
 
-  /** Pe fiecare cadru: ambientul + sunetele pentru evenimentele noi. */
-  update(events: GameEvent[], localPlayer: PlayerId, night: number, dt: number): void {
+  /** Pe fiecare cadru: ambientul, muzica, pașii și sunetele pentru evenimentele noi. */
+  update(f: SfxFrame): void {
     if (!this.ctx || this.ctx.state !== "running") return;
     const now = this.ctx.currentTime;
+    const { night, dt } = f;
+    this.music?.setDanger(f.danger);
 
     // Rafale de vânt: țintă nouă din câteva în câteva secunde. Noaptea vântul e mai puternic.
     this.gustTimer -= dt;
@@ -140,25 +163,54 @@ export class Sfx {
       this.groanTimer = 3 + Math.random() * 5;
       if (night > 0.6) this.groan(0.05, 0.9 + Math.random() * 0.4, true);
     }
+    for (let i = 0; i < f.steps; i++) this.footstep();
 
-    for (const e of events) this.play(e, localPlayer);
+    for (const e of f.events) this.play(e, f);
   }
 
-  private play(e: GameEvent, localPlayer: PlayerId): void {
+  private play(e: GameEvent, f: SfxFrame): void {
+    const mine = (heroId: EntityId) => heroId === f.localHero;
     switch (e.type) {
       case "shot":
         if (e.source === "tower") {
           if (this.throttle("tower", 0.08)) this.ballista();
-        } else if (this.throttle("shot", e.crit ? 0 : 0.05)) this.gunshot(e.crit ? "hunting" : "rusty", e.crit);
+        } else if (this.throttle(`shot${e.heroId}`, 0.035)) {
+          this.gunshot(e.heroId !== undefined ? f.weaponOf(e.heroId) : "rusty", !!e.crit);
+        }
+        break;
+      case "dryFire":
+        if (mine(e.heroId) && this.throttle("dry", 0.3)) this.click(2600, 0.12);
+        break;
+      case "reloadStart":
+        if (mine(e.heroId)) this.reload(e.time);
         break;
       case "zombieHit":
-        if (this.throttle("hit", 0.06)) this.noiseHit({ type: "lowpass", freq: 500, dur: 0.06, vol: 0.12 });
+        if (this.throttle("hit", 0.05)) this.noiseHit({ type: "lowpass", freq: 600, dur: 0.07, vol: 0.14 });
         break;
       case "zombieDied":
-        if (this.throttle("die", 0.08)) this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
+        if (e.burned) this.noiseHit({ type: "highpass", freq: 1500, dur: 0.5, vol: 0.08 });
+        else if (this.throttle("die", 0.08)) this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
+        break;
+      case "zombieAttack":
+        if (this.throttle("snarl", 0.15)) this.snarl(e.zombieType === "brute" || e.zombieType === "boss" ? 0.6 : e.zombieType === "flyer" ? 2 : 1);
+        break;
+      case "heroHit":
+        if (mine(e.id) && this.throttle("hurt", 0.25)) {
+          this.thunk(120, 0.35);
+          this.tone(220, 140, 0.25, "triangle", 0.12, 0.02, 700);
+        }
+        break;
+      case "spit":
+        if (this.throttle("spit", 0.2)) {
+          this.noiseHit({ type: "bandpass", freq: 900, sweepTo: 400, dur: 0.25, vol: 0.18 });
+          this.tone(140, 80, 0.2, "sine", 0.12);
+        }
+        break;
+      case "projectileHit":
+        this.noiseHit({ type: "lowpass", freq: 1100, dur: 0.18, vol: 0.2 });
         break;
       case "coinPicked":
-        if (e.playerId === localPlayer && this.throttle("coin", 0.04)) {
+        if (e.playerId === f.localPlayer && this.throttle("coin", 0.04)) {
           this.tone(1320, 1320, 0.05, "square", 0.05);
           this.tone(1760, 1760, 0.09, "square", 0.05, 0.05);
         }
@@ -183,37 +235,6 @@ export class Sfx {
       case "mineExploded":
         this.explosion(1);
         break;
-      case "ability":
-        switch (e.ability) {
-          case "grenade":
-          case "slam":
-            this.explosion(0.8);
-            break;
-          case "airstrike":
-            for (let i = 0; i < 5; i++) setTimeout(() => this.explosion(0.7), i * 140);
-            break;
-          case "molotov":
-            this.noiseHit({ type: "highpass", freq: 3000, dur: 0.25, vol: 0.25 });
-            this.noiseHit({ type: "bandpass", freq: 600, dur: 0.8, vol: 0.2, sweepTo: 2000 });
-            break;
-          case "iceShot":
-            this.gunshot("hunting", true);
-            [1568, 2093, 2637].forEach((f, i) => this.tone(f, f * 1.02, 0.5, "sine", 0.05, i * 0.04));
-            break;
-          case "heal":
-          case "healZone":
-          case "revive":
-          case "holyLight":
-            this.chord([523, 659, 784], 0.6, 0.06);
-            break;
-          case "taunt":
-          case "fortress":
-            this.tone(110, 90, 0.6, "sawtooth", 0.12);
-            break;
-          default:
-            this.tone(300, 600, 0.2, "triangle", 0.1);
-        }
-        break;
       case "nightStarted":
         // Corn de vânătoare jos, ca un avertisment.
         this.tone(98, 96, 1.6, "sawtooth", 0.09, 0, 500);
@@ -221,26 +242,15 @@ export class Sfx {
         this.groan(0.12, 0.8, true);
         break;
       case "dawn":
+        // Zorii: zombii iau foc (sfârâit) + un acord luminos.
+        this.noiseHit({ type: "highpass", freq: 3000, dur: 2.5, vol: 0.12 });
         this.chord([392, 494, 587, 784], 1.4, 0.05);
         break;
       case "levelUp":
         this.chord([523, 784, 1047], 0.6, 0.07);
         break;
-      case "shopRoll":
-        if (e.playerId !== localPlayer) break;
-        // Rezultatul apare după animația „păcănelei” (≈1,1 s).
-        setTimeout(() => {
-          if (e.rarity === "nothing") {
-            this.tone(330, 320, 0.25, "triangle", 0.12);
-            this.tone(247, 220, 0.5, "triangle", 0.12, 0.25);
-          } else {
-            const notes = { common: [523], rare: [523, 659], epic: [523, 659, 784], legendary: [523, 659, 784, 1047] }[e.rarity];
-            notes.forEach((f, i) => this.tone(f, f, 0.3, "triangle", 0.12, i * 0.1));
-          }
-        }, 1150);
-        break;
       case "heroDied":
-        this.tone(400, 100, 0.7, "sawtooth", 0.15, 0, 900);
+        if (mine(e.id)) this.tone(400, 100, 0.7, "sawtooth", 0.15, 0, 900);
         break;
       case "gameOver":
         this.tone(220, 55, 2.5, "sawtooth", 0.18, 0, 700);
@@ -249,6 +259,108 @@ export class Sfx {
         this.chord([523, 659, 784, 1047], 2, 0.08);
         break;
     }
+  }
+
+  // ---------- Sunete apelate direct (de HUD / randare) ----------
+
+  /** Pas în zăpadă: „scârț” scurt, din mai multe pocnituri mici. */
+  footstep(): void {
+    if (!this.ctx || this.ctx.state !== "running") return;
+    const base = 1300 + Math.random() * 700;
+    for (let i = 0; i < 3; i++) {
+      this.noiseHit({ type: "bandpass", freq: base + i * 300, dur: 0.035, vol: 0.05, delay: i * 0.018 });
+    }
+    this.noiseHit({ type: "lowpass", freq: 300, dur: 0.06, vol: 0.06 });
+  }
+
+  /** Un „tic” al păcănelei (fiecare schimbare de simbol). */
+  spinTick(): void {
+    if (!this.ctx || this.ctx.state !== "running") return;
+    this.tone(1500 + Math.random() * 200, 1400, 0.03, "square", 0.04);
+  }
+
+  /** Oprirea unei role. */
+  reelStop(): void {
+    if (!this.ctx || this.ctx.state !== "running") return;
+    this.thunk(220, 0.15);
+    this.click(1800, 0.08);
+  }
+
+  /** Rezultatul la păcănele: tristețe pentru „nimic”, clinchet pentru normal, fanfară pentru JACKPOT. */
+  spinResult(rarity: ShopRarity): void {
+    if (!this.ctx || this.ctx.state !== "running") return;
+    if (rarity === "nothing") {
+      this.tone(330, 320, 0.25, "triangle", 0.12);
+      this.tone(247, 220, 0.6, "triangle", 0.12, 0.25);
+      return;
+    }
+    if (rarity === "common") {
+      this.tone(784, 784, 0.25, "triangle", 0.12);
+      this.tone(1047, 1047, 0.4, "triangle", 0.12, 0.1);
+      return;
+    }
+    if (rarity === "rare") {
+      [659, 784, 988, 1319].forEach((f, i) => this.tone(f, f, 0.35, "triangle", 0.12, i * 0.08));
+      return;
+    }
+    // EPIC / LEGENDAR = JACKPOT: fanfară + clopote + ploaie de monede.
+    const fan = rarity === "legendary" ? [523, 659, 784, 1047, 1319, 1568] : [523, 659, 784, 1047];
+    fan.forEach((f, i) => {
+      this.tone(f, f, 0.5, "sawtooth", 0.06, i * 0.09, 2500);
+      this.tone(f * 2, f * 2, 0.6, "sine", 0.05, i * 0.09);
+    });
+    this.chord([523, 659, 784, 1047], 1.6, 0.08);
+    const coins = rarity === "legendary" ? 40 : 22;
+    for (let i = 0; i < coins; i++) {
+      const t = 0.4 + Math.random() * 1.8;
+      const f = 1800 + Math.random() * 1600;
+      this.tone(f, f, 0.08, "square", 0.025, t);
+    }
+  }
+
+  /** Reîncărcare: scoate încărcătorul (clic), îl bagă (clac), trage de închizător. */
+  private reload(time: number): void {
+    this.click(1200, 0.12);
+    this.noiseHit({ type: "bandpass", freq: 2200, dur: 0.06, vol: 0.1, delay: 0.08 });
+    this.click(900, 0.15, time * 0.55);
+    this.noiseHit({ type: "bandpass", freq: 1600, sweepTo: 3000, dur: 0.12, vol: 0.12, delay: time * 0.85 });
+    this.click(2000, 0.14, time - 0.05);
+  }
+
+  private click(freq: number, vol: number, delay = 0): void {
+    this.noiseHit({ type: "highpass", freq, dur: 0.02, vol, delay });
+    this.tone(freq * 1.5, freq, 0.03, "square", vol * 0.3, delay);
+  }
+
+  /** Mârâit de zombie la atac. `pitch` > 1 = mai ascuțit (zburător), < 1 = mai gros (brută). */
+  private snarl(pitch: number): void {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const dur = 0.35 + Math.random() * 0.15;
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(170 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(95 * pitch, t + dur);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 28;
+    const vg = ctx.createGain();
+    vg.gain.value = 18 * pitch;
+    vib.connect(vg).connect(osc.frequency);
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 700 * pitch;
+    bp.Q.value = 1.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(bp).connect(g);
+    g.connect(this.distortion);
+    osc.start(t);
+    vib.start(t);
+    osc.stop(t + dur);
+    vib.stop(t + dur);
+    this.noiseHit({ type: "bandpass", freq: 1200 * pitch, dur: 0.15, vol: 0.08 });
   }
 
   /** Arma de foc a eroului: pocnitură + corp distorsionat + bubuitură joasă + ecou. */
@@ -264,6 +376,9 @@ export class Sfx {
     // 4. Coada (ecoul în reverb).
     this.noiseHit({ type: "lowpass", freq: 900, dur: 0.35 * k, vol: 0.06 * k, reverbOnly: true });
     if (weapon === "scattergun") this.tone(90, 35, 0.25, "sine", 0.3);
+    if (weapon === "hunting") this.noiseHit({ type: "highpass", freq: 5000, dur: 0.05, vol: 0.25 });
+    if (weapon === "iceLance") [1568, 2349].forEach((f) => this.tone(f, f * 1.05, 0.25, "sine", 0.04));
+    if (weapon === "boneBow") this.tone(260, 180, 0.12, "triangle", 0.15);
   }
 
   /** Balista turnului: „thwack” de lemn + coardă. */

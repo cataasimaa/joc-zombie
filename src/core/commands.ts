@@ -16,8 +16,13 @@ export type Command =
   | { type: "upgradeBarricade"; playerId: PlayerId; barricadeId: EntityId; to: "reinforce" | "door" }
   | { type: "demolish"; playerId: PlayerId; barricadeId: EntityId }
   | { type: "placeMine"; playerId: PlayerId }
-  /** slot 0–2 = abilități normale, 3 = ultimate. */
-  | { type: "useAbility"; playerId: PlayerId; slot: number }
+  /**
+   * Ochire + tragere. (x, z) = direcția de ochire. `firing` = ține apăsat pe „trage”.
+   * `auto` = ochire automată spre cel mai apropiat zombie (când nu tragi de buton).
+   */
+  | { type: "aim"; playerId: PlayerId; x: number; z: number; firing: boolean; auto: boolean }
+  /** Reîncarcă manual (altfel se reîncarcă singur când se golește încărcătorul). */
+  | { type: "reload"; playerId: PlayerId }
   /** O încercare la magazin (gambling). */
   | { type: "shopRoll"; playerId: PlayerId }
   /** Sare peste restul zilei și începe noaptea. */

@@ -9,16 +9,16 @@ import {
   HERO_DEFS,
   type HeroClass,
   type PlayerId,
-  SHOP_POOLS,
   SKINS,
   type ShopRarity,
   type ShopReward,
   WEAPONS,
-  abilityBlockedReason,
   barricadeSlots,
   barricadesOf,
   canShopRoll,
-  heroRange,
+  gunStats,
+  shopRemaining,
+  towerCost,
   towerSlots,
   towersOf,
   xpToNextLevel,
@@ -27,15 +27,19 @@ import {
 export interface HudCallbacks {
   onPickHero(heroClass: HeroClass): void;
   onToggleBuild(): void;
+  onPick(kind: "tower" | "wall" | "mine"): void;
   onStartNight(): void;
-  onUseAbility(slot: number): void;
-  onPlaceMine(): void;
   onShopRoll(): void;
   onToggleMute(): boolean;
+  onReload(): void;
   onWallRotate(): void;
   onWallPlace(): void;
   onWallDone(): void;
   onRestart(): void;
+  /** Sunetele păcănelei. */
+  onSpinTick(): void;
+  onReelStop(): void;
+  onSpinResult(rarity: ShopRarity): void;
 }
 
 export interface MenuOption {
@@ -59,7 +63,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export function rewardIcon(r: ShopReward): string {
-  return { nothing: "💨", wood: "🪵", mines: "💣", maxHp: "❤", speed: "👟", regen: "✚", repair: "🔧", towerSlot: "🗼", towerTier: "🏰", weapon: "🔫", skin: "🎨" }[r.kind];
+  return { nothing: "💨", wood: "🪵", mines: "💣", maxHp: "❤️", speed: "👟", regen: "✚", repair: "🔧", towerSlot: "🗼", towerTier: "🏰", weapon: "🔫", skin: "🎨" }[r.kind];
 }
 
 export function describeReward(r: ShopReward): string {
@@ -81,11 +85,11 @@ export function describeReward(r: ShopReward): string {
     case "towerSlot":
       return "+1 loc pentru turn";
     case "towerTier":
-      return `Turnuri tier ${r.tier} deblocate`;
+      return `Turnuri tier ${r.tier}`;
     case "weapon":
-      return `Armă nouă: ${WEAPONS[r.weaponId].name}`;
+      return WEAPONS[r.weaponId].name;
     case "skin":
-      return `Skin nou: ${SKINS.find((s) => s.id === r.skinId)?.name ?? r.skinId}`;
+      return `Skin ${SKINS.find((s) => s.id === r.skinId)?.name ?? r.skinId}`;
   }
 }
 
@@ -94,14 +98,19 @@ const fmtTime = (t: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
+const REEL_ICONS = ["💨", "🪵", "💣", "❤️", "👟", "✚", "🔧", "🗼", "🏰", "🔫", "🎨", "💎"];
+const SPIN_TIME = 3000;
+const REEL_STOPS = [1500, 2250, 3000];
+
 export class Hud {
   private cache = new Map<HTMLElement, string>();
   private toastTimer = 0;
   private hintTimer = 0;
-  private abilityButtons: HTMLButtonElement[] = [];
-  private heroClass: HeroClass = "assault";
+  private damageFlash = 0;
   private spinning = false;
   private pendingResult: { rarity: ShopRarity; reward: ShopReward } | null = null;
+  private lastState: GameState | null = null;
+  private playerId: PlayerId = "p1";
 
   private el = {
     hud: $("hud"),
@@ -124,24 +133,33 @@ export class Hud {
     barricades: $("barricades-text"),
     shopBtn: $<HTMLButtonElement>("shop-btn"),
     muteBtn: $<HTMLButtonElement>("mute-btn"),
-    mineBtn: $<HTMLButtonElement>("mine-btn"),
-    mineCount: $("mine-count"),
-    abilities: $("ability-buttons"),
     buildBtn: $<HTMLButtonElement>("build-btn"),
+    fireStick: $("fire-stick"),
+    ammo: $("ammo-text"),
+    reloadArc: document.getElementById("reload-arc") as unknown as SVGCircleElement,
     buildBanner: $("build-banner"),
     buildMenu: $("build-menu"),
-    wallBar: $("wall-bar"),
-    wallHint: $("wall-hint"),
+    palette: $("build-palette"),
+    pickTower: $<HTMLButtonElement>("pick-tower"),
+    pickWall: $<HTMLButtonElement>("pick-wall"),
+    pickMine: $<HTMLButtonElement>("pick-mine"),
+    mineCost: $("mine-cost"),
+    placeBar: $("place-bar"),
+    placeHint: $("place-hint"),
+    wallRotate: $<HTMLButtonElement>("wall-rotate"),
     wallPlace: $<HTMLButtonElement>("wall-place"),
+    damage: $("damage"),
     toast: $("toast"),
     hint: $("hint"),
     heroSelect: $("hero-select"),
     heroCards: $("hero-cards"),
     shopModal: $("shop-modal"),
+    shopCoins: $("shop-coins"),
+    reels: [$("reel-0"), $("reel-1"), $("reel-2")],
     shopOdds: $("shop-odds"),
-    shopReel: $("shop-reel"),
     shopResult: $("shop-result"),
     shopRoll: $<HTMLButtonElement>("shop-roll"),
+    shopRemaining: $("shop-remaining"),
     shopStats: $("shop-stats"),
     endScreen: $("end-screen"),
     endTitle: $("end-title"),
@@ -151,7 +169,11 @@ export class Hud {
   constructor(private cb: HudCallbacks) {
     this.el.buildBtn.addEventListener("click", () => cb.onToggleBuild());
     this.el.startWave.addEventListener("click", () => cb.onStartNight());
-    this.el.mineBtn.addEventListener("click", () => cb.onPlaceMine());
+    this.el.pickTower.addEventListener("click", () => cb.onPick("tower"));
+    this.el.pickWall.addEventListener("click", () => cb.onPick("wall"));
+    this.el.pickMine.addEventListener("click", () => cb.onPick("mine"));
+    $("palette-close").addEventListener("click", () => cb.onToggleBuild());
+    this.el.ammo.addEventListener("click", () => cb.onReload());
     this.el.shopBtn.addEventListener("click", () => this.setShopOpen(true));
     $("shop-close").addEventListener("click", () => this.setShopOpen(false));
     this.el.shopRoll.addEventListener("click", () => {
@@ -162,10 +184,12 @@ export class Hud {
     this.el.muteBtn.addEventListener("click", () => {
       this.el.muteBtn.textContent = cb.onToggleMute() ? "🔇" : "🔊";
     });
-    $("wall-rotate").addEventListener("click", () => cb.onWallRotate());
+    this.el.wallRotate.addEventListener("click", () => cb.onWallRotate());
     this.el.wallPlace.addEventListener("click", () => cb.onWallPlace());
     $("wall-done").addEventListener("click", () => cb.onWallDone());
     $("restart-btn").addEventListener("click", () => cb.onRestart());
+    $("tower-cost").textContent = `🪵 ${towerCost()}`;
+    $("wall-cost").textContent = `🪵 ${CONFIG.barricade.levels[0].cost}`;
     this.renderHeroCards();
     this.renderOdds();
   }
@@ -176,7 +200,7 @@ export class Hud {
     this.el.heroCards.innerHTML = "";
     for (const [cls, def] of Object.entries(HERO_DEFS) as [HeroClass, (typeof HERO_DEFS)[HeroClass]][]) {
       const stats = CONFIG.heroes[cls];
-      const [r, g, b] = DEFAULT_SKIN_COLOR[cls].map((v) => Math.round(v * 255 * 1.6));
+      const [r, g, b] = DEFAULT_SKIN_COLOR[cls].map((v) => Math.round(Math.min(255, v * 255 * 1.6)));
       const card = document.createElement("button");
       card.className = "hero-card";
       card.innerHTML = `
@@ -185,10 +209,8 @@ export class Hud {
           <div><div class="hc-name">${def.name}</div><div class="hc-role">${def.role}</div></div>
         </div>
         <div class="hc-desc">${def.description}</div>
-        <div class="hc-abilities">${def.abilities
-          .map((a, i) => `<span class="${i === 3 ? "ult" : ""}" title="${a.name}: ${a.description}">${a.icon}</span>`)
-          .join("")}</div>
-        <div class="hc-stats">❤ ${stats.maxHp} · 🎯 rază ${stats.range} · 💥 ${Math.round(stats.damage / stats.fireInterval)}/s</div>`;
+        <div class="hc-passive">★ ${def.passive}</div>
+        <div class="hc-stats">❤ ${stats.maxHp} · 🎯 ${stats.range} m · 🔫 ${stats.magazine} gloanțe</div>`;
       card.addEventListener("click", () => this.cb.onPickHero(cls));
       this.el.heroCards.appendChild(card);
     }
@@ -203,7 +225,6 @@ export class Hud {
 
   /** Pregătește HUD-ul pentru eroul ales. */
   startGame(heroClass: HeroClass): void {
-    this.heroClass = heroClass;
     this.cache.clear();
     this.el.heroSelect.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
@@ -211,25 +232,16 @@ export class Hud {
     const def = HERO_DEFS[heroClass];
     this.el.heroName.textContent = `${def.icon} ${def.name}`;
     this.el.shopResult.innerHTML = "";
-
-    this.el.abilities.innerHTML = "";
-    this.abilityButtons = def.abilities.map((a, slot) => {
-      const btn = document.createElement("button");
-      btn.className = `ability${slot === 3 ? " ult" : ""}`;
-      btn.title = `${a.name}: ${a.description}`;
-      btn.innerHTML = `<span class="icon">${a.icon}</span><span class="cd"></span><span class="cd-text"></span><span class="key">${slot + 1}</span>`;
-      btn.addEventListener("click", () => this.cb.onUseAbility(slot));
-      this.el.abilities.appendChild(btn);
-      return btn;
-    });
+    for (const r of this.el.reels) r.textContent = "🎰";
   }
 
   // ---------- Actualizare pe fiecare cadru ----------
 
   update(state: GameState, playerId: PlayerId, events: GameEvent[], dt: number): void {
+    this.lastState = state;
+    this.playerId = playerId;
     const player = state.players[playerId];
     const hero = state.heroes.find((h) => h.id === player.heroId)!;
-    const def = HERO_DEFS[this.heroClass];
 
     // Bare de viață
     const sh = state.shelter;
@@ -240,6 +252,14 @@ export class Hud {
     this.width(this.el.heroBar, hero.hp / hero.maxHp);
     this.width(this.el.xpBar, hero.xp / xpToNextLevel(hero.level));
 
+    // Muniție + cercul de reîncărcare de pe butonul de tras.
+    const gun = gunStats(state, hero);
+    this.text(this.el.ammo, hero.reloadTimer > 0 ? "↻" : `${hero.ammo}/${gun.magazine}`);
+    this.el.fireStick.classList.toggle("reloading", hero.reloadTimer > 0);
+    this.el.fireStick.classList.toggle("low", hero.reloadTimer <= 0 && hero.ammo <= Math.ceil(gun.magazine * 0.25));
+    const progress = hero.reloadTimer > 0 ? 1 - hero.reloadTimer / gun.reloadTime : 0;
+    this.el.reloadArc.style.strokeDashoffset = String(289 * (1 - progress));
+
     // Zi / noapte + cronometru
     const night = state.phase === "night";
     this.el.hud.classList.toggle("is-night", night);
@@ -248,13 +268,13 @@ export class Hud {
       this.text(this.el.timerText, `noaptea vine în ${fmtTime(state.phaseTimer)}`);
     } else if (night) {
       this.text(this.el.waveText, `🌙 Noaptea ${state.wave}/${state.totalWaves}`);
-      const left = state.zombies.filter((z) => !z.fleeing).length + state.spawnQueue.length;
+      const left = state.zombies.filter((z) => !z.burning).length + state.spawnQueue.length;
       this.text(this.el.timerText, `🧟 ${left} · zori în ${fmtTime(state.phaseTimer)}`);
     }
     this.width(this.el.phaseBar, state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0);
     this.el.startWave.classList.toggle("hidden", state.phase !== "day");
 
-    const boss = state.zombies.find((z) => z.type === "boss" && !z.fleeing);
+    const boss = state.zombies.find((z) => z.type === "boss");
     this.el.bossPanel.classList.toggle("hidden", !boss);
     if (boss) this.width(this.el.bossBar, boss.hp / boss.maxHp);
 
@@ -263,37 +283,19 @@ export class Hud {
     this.text(this.el.coins, String(player.coins));
     this.text(this.el.towers, `${towersOf(state, playerId)}/${towerSlots(state, playerId)}`);
     this.text(this.el.barricades, `${barricadesOf(state, playerId)}/${barricadeSlots(state)}`);
-    this.text(this.el.mineCount, String(player.mines));
-    this.el.mineBtn.classList.toggle("empty", player.mines <= 0);
+    this.text(this.el.mineCost, `× ${player.mines}`);
+    this.el.pickMine.disabled = player.mines <= 0;
     const canRoll = canShopRoll(state, playerId) === null;
     this.el.shopBtn.classList.toggle("can-open", canRoll);
 
-    // Abilități: cooldown (cerc care se golește), blocată, ultimate încă închisă.
-    this.abilityButtons.forEach((btn, slot) => {
-      const cd = hero.cooldowns[slot];
-      const total = def.abilities[slot].cooldown;
-      const locked = slot === 3 && hero.level < CONFIG.ultLevel;
-      const blocked = abilityBlockedReason(state, hero, slot) !== null;
-      btn.style.setProperty("--cd", cd > 0 ? String(cd / total) : "0");
-      this.text(btn.querySelector(".cd-text")!, locked ? `🔒${CONFIG.ultLevel}` : cd > 0 ? String(Math.ceil(cd)) : "");
-      btn.classList.toggle("locked", locked);
-      btn.classList.toggle("blocked", blocked && !locked);
-      btn.classList.toggle("ready", !blocked);
-    });
+    if (this.shopOpen) this.updateShop(state, playerId, canRoll);
 
-    // Magazin (dacă e deschis)
-    if (!this.el.shopModal.classList.contains("hidden")) {
-      this.el.shopRoll.disabled = !canRoll || this.spinning;
-      this.text(this.el.shopRoll, this.spinning ? "Se învârte…" : `Încearcă-ți norocul · 🪙 ${CONFIG.shop.cost}`);
-      const w = WEAPONS[player.weapon];
-      this.text(
-        this.el.shopStats,
-        `🔫 ${w.name} · ❤ +${pct(player.maxHpBonus)} · 👟 +${pct(player.speedBonus)} · ✚ ${player.regenPerSec} HP/s · ` +
-          `🔧 +${pct(player.repairBonus)} · 💣 ${player.mines} · 🏰 tier ${player.towerTier} · 🎯 rază ${heroRange(state, hero)}`,
-      );
-    }
+    for (const e of events) this.handleEvent(state, hero.id, playerId, e);
 
-    for (const e of events) this.handleEvent(state, playerId, hero.id, e);
+    // Ecran roșu când ești lovit.
+    this.damageFlash = Math.max(0, this.damageFlash - dt * 2.5);
+    const lowHp = hero.alive && hero.hp / hero.maxHp < 0.3 ? 0.35 + Math.sin(performance.now() / 180) * 0.1 : 0;
+    this.el.damage.style.opacity = String(Math.min(1, Math.max(this.damageFlash, lowHp)));
 
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
@@ -305,24 +307,22 @@ export class Hud {
     }
   }
 
-  private handleEvent(state: GameState, playerId: PlayerId, heroId: number, e: GameEvent): void {
+  private handleEvent(state: GameState, heroId: number, playerId: PlayerId, e: GameEvent): void {
     switch (e.type) {
       case "nightStarted":
         this.toast(e.boss ? `🌙 Noaptea ${e.wave} · ☠ vine Abominația` : `🌙 Se lasă noaptea… (${e.wave})`);
         break;
       case "dawn":
-        if (e.wave < state.totalWaves) this.toast(`☀ S-a făcut ziuă! +${e.wood} 🪵`);
+        if (e.wave < state.totalWaves) this.toast(`☀ Zorii! Zombii ard · +${e.wood} 🪵`);
         break;
       case "levelUp":
-        if (e.heroId === heroId) {
-          this.toast(e.level === CONFIG.ultLevel ? `Nivelul ${e.level}! Ultimate deblocat ★` : `Nivelul ${e.level}!`);
-        }
+        if (e.heroId === heroId) this.toast(`Nivelul ${e.level}!`);
+        break;
+      case "heroHit":
+        if (e.id === heroId) this.damageFlash = Math.min(1, this.damageFlash + 0.5);
         break;
       case "heroDied":
         if (e.id === heroId) this.toast("Ai căzut!");
-        break;
-      case "heroRevived":
-        if (e.id === heroId) this.toast("Ai fost reînviat!");
         break;
       case "shopRoll":
         if (e.playerId === playerId) this.landSpin(e.rarity, e.reward);
@@ -338,16 +338,16 @@ export class Hud {
 
   // ---------- Construcție ----------
 
-  setBuildMode(on: boolean): void {
-    this.el.buildBtn.classList.toggle("active", on);
-    this.el.buildBanner.classList.toggle("hidden", !on);
-    if (!on) {
-      this.hideBuildMenu();
-      this.hideWallBar();
-    }
+  /** Mod construcție: paleta (Turn / Zid / Mină) sau bara de plasare. */
+  setBuildMode(mode: "off" | "palette" | "place"): void {
+    this.el.buildBtn.classList.toggle("active", mode !== "off");
+    this.el.palette.classList.toggle("hidden", mode !== "palette");
+    this.el.buildBanner.classList.toggle("hidden", mode !== "palette");
+    this.el.placeBar.classList.toggle("hidden", mode !== "place");
+    if (mode !== "palette") this.hideBuildMenu();
   }
 
-  /** Meniul care apare după tap, cu opțiunile date (ex. Turn / Zid / Upgrade). */
+  /** Meniul care apare după tap pe o construcție de-a ta (upgrade, mută, ușă…). */
   showBuildMenu(screenX: number, screenY: number, options: MenuOption[]): void {
     const m = this.el.buildMenu;
     m.innerHTML = "";
@@ -360,7 +360,6 @@ export class Hud {
       m.appendChild(b);
     }
     m.classList.remove("hidden");
-    // Ținem meniul în interiorul ecranului.
     const x = Math.min(Math.max(screenX, 100), window.innerWidth - 100);
     const y = Math.max(screenY, m.offsetHeight + 34);
     m.style.left = `${x}px`;
@@ -371,40 +370,35 @@ export class Hud {
     this.el.buildMenu.classList.add("hidden");
   }
 
-  /** Bara de jos cu ↻ / ✔ / ✖ când pui sau muți un zid. */
-  showWallBar(mode: "place" | "move", problem: string | null): void {
-    this.el.wallBar.classList.remove("hidden");
-    this.el.buildBanner.classList.add("hidden");
+  /** Bara de plasare: ↻ (doar zid) / ✔ / ✖, cu motivul dacă nu se poate construi. */
+  showPlaceBar(kind: "tower" | "wall", mode: "place" | "move", problem: string | null): void {
+    this.el.wallRotate.classList.toggle("hidden", kind !== "wall");
     this.el.wallPlace.disabled = problem !== null;
-    this.text(this.el.wallPlace, mode === "move" ? "✔ Mută aici" : `✔ Pune · 🪵${CONFIG.barricade.levels[0].cost}`);
-    this.text(
-      this.el.wallHint,
-      problem ?? (mode === "move" ? "Atinge unde vrei zidul" : "Atinge locul · zidurile se lipesc cap la cap"),
-    );
-    this.el.wallHint.classList.toggle("bad", problem !== null);
-  }
-
-  hideWallBar(): void {
-    this.el.wallBar.classList.add("hidden");
+    const cost = kind === "tower" ? towerCost() : CONFIG.barricade.levels[0].cost;
+    this.text(this.el.wallPlace, mode === "move" ? "✔ Mută aici" : `✔ Pune · 🪵${cost}`);
+    const help = kind === "tower" ? "Atinge locul unde vrei turnul" : "Atinge locul · zidurile se lipesc cap la cap";
+    this.text(this.el.placeHint, problem ?? help);
+    this.el.placeHint.classList.toggle("bad", problem !== null);
   }
 
   // ---------- Magazin ----------
 
   private renderOdds(): void {
-    this.el.shopOdds.innerHTML = CONFIG.shop.odds
-      .map(({ rarity, chance }) => {
-        const examples = [...new Set(SHOP_POOLS[rarity].map(rewardIcon))].join("");
-        return `<div class="odd r-${rarity}">${RARITY_NAMES[rarity]}<b>${+(chance * 100).toFixed(1)}%</b><span>${examples}</span></div>`;
-      })
-      .join("");
+    // O bară cu proporțiile reale ale șanselor + legenda.
+    this.el.shopOdds.innerHTML =
+      `<div class="odds-track">${CONFIG.shop.odds
+        .map(({ rarity, chance }) => `<span class="seg bg-${rarity}" style="flex:${chance}"></span>`)
+        .join("")}</div>` +
+      `<div class="odds-legend">${CONFIG.shop.odds
+        .map(({ rarity, chance }) => `<span class="r-${rarity}">● ${RARITY_NAMES[rarity]} ${+(chance * 100).toFixed(1)}%</span>`)
+        .join("")}</div>`;
   }
 
   setShopOpen(open: boolean): void {
     this.el.shopModal.classList.toggle("hidden", !open);
     if (open) {
       this.cache.delete(this.el.shopRoll);
-      this.cache.delete(this.el.shopStats);
-      if (!this.spinning && !this.el.shopResult.innerHTML) this.el.shopReel.textContent = "🎲";
+      if (this.lastState) this.updateShop(this.lastState, this.playerId, canShopRoll(this.lastState, this.playerId) === null, true);
     }
   }
 
@@ -412,62 +406,116 @@ export class Hud {
     return !this.el.shopModal.classList.contains("hidden");
   }
 
-  /** Pornește „păcăneaua”: iconițele se schimbă repede, apoi încetinesc. */
+  private updateShop(state: GameState, playerId: PlayerId, canRoll: boolean, force = false): void {
+    const player = state.players[playerId];
+    const hero = state.heroes.find((h) => h.id === player.heroId)!;
+    this.text(this.el.shopCoins, String(player.coins));
+    this.el.shopRoll.disabled = !canRoll || this.spinning;
+    this.text(this.el.shopRoll, this.spinning ? "Se învârte…" : canRoll ? `Încearcă-ți norocul · 🪙 ${CONFIG.shop.cost}` : `Ai nevoie de 🪙 ${CONFIG.shop.cost}`);
+
+    // Ce mai poți câștiga, pe rarități (premiile câștigate dispar din listă).
+    const remaining = shopRemaining(player);
+    const html = (["legendary", "epic", "rare", "common"] as ShopRarity[])
+      .map((r) => {
+        const chips = remaining[r].map((rw) => `<span class="chip" title="${describeReward(rw)}">${rewardIcon(rw)} ${describeReward(rw)}</span>`).join("");
+        return `<div class="rem-row"><span class="rem-label r-${r}">${RARITY_NAMES[r]}</span><div class="chips">${chips || '<span class="chip done">tot câștigat ✓</span>'}</div></div>`;
+      })
+      .join("");
+    if (force || this.cache.get(this.el.shopRemaining) !== html) {
+      this.cache.set(this.el.shopRemaining, html);
+      this.el.shopRemaining.innerHTML = html;
+    }
+
+    const gun = gunStats(state, hero);
+    const stats = [
+      ["🔫", "Armă", WEAPONS[player.weapon].name],
+      ["🎯", "Încărcător", `${gun.magazine} gloanțe`],
+      ["❤️", "Viață", `+${pct(player.maxHpBonus)}`],
+      ["👟", "Viteză", `+${pct(player.speedBonus)}`],
+      ["✚", "Regenerare", `${player.regenPerSec} HP/s`],
+      ["🔧", "Reparat", `+${pct(player.repairBonus)}`],
+      ["💣", "Mine", `${player.mines}`],
+      ["🏰", "Turnuri", `tier ${player.towerTier}`],
+    ];
+    const statsHtml = stats.map(([i, l, v]) => `<div class="stat"><span>${i} ${l}</span><b>${v}</b></div>`).join("");
+    if (force || this.cache.get(this.el.shopStats) !== statsHtml) {
+      this.cache.set(this.el.shopStats, statsHtml);
+      this.el.shopStats.innerHTML = statsHtml;
+    }
+  }
+
+  /**
+   * Pornește „păcăneaua”: trei role care se învârt, apoi se opresc pe rând (≈3 secunde).
+   * Rezultatul îl decide logica jocului; animația doar îl dezvăluie.
+   */
   private startSpin(): void {
     this.spinning = true;
     this.pendingResult = null;
     this.el.shopResult.innerHTML = "";
-    this.el.shopReel.classList.add("spinning");
-    const icons = ["💨", "🪵", "💣", "❤", "👟", "✚", "🔧", "🗼", "🏰", "🔫", "🎨"];
+    this.el.shopResult.className = "shop-result";
     const start = performance.now();
-    let delay = 50;
+    const stopped = [false, false, false];
+    let delay = 45;
     const tick = () => {
-      this.el.shopReel.textContent = icons[Math.floor(Math.random() * icons.length)];
       const elapsed = performance.now() - start;
-      if (elapsed > 1100 && this.pendingResult) {
+      const res = this.pendingResult;
+      this.el.reels.forEach((r, i) => {
+        if (stopped[i]) return;
+        if (elapsed >= REEL_STOPS[i] && res) {
+          stopped[i] = true;
+          r.textContent = this.finalIcon(res, i);
+          r.parentElement!.classList.add("stopped");
+          this.cb.onReelStop();
+          return;
+        }
+        r.textContent = REEL_ICONS[Math.floor(Math.random() * REEL_ICONS.length)];
+        r.parentElement!.classList.remove("stopped");
+      });
+      if (stopped.every(Boolean)) {
         this.finishSpin();
         return;
       }
-      if (elapsed > 3000) {
+      if (elapsed > SPIN_TIME + 2500 && !res) {
         // Comanda n-a reușit (ex. nu mai aveai monede): oprim fără rezultat.
         this.spinning = false;
-        this.el.shopReel.classList.remove("spinning");
-        this.el.shopReel.textContent = "🎲";
+        for (const r of this.el.reels) r.textContent = "🎰";
         return;
       }
-      delay = Math.min(220, delay * 1.08);
+      this.cb.onSpinTick();
+      delay = Math.min(180, delay * 1.035);
       window.setTimeout(tick, delay);
     };
     tick();
   }
 
+  /** Ce simbol arată fiecare rolă la final: la JACKPOT (epic/legendar) toate trei sunt la fel. */
+  private finalIcon(res: { rarity: ShopRarity; reward: ShopReward }, reel: number): string {
+    const icon = rewardIcon(res.reward);
+    if (res.rarity === "epic" || res.rarity === "legendary") return icon;
+    if (reel === 1) return icon;
+    if (res.rarity === "nothing") return ["💨", "🪨", "❄️"][reel];
+    return REEL_ICONS[(REEL_ICONS.indexOf(icon) + reel * 3) % REEL_ICONS.length];
+  }
+
   private landSpin(rarity: ShopRarity, reward: ShopReward): void {
-    if (!this.spinning) {
-      // A venit dintr-o comandă fără animație (ex. tastatură): arătăm direct.
-      this.pendingResult = { rarity, reward };
-      this.finishSpin();
-      return;
-    }
     this.pendingResult = { rarity, reward };
   }
 
   private finishSpin(): void {
     const res = this.pendingResult!;
     this.spinning = false;
-    this.el.shopReel.classList.remove("spinning");
-    this.el.shopReel.textContent = rewardIcon(res.reward);
+    const jackpot = res.rarity === "epic" || res.rarity === "legendary";
     const r = this.el.shopResult;
-    r.classList.remove("pop");
-    void r.offsetWidth; // repornește animația
-    r.classList.add("pop");
-    r.innerHTML = `<div class="rarity r-${res.rarity}">${RARITY_NAMES[res.rarity]}</div><div class="reward">${describeReward(res.reward)}</div>`;
-    this.el.shopReel.className = `reel r-${res.rarity}`;
+    r.className = `shop-result pop${jackpot ? " jackpot" : ""}`;
+    r.innerHTML = `<div class="rarity r-${res.rarity}">${jackpot ? "★ JACKPOT ★ " : ""}${RARITY_NAMES[res.rarity]}</div><div class="reward">${rewardIcon(res.reward)} ${describeReward(res.reward)}</div>`;
+    this.el.shopModal.querySelector(".modal")!.classList.toggle("jackpot-glow", jackpot);
+    this.cb.onSpinResult(res.rarity);
     if (!this.shopOpen) this.toast(`${rewardIcon(res.reward)} ${describeReward(res.reward)}`);
   }
 
   // ---------- Mesaje ----------
 
-  /** Mesaj mic lângă butoane (ex. de ce nu merge o abilitate). */
+  /** Mesaj mic lângă butoane (ex. de ce nu se poate face ceva). */
   hint(msg: string): void {
     this.el.hint.textContent = msg;
     this.el.hint.classList.add("show");

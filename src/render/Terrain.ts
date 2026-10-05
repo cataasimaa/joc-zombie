@@ -4,6 +4,7 @@
 
 import { Mesh, MeshBuilder, type Scene, VertexBuffer } from "@babylonjs/core";
 import { CONFIG } from "../core";
+import type { Materials } from "./ModelKit";
 import { fbm, noise2, smoothstep } from "./noise";
 import { PAL, mix } from "./palette";
 
@@ -51,7 +52,7 @@ export function terrainHeight(x: number, z: number): number {
   return h;
 }
 
-export function createTerrain(scene: Scene): Mesh {
+export function createTerrain(scene: Scene, mats: Materials): Mesh {
   const ground = MeshBuilder.CreateGround("terrain", { width: SIZE, height: SIZE, subdivisions: 140, updatable: false }, scene);
   const pos = ground.getVerticesData(VertexBuffer.PositionKind)!;
   const colors = new Float32Array((pos.length / 3) * 4);
@@ -81,5 +82,6 @@ export function createTerrain(scene: Scene): Mesh {
   ground.createNormals(true);
   ground.isPickable = false;
   ground.receiveShadows = true;
+  ground.material = mats.terrain;
   return ground;
 }

@@ -207,97 +207,9 @@ button {
   color: var(--accent-ink);
 }
 
-/* ---------- Abilități ---------- */
-
-.abilities {
-  position: absolute;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-.ability-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 60px);
-  grid-template-rows: repeat(2, 60px);
-  gap: 10px;
-}
-
-.ability {
-  position: relative;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.65);
-  background: var(--panel);
-  color: var(--text);
-  font-size: 24px;
-  padding: 0;
-  overflow: hidden;
-}
-
-.ability .cd {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(rgba(0, 0, 0, 0.65) calc(var(--cd, 0) * 360deg), transparent 0);
-  pointer-events: none;
-}
-
-.ability .cd-text {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 800;
-  pointer-events: none;
-}
-
-.ability .key {
-  position: absolute;
-  bottom: 3px;
-  left: 0;
-  right: 0;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.ability.ult {
-  border-color: var(--legendary);
-}
-
-.ability.blocked .icon {
-  opacity: 0.4;
-}
-
-.ability.locked .icon {
-  opacity: 0.25;
-}
-
-.ability.ready {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
-}
-
-.ability.build {
-  width: 64px;
-  height: 130px;
-  border-radius: 32px;
-  background: rgba(242, 163, 58, 0.85);
-}
-
-.ability.build.active {
-  background: var(--good);
-  box-shadow: 0 0 0 3px #fff;
-}
-
 .banner {
   position: absolute;
-  bottom: max(16px, env(safe-area-inset-bottom));
+  top: 112px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(59, 179, 107, 0.85);
@@ -373,7 +285,7 @@ button {
 
 .hint {
   position: absolute;
-  bottom: 170px;
+  bottom: 160px;
   right: max(16px, env(safe-area-inset-right));
   background: var(--panel-strong);
   padding: 6px 10px;
@@ -577,26 +489,8 @@ button {
   font-size: 20px;
 }
 
-.odds {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-}
 
-.odds .odd {
-  border-radius: 8px;
-  padding: 6px 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border-bottom: 3px solid currentColor;
-  font-size: 12px;
-  font-weight: 700;
-}
 
-.odds .odd b {
-  display: block;
-  font-size: 17px;
-  color: var(--text);
-}
 
 @keyframes pop {
   0% {
@@ -674,23 +568,6 @@ button {
   .boss-panel {
     width: 200px;
   }
-  .ability-grid {
-    grid-template-columns: repeat(2, 52px);
-    grid-template-rows: repeat(2, 52px);
-    gap: 8px;
-  }
-  .ability {
-    width: 52px;
-    height: 52px;
-    font-size: 21px;
-  }
-  .ability.build {
-    width: 56px;
-    height: 112px;
-  }
-  .hint {
-    bottom: 140px;
-  }
   .overlay h1 {
     font-size: 26px;
   }
@@ -718,38 +595,126 @@ button {
   }
 }
 
-/* ---------- Mine ---------- */
 
-.ability.mine {
-  align-self: flex-end;
-  width: 50px;
-  height: 50px;
-  font-size: 20px;
-  overflow: visible;
+@media (max-height: 450px) {
+  .build-menu {
+    gap: 4px;
+    padding: 6px;
+  }
+  .build-menu button {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .build-menu button small {
+    font-size: 10px;
+  }
 }
 
-.ability.mine.empty {
-  opacity: 0.4;
-}
+/* ---------- Butoanele de acțiune: trage (cu ochire) și construiește ---------- */
 
-.badge {
+.action-buttons {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 20px;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  pointer-events: none;
 }
 
-/* ---------- Bara de plasare a zidurilor ---------- */
+.action {
+  pointer-events: auto;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: rgba(90, 58, 40, 0.85);
+  color: var(--text);
+  font-size: 26px;
+  margin-bottom: 70px;
+}
 
-.wall-bar {
+.action.build.active {
+  background: var(--good);
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.fire-stick {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(107, 29, 36, 0.35), rgba(16, 24, 34, 0.45));
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fire-knob {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #c0463c, #6b1d24);
+  border: 2px solid rgba(255, 220, 200, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.05s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.fire-stick.active .fire-knob {
+  background: radial-gradient(circle at 35% 30%, #ff8a3d, #a8322b);
+}
+
+.fire-stick.aiming {
+  border-color: var(--accent);
+}
+
+.fire-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.ammo-text {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  pointer-events: auto;
+}
+
+.fire-stick.low .ammo-text {
+  color: #ffd27a;
+}
+
+.reload-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.reload-ring circle {
+  fill: none;
+  stroke: #7ec8ff;
+  stroke-width: 6;
+  stroke-dasharray: 289;
+  stroke-dashoffset: 289;
+  opacity: 0;
+}
+
+.fire-stick.reloading .reload-ring circle {
+  opacity: 1;
+}
+
+/* ---------- Paleta de construcție și bara de plasare ---------- */
+
+.build-bar {
   position: absolute;
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom));
@@ -759,9 +724,59 @@ button {
   gap: 6px;
   background: var(--panel-strong);
   border: 1px solid var(--frost);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 6px;
   pointer-events: auto;
+}
+
+.bar-title {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--panel);
+  padding: 3px 10px;
+  border-radius: 8px;
+}
+
+.build-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 68px;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #2c3a4c;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.build-choice .ico {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.build-choice small {
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 700;
+}
+
+.build-choice:disabled {
+  opacity: 0.4;
+}
+
+.build-choice.close {
+  min-width: 44px;
+  justify-content: center;
+  background: #6b2a2a;
+  font-size: 16px;
 }
 
 .wall-hint {
@@ -785,10 +800,10 @@ button {
 .wall-btn {
   border: none;
   border-radius: 8px;
-  padding: 8px 11px;
-  font-size: 13px;
-  white-space: nowrap;
+  padding: 9px 12px;
+  font-size: 14px;
   font-weight: 800;
+  white-space: nowrap;
   background: #2c3a4c;
   color: #fff;
 }
@@ -802,56 +817,120 @@ button {
   opacity: 0.7;
 }
 
+/* ---------- Damage: marginile ecranului se înroșesc ---------- */
+
+.damage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(107, 29, 36, 0) 45%, rgba(140, 16, 24, 0.75) 100%);
+}
+
+/* ---------- Alegerea eroului ---------- */
+
+.hero-card .hc-passive {
+  font-size: 11px;
+  color: #ffd27a;
+  line-height: 1.3;
+}
+
 /* ---------- Magazinul norocului ---------- */
 
 .modal.shop {
-  width: min(520px, 100%);
+  width: min(760px, 100%);
+  text-align: left;
+  padding: 12px 16px;
+  transition: box-shadow 0.3s;
 }
 
-.shop-sub {
-  margin: -4px 0 10px;
-  font-size: 12px;
-  color: var(--muted);
+.modal.shop.jackpot-glow {
+  box-shadow: 0 0 0 2px #ffb627, 0 0 40px rgba(255, 182, 39, 0.6);
 }
 
-.odds .odd span {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 1px;
-  margin-top: 2px;
-}
-
-.reel-wrap {
-  margin: 12px auto 0;
-  width: 84px;
-  height: 84px;
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 2px solid var(--frost);
+.shop-head {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.shop-head h2 {
+  margin: 0;
+  font-size: 20px;
+  flex: 1;
+}
+
+.shop-wallet {
+  font-weight: 800;
+  font-size: 17px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-head .close-btn {
+  position: static;
+}
+
+.shop-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 16px;
+}
+
+.shop-machine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reels {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: linear-gradient(#3a2418, #22150e);
+  border: 2px solid #8a5a2a;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.7);
 }
 
 .reel {
-  font-size: 44px;
-  line-height: 1;
+  width: 64px;
+  height: 72px;
+  border-radius: 10px;
+  background: linear-gradient(#f4efe4, #cfc6b4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  box-shadow: inset 0 6px 10px rgba(0, 0, 0, 0.35);
 }
 
-.reel.spinning {
-  animation: shake 0.12s infinite;
-  filter: blur(0.5px);
+.reel span {
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.3));
 }
 
-@keyframes shake {
-  50% {
-    transform: translateY(3px);
+.reel:not(.stopped) span {
+  filter: blur(0.6px);
+}
+
+.reel.stopped {
+  animation: reelStop 0.25s ease-out;
+}
+
+@keyframes reelStop {
+  40% {
+    transform: translateY(4px);
   }
 }
 
 .shop-result {
-  min-height: 46px;
-  margin-top: 8px;
+  min-height: 44px;
+  text-align: center;
 }
 
 .shop-result .rarity {
@@ -862,7 +941,7 @@ button {
 }
 
 .shop-result .reward {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
 }
 
@@ -870,43 +949,165 @@ button {
   animation: pop 0.45s ease-out;
 }
 
-@media (max-height: 450px) {
-  .reel-wrap {
-    width: 64px;
-    height: 64px;
-    margin-top: 8px;
-  }
-  .reel {
-    font-size: 34px;
-  }
-  .modal {
-    padding: 10px 14px;
-  }
-  .modal h2 {
-    font-size: 18px;
-    margin-bottom: 4px;
-  }
-  .primary-btn {
-    margin-top: 8px;
-    padding: 10px 20px;
-    font-size: 16px;
-  }
-  .ability.mine {
-    width: 44px;
-    height: 44px;
+.shop-result.jackpot .rarity {
+  animation: jackpot 0.5s ease-in-out 4;
+  color: #ffd27a;
+}
+
+@keyframes jackpot {
+  50% {
+    transform: scale(1.25);
+    text-shadow: 0 0 14px #ffb627;
   }
 }
 
+.odds-bar {
+  width: 100%;
+}
+
+.odds-track {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.odds-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  justify-content: center;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bg-nothing { background: var(--nothing); }
+.bg-common { background: var(--common); }
+.bg-rare { background: var(--rare); }
+.bg-epic { background: var(--epic); }
+.bg-legendary { background: var(--legendary); }
+
+.shop-info {
+  min-width: 0;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+.shop-info h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.remaining {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.rem-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.rem-label {
+  font-size: 12px;
+  font-weight: 800;
+  padding-top: 3px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.chip.done {
+  color: var(--good);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stat span {
+  color: var(--muted);
+}
+
+.stat b {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 @media (max-height: 450px) {
-  .build-menu {
-    gap: 4px;
-    padding: 6px;
+  .fire-stick {
+    width: 112px;
+    height: 112px;
   }
-  .build-menu button {
-    padding: 6px 10px;
-    font-size: 13px;
+  .fire-knob {
+    width: 72px;
+    height: 72px;
   }
-  .build-menu button small {
-    font-size: 10px;
+  .action {
+    width: 54px;
+    height: 54px;
+    font-size: 22px;
+    margin-bottom: 58px;
   }
+  .reel {
+    width: 52px;
+    height: 58px;
+    font-size: 30px;
+  }
+  .shop-info {
+    max-height: 70vh;
+  }
+  .build-choice {
+    min-width: 58px;
+    padding: 5px 8px;
+  }
+  .build-choice .ico {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .shop-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Paletele, meniurile și butoanele stau deasupra zonei invizibile a joystick-ului. */
+.build-bar,
+.build-menu,
+.action-buttons,
+.top-center,
+.top-right {
+  z-index: 5;
 }

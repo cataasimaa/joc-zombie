@@ -9,12 +9,15 @@ export interface CollisionOptions {
   barricades?: "all" | "walls" | "none";
   /** Plasa de siguranță anti-blocare: ignoră casele și brazii. */
   ignoreObstacles?: boolean;
+  /** Turnurile sunt solide (nu treci prin ele). */
+  towers?: boolean;
 }
 
 /** Împinge un cerc (pos, radius) afară din obstacole, adăpost și ziduri, și îl ține pe hartă. */
 export function resolveCollisions(state: GameState, pos: Vec2, radius: number, opts: CollisionOptions = {}): void {
   pushOutOf(pos, radius, state.shelter.pos, state.shelter.radius);
   if (!opts.ignoreObstacles) for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
+  if (opts.towers) for (const t of state.towers) pushOutOf(pos, radius, t.pos, CONFIG.tower.radius);
   const mode = opts.barricades ?? "none";
   if (mode !== "none") {
     for (const b of state.barricades) {

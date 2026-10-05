@@ -52,24 +52,39 @@
         </div>
       </div>
 
-      <!-- Dreapta jos: mine, abilități, construcție -->
-      <div class="abilities">
-        <button id="mine-btn" class="ability mine" title="Pune o mină (M)">💣<span id="mine-count" class="badge">0</span></button>
-        <div id="ability-buttons" class="ability-grid"></div>
-        <button id="build-btn" class="ability build">🔨</button>
+      <!-- Dreapta jos: doar două butoane — trage (și ochește) și construiește -->
+      <div class="action-buttons">
+        <button id="build-btn" class="action build" title="Construiește (B)">🔨</button>
+        <div id="fire-stick" class="fire-stick">
+          <div id="fire-knob" class="fire-knob">
+            <span class="fire-icon">✛</span>
+            <span id="ammo-text" class="ammo-text">0/0</span>
+          </div>
+          <svg class="reload-ring" viewBox="0 0 100 100"><circle id="reload-arc" cx="50" cy="50" r="46" /></svg>
+        </div>
       </div>
 
-      <!-- Bara de plasare a zidurilor -->
-      <div id="wall-bar" class="wall-bar hidden">
-        <span id="wall-hint" class="wall-hint"></span>
+      <!-- Paleta de construcție -->
+      <div id="build-palette" class="build-bar hidden">
+        <div class="bar-title">Ce construiești?</div>
+        <button id="pick-tower" class="build-choice"><span class="ico">🗼</span>Turn<small id="tower-cost"></small></button>
+        <button id="pick-wall" class="build-choice"><span class="ico">🧱</span>Zid<small id="wall-cost"></small></button>
+        <button id="pick-mine" class="build-choice"><span class="ico">💣</span>Mină<small id="mine-cost"></small></button>
+        <button id="palette-close" class="build-choice close">✖</button>
+      </div>
+
+      <!-- Bara de plasare (turn sau zid) -->
+      <div id="place-bar" class="build-bar hidden">
+        <span id="place-hint" class="wall-hint"></span>
         <button id="wall-rotate" class="wall-btn">↻ Rotește</button>
         <button id="wall-place" class="wall-btn primary">✔ Pune</button>
-        <button id="wall-done" class="wall-btn">✖ Gata</button>
+        <button id="wall-done" class="wall-btn">✖ Înapoi</button>
       </div>
 
-      <div id="build-banner" class="banner hidden">Construcție: atinge un loc liber, un turn sau un zid de-al tău</div>
+      <div id="build-banner" class="banner hidden">Atinge un turn/zid de-al tău ca să-l modifici</div>
       <div id="build-menu" class="build-menu hidden"></div>
 
+      <div id="damage" class="damage"></div>
       <div id="toast" class="toast"></div>
       <div id="hint" class="hint"></div>
       <div id="joystick-zone"></div>
@@ -85,14 +100,29 @@
     <!-- Magazinul norocului -->
     <div id="shop-modal" class="overlay hidden">
       <div class="modal shop">
-        <button id="shop-close" class="close-btn">✖</button>
-        <h2>🎲 Magazinul norocului</h2>
-        <p class="shop-sub">Dai monede, tragi la noroc. Poți pleca și cu mâna goală.</p>
-        <div id="shop-odds" class="odds"></div>
-        <div class="reel-wrap"><div id="shop-reel" class="reel"></div></div>
-        <div id="shop-result" class="shop-result"></div>
-        <button id="shop-roll" class="primary-btn"></button>
-        <div id="shop-stats" class="owned"></div>
+        <header class="shop-head">
+          <h2>🎰 Magazinul norocului</h2>
+          <div class="shop-wallet">🪙 <span id="shop-coins">0</span></div>
+          <button id="shop-close" class="close-btn">✖</button>
+        </header>
+        <div class="shop-body">
+          <section class="shop-machine">
+            <div class="reels">
+              <div class="reel"><span id="reel-0">🎰</span></div>
+              <div class="reel"><span id="reel-1">🎰</span></div>
+              <div class="reel"><span id="reel-2">🎰</span></div>
+            </div>
+            <div id="shop-result" class="shop-result"></div>
+            <button id="shop-roll" class="primary-btn"></button>
+            <div id="shop-odds" class="odds-bar"></div>
+          </section>
+          <section class="shop-info">
+            <h3>Mai poți câștiga</h3>
+            <div id="shop-remaining" class="remaining"></div>
+            <h3>Ce ai</h3>
+            <div id="shop-stats" class="stats-grid"></div>
+          </section>
+        </div>
       </div>
     </div>
 

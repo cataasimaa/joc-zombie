@@ -5,7 +5,6 @@
 import type { Command } from "./commands";
 import { CONFIG, type HeroClass } from "./config";
 import { clamp } from "./math";
-import { updateZones, useAbility } from "./systems/abilities";
 import {
   buildBarricade,
   defaultBarricadeRotation,
@@ -14,12 +13,12 @@ import {
   upgradeBarricade,
 } from "./systems/barricades";
 import { updateCoins } from "./systems/coins";
-import { heroById, updateHeroes } from "./systems/heroes";
+import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
 import { buildTower, updateTowers, upgradeTower } from "./systems/towers";
 import { startNight, updateWaves } from "./systems/waves";
-import { updateZombies } from "./systems/zombies";
+import { updateProjectiles, updateZombies } from "./systems/zombies";
 import type { GameEvent, GameState, PlayerId } from "./types";
 
 export interface PlayerSetup {
@@ -61,8 +60,8 @@ export class GameSimulation {
     updateHeroes(s, dt, this.events);
     updateTowers(s, dt, this.events);
     updateZombies(s, dt, this.events);
+    updateProjectiles(s, dt, this.events);
     updateMines(s, dt, this.events);
-    updateZones(s, dt, this.events);
     updateCoins(s, dt, this.events);
 
     if (s.shelter.hp <= 0) {
@@ -114,9 +113,18 @@ export class GameSimulation {
       case "placeMine":
         placeMine(s, cmd.playerId);
         break;
-      case "useAbility": {
+      case "aim": {
         const hero = heroById(s, player.heroId);
-        if (hero) useAbility(s, hero, cmd.slot, this.events);
+        if (!hero || !hero.alive) return;
+        const len = Math.hypot(cmd.x, cmd.z);
+        if (len > 0.001) hero.aim = { x: cmd.x / len, z: cmd.z / len };
+        hero.firing = cmd.firing;
+        hero.autoAim = cmd.auto;
+        break;
+      }
+      case "reload": {
+        const hero = heroById(s, player.heroId);
+        if (hero) startReload(s, hero, this.events);
         break;
       }
       case "shopRoll":
@@ -149,7 +157,7 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
     barricades: [],
     mines: [],
     coins: [],
-    zones: [],
+    projectiles: [],
     nextId: 1,
     rngState: seed | 0,
   };
@@ -175,6 +183,7 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
       repairBonus: 0,
       skins: [],
       skin: null,
+      unlocked: [],
     };
     state.heroes.push({
       id: heroId,
@@ -190,9 +199,14 @@ function createInitialState({ players, seed = Date.now() }: GameOptions): GameSt
       level: 1,
       xp: 0,
       moveInput: { x: 0, z: 0 },
-      cooldowns: [0, 0, 0, 0],
-      buffs: { shield: 0, invulnerable: 0 },
+      aim: { x: 0, z: 1 },
+      firing: false,
+      autoAim: false,
+      ammo: 0,
+      reloadTimer: 0,
     });
+    const hero = state.heroes[state.heroes.length - 1];
+    hero.ammo = gunStats(state, hero).magazine;
   });
 
   return state;

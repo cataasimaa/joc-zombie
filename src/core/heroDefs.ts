@@ -1,100 +1,45 @@
-// Descrierea claselor de eroi și a abilităților lor.
-// Valorile numerice ale abilităților sunt aici, lângă descriere, ca să fie ușor de echilibrat.
+// Descrierea claselor de eroi. În faza beta nu au abilități speciale: fiecare clasă are doar
+// arma ei și un avantaj pasiv (mereu activ).
 
 import type { HeroClass, Rarity } from "./config";
-
-export type AbilityId =
-  | "grenade" | "molotov" | "spray" | "airstrike"
-  | "headshot" | "pierce" | "iceShot" | "assassinate"
-  | "taunt" | "shield" | "slam" | "fortress"
-  | "heal" | "healZone" | "revive" | "holyLight";
-
-export interface AbilityDef {
-  id: AbilityId;
-  name: string;
-  icon: string;
-  cooldown: number;
-  description: string;
-}
 
 export interface HeroDef {
   name: string;
   icon: string;
   role: string;
   description: string;
-  /** 3 abilități normale + 1 ultimate (ultima). */
-  abilities: [AbilityDef, AbilityDef, AbilityDef, AbilityDef];
+  /** Avantajul pasiv al clasei, pe scurt. */
+  passive: string;
 }
-
-/** Numerele abilităților. Damage-ul și vindecarea cresc cu nivelul eroului (+15%/nivel). */
-export const ABILITY = {
-  levelScaling: 0.15,
-  grenade: { range: 14, radius: 3.5, damage: 60 },
-  molotov: { range: 12, radius: 3.2, duration: 6, damagePerSecond: 22 },
-  spray: { range: 11, coneDegrees: 70, damage: 35 },
-  airstrike: { radius: 10, damage: 160 },
-  headshot: { range: 24, damage: 220 },
-  pierce: { length: 26, width: 1.4, damage: 90 },
-  iceShot: { range: 22, radius: 3.5, damage: 40, freeze: 4 },
-  assassinate: { range: 30, targets: 5, damage: 600 },
-  taunt: { radius: 11, duration: 5 },
-  shield: { duration: 5, damageReduction: 0.7 },
-  slam: { radius: 4.5, damage: 50, slowDuration: 3, slowFactor: 0.5 },
-  fortress: { duration: 6, tauntRadius: 16 },
-  heal: { range: 12, amount: 80 },
-  healZone: { radius: 5, duration: 6, healPerSecond: 16 },
-  revive: { range: 8, hpFraction: 0.5 },
-  holyLight: { shelterHeal: 300, radius: 10, damage: 110 },
-} as const;
 
 export const HERO_DEFS: Record<HeroClass, HeroDef> = {
   assault: {
     name: "Assault Rifle",
     icon: "🔫",
-    role: "Damage constant",
-    description: "Supraviețuitor cu pușcă din țevi. Trage des și lovește câte doi zombi deodată.",
-    abilities: [
-      { id: "grenade", name: "Grenadă", icon: "💣", cooldown: 8, description: "Aruncă o grenadă în cel mai apropiat zombie (damage în zonă)." },
-      { id: "molotov", name: "Molotov", icon: "🔥", cooldown: 14, description: "Aruncă o sticlă cu foc: zona arde zombii 6 secunde." },
-      { id: "spray", name: "Rafală", icon: "🌪", cooldown: 10, description: "Lovește toți zombii dintr-un con în fața ta." },
-      { id: "airstrike", name: "Bombardament", icon: "✈", cooldown: 60, description: "ULTIMATE: damage mare tuturor zombilor din jurul tău." },
-    ],
+    role: "Foc continuu",
+    description: "Supraviețuitor cu pușcă din țevi. Încărcător mare, trage des.",
+    passive: "Gloanțele trec prin doi zombi.",
   },
   sniper: {
     name: "Sniper",
     icon: "🎯",
-    role: "Damage pe o țintă",
-    description: "Rază foarte mare, gloanțe puternice și lovituri critice. Ideal pentru zombii mari.",
-    abilities: [
-      { id: "headshot", name: "Lovitură în cap", icon: "💀", cooldown: 10, description: "Lovește zombiul cu cel mai mult HP din rază." },
-      { id: "pierce", name: "Glonț perforant", icon: "➶", cooldown: 12, description: "Glonțul trece prin toți zombii dintr-o linie." },
-      { id: "iceShot", name: "Glonț de gheață", icon: "❄", cooldown: 16, description: "Îngheață (încetinește puternic) zombii din jurul țintei." },
-      { id: "assassinate", name: "Asasinare", icon: "☠", cooldown: 60, description: "ULTIMATE: lovește cei mai puternici 5 zombi de pe hartă." },
-    ],
+    role: "O țintă, mult damage",
+    description: "Rază foarte mare și gloanțe puternice, dar încărcător mic.",
+    passive: "20% lovituri critice (×2,5), glonțul trece prin trei zombi.",
   },
   tank: {
     name: "Tank",
     icon: "🛡",
-    role: "Rezistență, atrage zombii",
-    description: "Mult HP. Atrage zombii pe el, se apără cu scutul și repară baricadele de 3 ori mai repede.",
-    abilities: [
-      { id: "taunt", name: "Provocare", icon: "📢", cooldown: 12, description: "Zombii din jur te atacă doar pe tine, 5 secunde." },
-      { id: "shield", name: "Scut", icon: "🛡", cooldown: 15, description: "Primești cu 70% mai puțin damage, 5 secunde." },
-      { id: "slam", name: "Izbitură", icon: "💥", cooldown: 8, description: "Damage în jurul tău și încetinește zombii." },
-      { id: "fortress", name: "Fortăreață", icon: "🏰", cooldown: 60, description: "ULTIMATE: invulnerabil 6 secunde și atragi toți zombii din jur." },
-    ],
+    role: "Rezistență",
+    description: "Mult HP și pușcă cu alice, devastatoare de aproape.",
+    passive: "Primește 25% mai puțin damage, repară zidurile de 3× mai repede.",
   },
   healer: {
     name: "Healer",
     icon: "✚",
     role: "Suport",
-    description: "Vindecă aliații și adăpostul, poate reînvia un coleg căzut.",
-    abilities: [
-      { id: "heal", name: "Vindecare", icon: "✚", cooldown: 6, description: "Vindecă aliatul cel mai rănit din apropiere (sau pe tine)." },
-      { id: "healZone", name: "Cerc de viață", icon: "◎", cooldown: 14, description: "Zonă care vindecă eroii și baricadele din ea, 6 secunde." },
-      { id: "revive", name: "Reînviere", icon: "↺", cooldown: 30, description: "Reînvie un coleg căzut din apropiere." },
-      { id: "holyLight", name: "Lumină sfântă", icon: "☀", cooldown: 70, description: "ULTIMATE: vindecă toți eroii, repară adăpostul și arde zombii din jur." },
-    ],
+    description: "Ține echipa în viață și trage des cu o armă ușoară.",
+    passive: "Vindecă încet eroii din jurul lui (inclusiv pe el).",
   },
 };
 

@@ -9,11 +9,52 @@ import type { Scene } from "@babylonjs/core";
 
 // ---------- Brazi ----------
 
-/** Brad: trunchi închis, coroană în 3–4 trepte, zăpadă doar pe partea de sus a fiecărei trepte. */
+/**
+ * Brad realist: trunchi subțiat spre vârf, crengi pe 7 niveluri, lăsate în jos, cu bulgări de zăpadă
+ * pe partea de sus. Folosit pentru brazii din sat (aproape de cameră).
+ */
+export function buildPine(scene: Scene, mats: Materials, seed: number): Mesh[] {
+  const k = new ModelKit(scene, mats, seed);
+  const H = 5.4;
+  k.cyl(H, 0.14, 0.46, 7, { p: [0, H / 2 - 0.1, 0] }, { color: PAL.darkWood, wear: 0.25, smooth: true });
+  const levels = 7;
+  for (let i = 0; i < levels; i++) {
+    const t = i / levels;
+    const y = 0.95 + i * 0.62;
+    const len = 2.1 * (1 - t) + 0.45 + k.rand(-0.1, 0.1);
+    const count = 7 - Math.floor(i / 2);
+    const droop = 0.35 + t * 0.15;
+    const green = mix(PAL.pine, PAL.pineLight, k.rand(0, 1));
+    for (let j = 0; j < count; j++) {
+      const a = (j / count) * Math.PI * 2 + i * 0.55 + k.rand(-0.2, 0.2);
+      const dx = Math.cos(droop) * (len / 2);
+      const dy = -Math.sin(droop) * (len / 2);
+      const thick = 0.75 * (1 - t) + 0.3;
+      // Creanga: un con culcat, cu vârful spre exterior și în jos.
+      k.cyl(len, 0.04, thick, 5, {
+        p: [Math.cos(a) * dx, y + dy, -Math.sin(a) * dx],
+        r: [0, a, -(Math.PI / 2 + droop)],
+      }, { color: green, wear: 0.18, smooth: true });
+      // Bulgăre de zăpadă pe partea de sus a crengii.
+      if (k.rand() < 0.65) {
+        k.sphere(1, 5, {
+          p: [Math.cos(a) * dx * 0.9, y + dy + thick * 0.32, -Math.sin(a) * dx * 0.9],
+          r: [0, a, -droop * 0.8],
+          s: [len * 0.55, 0.14, thick * 0.55],
+        }, { color: PAL.snow, wear: 0.04, smooth: true });
+      }
+    }
+  }
+  // Vârful.
+  k.cyl(0.9, 0, 0.35, 5, { p: [0, H + 0.15, 0] }, { color: PAL.pine, wear: 0.15, frost: 0.6, frostNormal: 0.5 });
+  return k.build(`pine${seed}`);
+}
+
+/** Brad simplu (conuri în trepte), pentru pădurea deasă din afara hărții. */
 export function buildTree(scene: Scene, mats: Materials, seed: number): Mesh[] {
   const k = new ModelKit(scene, mats, seed);
   k.cyl(1.4, 0.26, 0.42, 6, { p: [0, 0.7, 0] }, { color: PAL.darkWood, wear: 0.2 });
-  const tiers = 3 + (seed % 2);
+  const tiers = 4;
   let y = 0.9;
   for (let i = 0; i < tiers; i++) {
     const h = 1.7 - i * 0.18;
@@ -23,11 +64,10 @@ export function buildTree(scene: Scene, mats: Materials, seed: number): Mesh[] {
       color,
       wear: 0.12,
       frost: 0.95,
-      // Zăpada stă pe partea de sus a fiecărei trepte (inelele de jos rămân verzi).
       frostAbove: y + h * 0.62,
       frostNormal: 0.2,
+      smooth: true,
     }, 3);
-    // Marginea de jos a treptei, ușor albăstruie (zăpadă care atârnă).
     y += h * 0.62;
   }
   return k.build(`tree${seed}`);
@@ -54,6 +94,8 @@ export function buildRock(scene: Scene, mats: Materials, seed: number): Mesh[] {
 
 interface HouseParts {
   meshes: Mesh[];
+  /** Vârful hornului (pentru fum), în coordonatele casei; null la casa dărâmată. */
+  chimney: [number, number, number] | null;
 }
 
 /**
@@ -90,7 +132,7 @@ export function buildHouse(scene: Scene, mats: Materials, h: House): HouseParts 
     for (let i = 0; i < 4; i++) {
       k.cyl(k.rand(1.5, 2.8), 0.22, 0.22, 6, { p: [k.rand(-W / 2, W / 2), 0.2, D / 2 + k.rand(0.4, 1.5)], r: [Math.PI / 2, k.rand(0, 3), 0] }, { color: PAL.darkWood, wear: 0.2, frost: 0.8 });
     }
-    return { meshes: k.build(`house${h.seed}`) };
+    return { meshes: k.build(`house${h.seed}`), chimney: null };
   }
 
   // Pereți de bârne.
@@ -130,6 +172,16 @@ export function buildHouse(scene: Scene, mats: Materials, h: House): HouseParts 
       r: [side * slope, 0, 0],
     }, { color: PAL.snow, wear: 0.04 });
   }
+  // Rânduri de șindrilă pe partea cu zăpadă subțire + streașină rotunjită de zăpadă pe cealaltă.
+  for (let row = 0; row < 4; row++) {
+    const f = (row + 0.5) / 4;
+    const side = -snowSide;
+    const zz = side * (f * (D / 2 + 0.4));
+    const yy = top + rise * (1 - f) + 0.2;
+    k.box(W + 0.72, 0.06, 0.32, { p: [0, yy, zz], r: [side * slope, 0, 0] }, { color: PAL.burntWood, wear: 0.3, frost: 0.4, frostNormal: 0.6 });
+  }
+  k.capsule(W + 0.9, 0.24, { p: [0, top + 0.12, snowSide * (D / 2 + 0.42)], r: [0, 0, Math.PI / 2] }, { color: PAL.snow, wear: 0.03, smooth: true });
+
   // Țurțuri sub streașină.
   for (const side of [1, -1]) {
     const n = 6 + Math.floor(k.rand(0, 5));
@@ -168,13 +220,27 @@ export function buildHouse(scene: Scene, mats: Materials, h: House): HouseParts 
     }
   }
 
+  // Prag de piatră, felinar lângă ușă, stivă de lemne pe o parte.
+  k.box(1.3, 0.18, 0.6, { p: [W * 0.18, 0.09, fz + 0.3] }, { color: PAL.stoneDark, wear: 0.25, frost: 0.8 });
+  k.box(0.08, 0.08, 0.4, { p: [W * 0.18 + 0.7, base + 1.9, fz + 0.15] }, { color: PAL.iron, mat: "metal" });
+  k.box(0.22, 0.3, 0.22, { p: [W * 0.18 + 0.7, base + 1.7, fz + 0.32] }, { color: PAL.iron, mat: "metal", wear: 0.2 });
+  k.box(0.13, 0.18, 0.13, { p: [W * 0.18 + 0.7, base + 1.7, fz + 0.32] }, { color: PAL.window, mat: "glow" });
+  const stackX = W / 2 + 0.45;
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 5 - row; i++) {
+      k.cyl(1.0, 0.24, 0.24, 7, { p: [stackX, 0.13 + row * 0.21, -D * 0.25 + (i - (4 - row) / 2) * 0.25], r: [0, 0, Math.PI / 2] }, {
+        color: mix(PAL.oldWood, PAL.burntWood, k.rand(0, 0.5)), wear: 0.2, frost: 0.85, frostNormal: 0.55, smooth: true,
+      });
+    }
+  }
+
   // Troiene la baza pereților.
   for (let i = 0; i < 5; i++) {
     const side = k.rand() < 0.5 ? 1 : -1;
-    k.ico(k.rand(0.5, 0.9), { p: [k.rand(-W / 2, W / 2), 0.05, side * (D / 2 + 0.35)], s: [1.8, 0.45, 1] }, { color: PAL.snow, wear: 0.03 });
+    k.sphere(k.rand(1.0, 1.7), 6, { p: [k.rand(-W / 2, W / 2), 0.0, side * (D / 2 + 0.35)], s: [1.8, 0.4, 1] }, { color: PAL.snow, wear: 0.03, smooth: true });
   }
 
-  return { meshes: k.build(`house${h.seed}`) };
+  return { meshes: k.build(`house${h.seed}`), chimney: [chX, top + rise + 1.2, -D * 0.15] };
 }
 
 // ---------- Adăpostul ----------
@@ -184,6 +250,7 @@ export interface ShelterParts {
   /** Flăcările focului (le animăm). */
   flames: Mesh[];
   firePos: [number, number, number];
+  chimney: [number, number, number];
 }
 
 /** Adăpostul: parter de piatră, etaj de lemn, banner rupt și foc în față. Fața spre -z (spre cameră). */
@@ -279,5 +346,5 @@ export function buildShelter(scene: Scene, mats: Materials): ShelterParts {
     f.position.set(fire[0] + (i - 1) * 0.12, 0.1, fire[2] + (i % 2) * 0.1);
     flames.push(f);
   }
-  return { meshes, flames, firePos: [fire[0], 1, fire[2]] };
+  return { meshes, flames, firePos: [fire[0], 1, fire[2]], chimney: [W * 0.3, top + rise + 1.3, D * 0.1] };
 }

@@ -23,8 +23,11 @@ npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
 
-Controale în browser: **WASD / săgeți** mișcare, **1–4** abilități, **M** mină, **B** construcție,
-**R** rotește zidul, **Space** / click pune zidul, **Esc** ieșire, **C** magazin, **Enter** începe noaptea.
+Controale în browser: **WASD / săgeți** mișcare, **mouse** ochește + **click ținut** trage,
+**Space** trage cu ochire automată, **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
+(**1/2/3** turn / zid / mină), **Enter** confirmă plasarea sau începe noaptea, **Esc** ieșire, **C** magazin.
+Pe telefon: joystick în stânga, în dreapta doar 2 butoane — 🔨 construcție și ✛ tragere
+(ții apăsat = ochire automată, tragi cu degetul = ochești tu).
 În consola din dev: `game().state`, `renderer.setCameraOffset(x, y, z)`.
 
 ## Arhitectură (REGULĂ IMPORTANTĂ)
@@ -39,13 +42,14 @@ src/
     types.ts       GameState = doar date simple (serializabile JSON)
     commands.ts    Comenzile jucătorilor (singura cale de a modifica starea)
     config.ts      TOATE numerele de echilibrare (eroi, zombi, turnuri, ziduri, zi/noapte, magazin)
-    heroDefs.ts    Clasele de eroi, abilitățile (nume, iconiță, cooldown, valori) și skin-urile
-    items.ts       Armele și recompensele magazinului (pe rarități)
+    heroDefs.ts    Clasele de eroi (pasiva fiecăruia) și skin-urile. Abilitățile sunt scoase în beta.
+    items.ts       Armele (damage, încărcător, reîncărcare, alice) și recompensele magazinului
     map.ts         Harta (case cu variante, brazi, pietre) – generată determinist
     navigation.ts  Flow field: drumul cel mai scurt spre adăpost, ocolind obstacolele
     math.ts        Vec2 pe planul solului (x, z), segmente (ziduri), RNG determinist
-    systems/       waves (zi/noapte), heroes, abilities, zombies, towers, barricades,
-                   mines, shop, coins, physics
+    systems/       waves (zi/noapte, ardere în zori), heroes (ochit, muniție, gloanțe),
+                   zombies (+ proiectile scuipate, zburători), towers, barricades,
+                   mines, shop, coins (dispar după 30 s), physics
   render/      Babylon.js — doar CITEȘTE starea și desenează
     ModelKit.ts    Trusa de modele: primitive → flat shading → culoare pe vârfuri (uzură,
                    zăpadă pe fețele de sus) → unite într-un mesh per material (PBR mat/metal/glow)
@@ -54,10 +58,14 @@ src/
                    structures (turnuri, ziduri, uși, mine, monede)
     Terrain.ts     Teren cu relief, poteci, petice de pământ înghețat (doar vizual)
     World.ts       Decorul + lumini + zi/noapte + umbre + ceață + ninsoare; Prefab (instanțe)
-    Fx.ts          Sânge (stropi + pete), trasoare, flăcări de la armă, explozii, inele
-    Renderer.ts    Entitățile animate (mers, recul, cădere), camera, fantomele de construcție
-  audio/Sfx.ts Sunete generate din cod (Web Audio): împușcături stratificate, vânt, foc, gemete
-  input/       Tastatură + joystick virtual → produc comenzi
+    Fx.ts          Particule (sânge, scântei, așchii, venin), pete de sânge, urme de pași,
+                   trasoare, săgeți de balistă, explozii, inele
+    Renderer.ts    Entitățile animate (mers cu genunchi, recul, reîncărcare, ardere, cădere),
+                   camera, fantomele de construcție (cu „amprenta” pe sol)
+  audio/Sfx.ts   Sunete generate din cod (Web Audio): împușcături pe armă, pași, reîncărcare,
+                 atac zombi, păcănele + jackpot, vânt, foc
+  audio/Music.ts Muzică procedurală: strat calm + strat de teroare, amestecate după pericol
+  input/       Tastatură, joystick virtual (mișcare), FireStick (buton de tras + ochire) → comenzi
   ui/Hud.ts    HUD + ecrane (alegere erou, magazin, final) în HTML/CSS peste canvas
   main.ts      Leagă totul + modul de construcție (plasare/mutare ziduri)
 ```
@@ -146,22 +154,31 @@ sau texturi din acele jocuri.
   răspândite în primele 75% din noapte. În zori, zombii rămași fug (fără monede). 10 nopți = victorie.
 - **Două resurse**: 🪵 *lemn* pentru construcții (start 70 + venit în fiecare zori) și
   🪙 *monede* pentru magazin (cad din zombi).
-- **Magazinul norocului** (gambling, 25 monede): Nimic 20%, Comun 46%, Rar 23%, Epic 9%,
-  Legendar 2% (afișate în joc). Recompense: mine, +HP maxim, +viteză de mers, regenerare,
+- **Magazinul norocului** (păcănele, 30 monede): Nimic 26%, Comun 50%, Rar 17%, Epic 6%,
+  Legendar 1% (afișate în joc). Fiecare recompensă (în afară de nimic/lemn/mine) se poate câștiga
+  **o singură dată pe rundă**. Rolele se opresc pe rând în ~3 s; la epic/legendar: jackpot. Recompense: mine, +HP maxim, +viteză de mers, regenerare,
   reparat mai rapid, loc de turn în plus, tier de turn, arme noi, skin-uri, lemn.
-  Bonusurile de viteză sunt plafonate. Nu se dă ceva ce ai deja.
+  Nu se dă ceva ce ai deja.
 - **Arme** (`items.ts`): țeava ruginită → pușcă de vânătoare / flintă cu alice (rar) →
   mitralieră din țevi / arbaletă de os (epic) → lancea de gheață (legendar, încetinește).
-- **Abilități**: fără abilități de „viteză” (Foc rapid și Concentrare au fost înlocuite cu
-  Molotov și Glonț de gheață). Țintesc automat. Ultimate la nivelul 4.
+- **Beta fără abilități**: doar 2 butoane (construcție + tragere). Fiecare clasă are o pasivă
+  (Healer: aură de vindecare; Sniper: critice + străpunge; Tank: armură, pușcă cu alice, repară ×3).
+- **Tragere**: ochești tu (drag pe buton / mouse) sau automat (ții apăsat); gloanțele se opresc
+  în case, copaci, pietre. Fiecare armă are încărcător și timp de reîncărcare (auto la 0).
+  Mergi mai încet cât tragi.
+- **Turnurile** trag săgeți de balistă vizibile; nimeni nu trece prin turnuri sau ziduri.
 - **Ziduri = segmente** (2,6 m) care se lipesc cap la cap; pot fi mutate, rotite (45°), întărite
   (palisadă pe piatră) sau transformate în **ușă** (eroii trec, zombii nu). Zidurile opresc și
   eroii. Demolarea dă înapoi 50% din lemn. Zombii sparg zidul din drumul lor; eroii din
   apropiere îl repară automat (Tank ×3, plus bonusul din magazin).
 - **Mine**: din magazin; le pui unde stai (M / 💣); explodează când trece un zombie.
 - **Sloturi**: 3 turnuri + 8 ziduri; la fiecare 3 nopți +1 turn și +4 ziduri.
-- **Zombi**: walker, runner (din noaptea 3), brute (din noaptea 4), boss la nopțile 5 și 10.
+- **Zombi**: walker, runner (rapid, din noaptea 2), spitter (scuipă de la distanță, din noaptea 3),
+  flyer (zboară peste ziduri, din noaptea 4), brute (din noaptea 4), boss la nopțile 5 și 10.
   Navighează cu flow field; un zombie blocat > 2 s poate trece prin obstacole.
+- **Zori**: zombii rămași iau foc și mor încet (fără monede), inclusiv boss-ul.
+- **Monede**: cad doar uneori (șansă pe tip de zombie) și dispar după 30 s (clipesc la final).
+- Dificultate ~+20% față de versiunea anterioară (HP zombi, creștere pe noapte, monede mai rare).
 - Fiecare jucător în plus: +50% zombi și +25% HP la zombi.
 
 ## Roadmap
@@ -188,6 +205,9 @@ sau texturi din acele jocuri.
 - [x] Sânge (stropi + pete pe zăpadă), explozii, trasoare, flacăra armei
 - [x] Sunete: împușcături stratificate, vânt cu rafale, foc, gemete, reverb
 - [x] Magazin cu gambling, arme, mine; ziduri care se lipesc, se mută, se rotesc, uși
+- [x] Ochit manual, muniție + reîncărcare, 2 butoane; zombi noi (spitter, flyer); ardere în zori
+- [x] Muzică dinamică calm/teroare, pași, păcănele + jackpot; post-procesare (bloom, ACES)
+- [ ] Abilitățile înapoi (după beta), echilibrate
 - [ ] Progres între runde (skin-uri și deblocări păstrate)
 - [ ] Optimizare pe telefon real (umbre/glow ajustabile după performanță)
 

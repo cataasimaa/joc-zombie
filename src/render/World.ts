@@ -1,11 +1,12 @@
 // Lumea statică și atmosfera: teren, brazi, pietre, case, adăpost, lumini, zi/noapte, ceață, ninsoare.
 
 import {
+  type Camera,
   Color3,
   Color4,
+  DefaultRenderingPipeline,
   DirectionalLight,
   DynamicTexture,
-  GlowLayer,
   HemisphericLight,
   ImageProcessingConfiguration,
   type InstancedMesh,
@@ -22,7 +23,7 @@ import {
 } from "@babylonjs/core";
 import { CONFIG, GAME_MAP } from "../core";
 import type { Materials } from "./ModelKit";
-import { buildHouse, buildRock, buildShelter, buildTree } from "./models/environment";
+import { buildHouse, buildPine, buildRock, buildShelter, buildTree } from "./models/environment";
 import { rng } from "./noise";
 import { PAL, hex, mix } from "./palette";
 import { createTerrain, terrainHeight } from "./Terrain";
@@ -49,7 +50,7 @@ const SKY_NIGHT = hex("#0c1422");
 
 export class World {
   readonly shadows: ShadowGenerator;
-  readonly glow: GlowLayer;
+  readonly pipeline: DefaultRenderingPipeline;
   readonly shelter: TransformNode;
   /** Felinarul eroului local (se aprinde noaptea). */
   readonly lantern: PointLight;
@@ -61,18 +62,34 @@ export class World {
   private snowEmitter = new Vector3();
   private fogPlanes: Mesh[] = [];
   private fogMat: StandardMaterial;
+  private smokeTex: DynamicTexture | null = null;
+  private smoke: ParticleSystem[] = [];
   private time = 0;
 
-  constructor(private scene: Scene, mats: Materials) {
-    // Corecție de culoare „de film” (tone mapping) + vignetă discretă.
-    const ip = scene.imageProcessingConfiguration;
+  constructor(private scene: Scene, mats: Materials, camera: Camera) {
+    // Post-procesare „de film”: bloom (focul strălucește), antialiasing, granulație fină,
+    // corecție de culoare ACES și vignetă discretă.
+    const pp = new DefaultRenderingPipeline("pp", true, scene, [camera]);
+    pp.samples = 1;
+    pp.fxaaEnabled = true;
+    pp.bloomEnabled = true;
+    pp.bloomThreshold = 0.85;
+    pp.bloomWeight = 0.3;
+    pp.bloomKernel = 48;
+    pp.bloomScale = 0.5;
+    pp.grainEnabled = true;
+    pp.grain.intensity = 6;
+    pp.grain.animated = true;
+    pp.imageProcessingEnabled = true;
+    const ip = pp.imageProcessing;
     ip.toneMappingEnabled = true;
     ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
     ip.exposure = 1.0;
-    ip.contrast = 1.2;
+    ip.contrast = 1.25;
     ip.vignetteEnabled = true;
-    ip.vignetteWeight = 1.6;
-    ip.vignetteColor = new Color4(0.05, 0.08, 0.14, 0);
+    ip.vignetteWeight = 1.8;
+    ip.vignetteColor = new Color4(0.04, 0.06, 0.12, 0);
+    this.pipeline = pp;
 
     scene.fogMode = 2; // Scene.FOGMODE_EXP2
     scene.fogDensity = 0.014;
@@ -95,10 +112,7 @@ export class World {
     this.shadows.normalBias = 0.03;
     this.shadows.setDarkness(0.35);
 
-    this.glow = new GlowLayer("glow", scene, { mainTextureRatio: 0.35, blurKernelSize: 32 });
-    this.glow.intensity = 0.6;
-
-    createTerrain(scene);
+    createTerrain(scene, mats);
     this.placeTrees(mats);
     this.placeRocks(mats);
     this.placeHouses(mats);
@@ -110,6 +124,7 @@ export class World {
       this.shadows.addShadowCaster(m);
     }
     this.flames = shelter.flames;
+    this.addSmoke(new Vector3(...shelter.chimney));
     this.fireLight = new PointLight("fire", new Vector3(...shelter.firePos), scene);
     this.fireLight.diffuse = PAL.fire;
     this.fireLight.specular = Color3.Black();
@@ -129,18 +144,20 @@ export class World {
   // ---------- Decor ----------
 
   private placeTrees(mats: Materials): void {
-    const variants = [1, 2, 3].map((seed) => new Prefab(buildTree(this.scene, mats, seed * 17)));
-    for (const v of variants) for (const s of v.sources) this.shadows.addShadowCaster(s);
+    // Brazii din sat: detaliați. Pădurea din afara hărții: brazi simpli (mai ieftini de desenat).
+    const pines = [1, 2, 3].map((seed) => new Prefab(buildPine(this.scene, mats, seed * 31)));
+    const simple = [1, 2, 3].map((seed) => new Prefab(buildTree(this.scene, mats, seed * 17)));
+    for (const v of [...pines, ...simple]) for (const s of v.sources) this.shadows.addShadowCaster(s);
     const r = rng(42);
-    const place = (x: number, z: number, scale: number, i: number) => {
+    const place = (variants: Prefab[], x: number, z: number, scale: number, i: number) => {
       const node = new TransformNode(`tree${i}`, this.scene);
       node.position.set(x, terrainHeight(x, z) - 0.1, z);
       node.rotation.y = r() * Math.PI * 2;
       node.scaling.setAll(scale);
       variants[i % 3].instance(`tree${i}`, node);
     };
-    GAME_MAP.trees.forEach((t, i) => place(t.pos.x, t.pos.z, t.scale, i));
-    // Pădure deasă de pini pe dealurile din afara hărții: valurile ies din ea.
+    GAME_MAP.trees.forEach((t, i) => place(pines, t.pos.x, t.pos.z, t.scale, i));
+    // Pădure deasă de pini pe dealurile din afara hărții: zombii ies din ea.
     const H = CONFIG.map.halfSize;
     let i = 1000;
     for (let ring = 0; ring < 3; ring++) {
@@ -150,7 +167,7 @@ export class World {
         for (const [x, z] of [[s, d], [s, -d], [d, s], [-d, s]]) {
           const jx = x + (r() - 0.5) * 2.5;
           const jz = z + (r() - 0.5) * 2.5;
-          place(jx, jz, 1.1 + r() * 0.9 + ring * 0.2, i++);
+          place(ring === 0 ? pines : simple, jx, jz, 1.1 + r() * 0.9 + ring * 0.2, i++);
         }
       }
     }
@@ -173,11 +190,55 @@ export class World {
       node.position.set(h.pos.x, terrainHeight(h.pos.x, h.pos.z) - 0.05, h.pos.z);
       // Casele își arată fața spre adăpost.
       node.rotation.y = Math.atan2(-h.pos.x, -h.pos.z);
-      for (const m of buildHouse(this.scene, mats, h).meshes) {
+      const house = buildHouse(this.scene, mats, h);
+      for (const m of house.meshes) {
         m.parent = node;
         this.shadows.addShadowCaster(m);
       }
+      // Fum din horn (doar la casele locuite).
+      if (house.chimney) {
+        node.computeWorldMatrix(true);
+        this.addSmoke(Vector3.TransformCoordinates(new Vector3(...house.chimney), node.getWorldMatrix()));
+      }
     }
+  }
+
+  /** Fum care iese încet din horn și e dus de vânt. */
+  private addSmoke(at: Vector3): void {
+    if (!this.smokeTex) {
+      const tex = new DynamicTexture("smokeTex", 64, this.scene, false);
+      const ctx = tex.getContext() as CanvasRenderingContext2D;
+      const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+      g.addColorStop(0, "rgba(255,255,255,0.7)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 64);
+      tex.update();
+      tex.hasAlpha = true;
+      this.smokeTex = tex;
+    }
+    const ps = new ParticleSystem("smoke", 50, this.scene);
+    ps.particleTexture = this.smokeTex;
+    ps.emitter = at;
+    ps.minEmitBox = new Vector3(-0.15, 0, -0.15);
+    ps.maxEmitBox = new Vector3(0.15, 0, 0.15);
+    ps.direction1 = new Vector3(0.3, 1, -0.1);
+    ps.direction2 = new Vector3(0.7, 1.4, 0.1);
+    ps.minEmitPower = 0.5;
+    ps.maxEmitPower = 0.9;
+    ps.minLifeTime = 4;
+    ps.maxLifeTime = 6;
+    ps.emitRate = 7;
+    ps.addSizeGradient(0, 0.5);
+    ps.addSizeGradient(1, 2.6);
+    ps.color1 = new Color4(0.55, 0.57, 0.6, 0.35);
+    ps.color2 = new Color4(0.45, 0.47, 0.5, 0.3);
+    ps.colorDead = new Color4(0.5, 0.52, 0.55, 0);
+    ps.minAngularSpeed = -0.4;
+    ps.maxAngularSpeed = 0.4;
+    ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    ps.start();
+    this.smoke.push(ps);
   }
 
   /** Bancuri de ceață joasă la marginea hărții (plăci semi-transparente, mereu cu fața la cameră). */
@@ -290,7 +351,14 @@ export class World {
       f.rotation.y = t * (0.5 + i * 0.3);
     });
     this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
-    this.glow.intensity = 0.45 + night * 0.6;
+    // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.
+    this.pipeline.bloomWeight = 0.25 + night * 0.45;
+    this.pipeline.bloomThreshold = 0.85 - night * 0.25;
+    // Fumul e mai închis noaptea.
+    for (const ps of this.smoke) {
+      const v = 0.55 - night * 0.35;
+      ps.color1 = new Color4(v, v + 0.02, v + 0.05, 0.35);
+    }
 
     // Ceața de la margini: se mișcă încet, se întunecă noaptea.
     this.fogMat.emissiveColor = mix(hex("#e3ebf1"), hex("#26334a"), night);

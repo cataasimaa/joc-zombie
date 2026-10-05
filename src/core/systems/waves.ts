@@ -1,5 +1,5 @@
 // Ziua și noaptea. Ziua (60 s) construiești; noaptea atacă zombii.
-// Fiecare noapte e mai lungă decât precedenta. În zori, zombii rămași fug.
+// Fiecare noapte e mai lungă decât precedenta. În zori, zombii rămași iau foc și mor încet.
 
 import { CONFIG, type ZombieType } from "../config";
 import { nextRandom } from "../math";
@@ -13,9 +13,12 @@ import { spawnZombie } from "./zombies";
 export function waveComposition(wave: number, playerCount: number): ZombieType[] {
   const w = CONFIG.waves;
   const total = Math.round((w.baseCount + (wave - 1) * w.countPerWave) * (1 + (playerCount - 1) * w.extraPerPlayer));
-  const runners = wave >= w.runnersFromWave ? Math.round(total * w.runnerShare) : 0;
-  const brutes = wave >= w.brutesFromWave ? Math.max(1, Math.round(total * w.bruteShare)) : 0;
-  const walkers = Math.max(0, total - runners - brutes);
+  const share = (from: number, pct: number) => (wave >= from ? Math.max(1, Math.round(total * pct)) : 0);
+  const runners = share(w.runnersFromWave, w.runnerShare);
+  const spitters = share(w.spittersFromWave, w.spitterShare);
+  const flyers = share(w.flyersFromWave, w.flyerShare);
+  const brutes = share(w.brutesFromWave, w.bruteShare);
+  const walkers = Math.max(0, total - runners - spitters - flyers - brutes);
 
   // Îi amestecăm uniform: alergătorii și brutele apar printre cei normali, nu toți la final.
   const list: ZombieType[] = Array(walkers).fill("walker");
@@ -23,6 +26,8 @@ export function waveComposition(wave: number, playerCount: number): ZombieType[]
     for (let i = 0; i < n; i++) list.splice(Math.floor(((i + 1) * list.length) / (n + 1)), 0, type);
   };
   insertEvenly("runner", runners);
+  insertEvenly("spitter", spitters);
+  insertEvenly("flyer", flyers);
   insertEvenly("brute", brutes);
   if ((w.bossWaves as readonly number[]).includes(wave)) list.push("boss");
   return list;
@@ -58,9 +63,9 @@ function startDay(state: GameState, events: GameEvent[]): void {
   state.wavesCompleted++;
   const wood = woodIncomeFor(state.wave);
   for (const p of Object.values(state.players)) p.wood += wood;
-  // Zombii rămași fug de lumină.
+  // Zombii rămași iau foc în lumina zilei și mor încet.
   state.spawnQueue = [];
-  for (const z of state.zombies) z.fleeing = true;
+  for (const z of state.zombies) z.burning = true;
   events.push({ type: "dawn", wave: state.wave, wood });
   if (state.wave >= state.totalWaves) {
     state.phase = "victory";
@@ -96,6 +101,6 @@ export function updateWaves(state: GameState, dt: number, events: GameEvent[]): 
   }
 
   // Zorii vin când se termină noaptea, sau mai devreme dacă ai omorât tot ce a venit.
-  const allDead = state.spawnQueue.length === 0 && state.zombies.every((z) => z.fleeing);
+  const allDead = state.spawnQueue.length === 0 && state.zombies.every((z) => z.burning);
   if (state.phaseTimer <= 0 || allDead) startDay(state, events);
 }

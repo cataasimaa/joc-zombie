@@ -2,7 +2,7 @@
 // Schimbă valorile aici ca să faci jocul mai ușor sau mai greu.
 
 export type HeroClass = "assault" | "sniper" | "tank" | "healer";
-export type ZombieType = "walker" | "runner" | "brute" | "boss";
+export type ZombieType = "walker" | "runner" | "spitter" | "flyer" | "brute" | "boss";
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 export type ShopRarity = "nothing" | Rarity;
 
@@ -11,9 +11,34 @@ export interface HeroStats {
   speed: number;
   radius: number;
   range: number;
+  /** Damage pe glonț (sau pe alică). */
   damage: number;
-  /** Secunde între gloanțe. */
+  /** Secunde între focuri. */
   fireInterval: number;
+  /** Gloanțe în încărcător și cât durează reîncărcarea. */
+  magazine: number;
+  reloadTime: number;
+  /** Câte alice pleacă la un foc (pușcă cu alice) și cât de împrăștiate (radiani). */
+  pellets: number;
+  spread: number;
+  /** Prin câți zombi trece glonțul. */
+  pierce: number;
+}
+
+export interface ZombieStats {
+  hp: number;
+  speed: number;
+  radius: number;
+  damage: number;
+  attackInterval: number;
+  /** Șansa (0..1) să lase o monedă și cât valorează. */
+  coinChance: number;
+  coins: number;
+  xp: number;
+  /** Atac de la distanță (scuipă): raza de la care trage. 0 = doar corp la corp. */
+  rangedRange: number;
+  /** Zboară: trece peste ziduri, case și brazi. */
+  flying: boolean;
 }
 
 export const CONFIG = {
@@ -31,10 +56,10 @@ export const CONFIG = {
   },
 
   heroes: {
-    assault: { maxHp: 160, speed: 7, radius: 0.6, range: 12, damage: 9, fireInterval: 0.18 },
-    sniper: { maxHp: 120, speed: 6.5, radius: 0.6, range: 22, damage: 42, fireInterval: 1.1 },
-    tank: { maxHp: 420, speed: 6, radius: 0.75, range: 7, damage: 24, fireInterval: 0.45 },
-    healer: { maxHp: 140, speed: 7, radius: 0.6, range: 10, damage: 11, fireInterval: 0.35 },
+    assault: { maxHp: 160, speed: 7, radius: 0.6, range: 13, damage: 10, fireInterval: 0.13, magazine: 24, reloadTime: 1.9, pellets: 1, spread: 0, pierce: 1 },
+    sniper: { maxHp: 120, speed: 6.5, radius: 0.6, range: 22, damage: 46, fireInterval: 0.85, magazine: 5, reloadTime: 2.4, pellets: 1, spread: 0, pierce: 2 },
+    tank: { maxHp: 420, speed: 6, radius: 0.75, range: 8, damage: 10, fireInterval: 0.7, magazine: 6, reloadTime: 2.6, pellets: 5, spread: 0.22, pierce: 0 },
+    healer: { maxHp: 140, speed: 7, radius: 0.6, range: 11, damage: 12, fireInterval: 0.28, magazine: 14, reloadTime: 1.6, pellets: 1, spread: 0, pierce: 0 },
   } satisfies Record<HeroClass, HeroStats>,
 
   heroCommon: {
@@ -44,36 +69,47 @@ export const CONFIG = {
     /** HP pe secundă reparat (Tank-ul repară de 3 ori mai repede). */
     repairRate: 12,
     tankRepairMultiplier: 3,
-    /** Assault Rifle: fiecare glonț lovește și un al doilea zombie, cu atât din damage. */
-    assaultSecondaryDamage: 0.5,
+    /** Tank-ul primește cu atât mai puțin damage. */
+    tankArmor: 0.25,
     sniperCritChance: 0.2,
     sniperCritMultiplier: 2.5,
+    /** Healer: aură care vindecă eroii din jur (inclusiv pe el). */
+    healerAuraRadius: 7,
+    healerAuraPerSecond: 3,
+    /** Ajutor la ochit: dacă glonțul trece pe lângă, prinde zombiul din acest con (radiani). */
+    aimAssist: 0.16,
+    /** Lățimea „glonțului” (cât de aproape trebuie să treacă de un zombie ca să-l lovească). */
+    bulletWidth: 0.35,
   },
 
-  /** Nivelul de la care se deblochează abilitatea ultimate. */
-  ultLevel: 4,
-
   zombies: {
-    walker: { hp: 40, speed: 2.4, radius: 0.6, damage: 10, attackInterval: 1, coins: 5, xp: 10 },
-    runner: { hp: 22, speed: 4.6, radius: 0.5, damage: 6, attackInterval: 0.7, coins: 4, xp: 8 },
-    brute: { hp: 180, speed: 1.6, radius: 0.95, damage: 30, attackInterval: 1.4, coins: 12, xp: 30 },
-    boss: { hp: 1400, speed: 1.4, radius: 1.5, damage: 70, attackInterval: 1.6, coins: 60, xp: 150 },
-  } satisfies Record<ZombieType, {
-    hp: number; speed: number; radius: number; damage: number; attackInterval: number; coins: number; xp: number;
-  }>,
+    walker: { hp: 48, speed: 2.4, radius: 0.6, damage: 11, attackInterval: 1, coinChance: 0.5, coins: 5, xp: 10, rangedRange: 0, flying: false },
+    runner: { hp: 26, speed: 5.6, radius: 0.5, damage: 7, attackInterval: 0.7, coinChance: 0.4, coins: 4, xp: 8, rangedRange: 0, flying: false },
+    spitter: { hp: 40, speed: 2.0, radius: 0.6, damage: 12, attackInterval: 2.2, coinChance: 0.6, coins: 6, xp: 14, rangedRange: 9, flying: false },
+    flyer: { hp: 30, speed: 4.0, radius: 0.55, damage: 8, attackInterval: 1, coinChance: 0.4, coins: 5, xp: 12, rangedRange: 0, flying: true },
+    brute: { hp: 216, speed: 1.6, radius: 0.95, damage: 32, attackInterval: 1.4, coinChance: 1, coins: 10, xp: 30, rangedRange: 0, flying: false },
+    boss: { hp: 1700, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 150, rangedRange: 0, flying: false },
+  } satisfies Record<ZombieType, ZombieStats>,
 
   zombieCommon: {
-    /** HP-ul crește cu 18% la fiecare val. */
-    hpGrowthPerWave: 0.24,
+    /** HP-ul crește cu 19% la fiecare noapte. */
+    hpGrowthPerWave: 0.19,
     /** Dacă un erou e mai aproape de atât, zombiul îl atacă pe el în loc de adăpost. */
     aggroRadius: 5,
     /** Fiecare jucător în plus: +25% HP la zombi. */
     hpPerExtraPlayer: 0.25,
+    /** În zori zombii iau foc: pierd acest procent din HP-ul maxim pe secundă și merg mai încet. */
+    dawnBurnPerSecond: 0.09,
+    burnSlow: 0.5,
+    /** Scuipatul: viteza proiectilului. */
+    spitSpeed: 11,
+    /** Zburătorii plutesc la înălțimea asta (doar vizual). */
+    flyHeight: 2.6,
   },
 
   tower: {
-    radius: 1,
-    /** Tier-urile 1–4: tier 1 e disponibil mereu, restul se deblochează din cufere. */
+    radius: 0.8,
+    /** Tier-urile 1–4: tier 1 e disponibil mereu, restul se deblochează din magazin. */
     tiers: [
       { damage: 14, range: 11, fireInterval: 0.6, cost: 30 },
       { damage: 24, range: 12, fireInterval: 0.5, cost: 30 },
@@ -108,14 +144,14 @@ export const CONFIG = {
   },
 
   economy: {
-    /** Lemn = resursa pentru construcții. Monedele sunt pentru cufere. */
+    /** Lemn = resursa pentru construcții. Monedele sunt pentru magazin. */
     startWood: 70,
-    /** Lemn primit la finalul fiecărui val: base + perWave * val. */
+    /** Lemn primit în fiecare zori: base + perWave * noapte. */
     woodIncomeBase: 30,
     woodIncomePerWave: 10,
     startTowerSlots: 3,
     startBarricadeSlots: 8,
-    /** La fiecare N valuri terminate: +1 slot de turn și +2 sloturi de baricadă. */
+    /** La fiecare N nopți: +1 slot de turn și +4 sloturi de zid. */
     slotEveryWaves: 3,
     barricadeSlotsPerStep: 4,
   },
@@ -125,6 +161,8 @@ export const CONFIG = {
     /** Monedele din această rază „zboară” spre erou. */
     magnetRadius: 3.5,
     magnetSpeed: 12,
+    /** Monedele neluate dispar după atâtea secunde. */
+    lifetime: 30,
   },
 
   xp: {
@@ -151,27 +189,28 @@ export const CONFIG = {
     extraPerPlayer: 0.5,
     baseCount: 12,
     countPerWave: 7,
-    runnersFromWave: 3,
-    runnerShare: 0.25,
+    runnersFromWave: 2,
+    runnerShare: 0.2,
+    spittersFromWave: 3,
+    spitterShare: 0.1,
+    flyersFromWave: 4,
+    flyerShare: 0.08,
     brutesFromWave: 4,
-    bruteShare: 0.15,
+    bruteShare: 0.12,
     /** Nopțile care au un boss. */
     bossWaves: [5, 10],
   },
 
   shop: {
     /** Cât costă o încercare la magazin. */
-    cost: 25,
+    cost: 30,
     /** Șansele (suma = 1). Se afișează în joc. „nothing” = nu primești nimic. */
     odds: [
-      { rarity: "nothing", chance: 0.2 },
-      { rarity: "common", chance: 0.46 },
-      { rarity: "rare", chance: 0.23 },
-      { rarity: "epic", chance: 0.09 },
-      { rarity: "legendary", chance: 0.02 },
+      { rarity: "nothing", chance: 0.26 },
+      { rarity: "common", chance: 0.5 },
+      { rarity: "rare", chance: 0.17 },
+      { rarity: "epic", chance: 0.06 },
+      { rarity: "legendary", chance: 0.01 },
     ] as { rarity: ShopRarity; chance: number }[],
-    /** Limite, ca bonusurile să nu strice jocul. */
-    maxSpeedBonus: 0.5,
-    maxRepairBonus: 3,
   },
 } as const;

@@ -30,16 +30,18 @@ import {
   segmentEnds,
 } from "../core";
 import { Fx } from "./Fx";
-import { Materials } from "./ModelKit";
+import { Materials, ModelKit } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
 import { buildCoin, buildFlame, buildMine, buildTowerBase, buildTowerHead, buildWall, towerHeadY } from "./models/structures";
-import { PAL, mix } from "./palette";
+import { PAL, hex, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
 import { Prefab, World } from "./World";
 
-const CAMERA_OFFSET = new Vector3(0, 21, -15.5);
-const ZOMBIE_SCALE: Record<ZombieType, number> = { walker: 1, runner: 0.88, brute: 1, boss: 1 };
+const CAMERA_OFFSET = new Vector3(0, 20, -15);
+const ZOMBIE_SCALE: Record<ZombieType, number> = { walker: 1, runner: 0.88, spitter: 1, flyer: 1, brute: 1, boss: 1 };
 const HP_BAR_Y: Partial<Record<ZombieType, number>> = { brute: 2.7, boss: 4.4 };
+/** Turnurile sunt desenate puțin mai mici decât modelul (mai ușor de așezat). */
+const TOWER_SCALE = 0.85;
 
 /** Bară de viață care plutește deasupra unui obiect. */
 class HpBar {
@@ -77,10 +79,14 @@ interface HeroView {
   body: TransformNode;
   model: HeroModel;
   key: string;
-  bubble: Mesh;
   lastPos: Vec2;
   walk: number;
+  lastStepPhase: number;
+  stepSide: number;
   kneel: number;
+  recoil: number;
+  reload: number;
+  reloadTotal: number;
   dispose(): void;
 }
 
@@ -90,11 +96,13 @@ interface ZombieView {
   armR: TransformNode;
   legL: TransformNode;
   legR: TransformNode;
+  fire: TransformNode | null;
   bar: HpBar | null;
   type: ZombieType;
   walk: number;
   lastPos: Vec2;
   knock: number;
+  attack: number;
   lastBlood: number;
   dispose(): void;
 }
@@ -105,6 +113,7 @@ interface TowerView {
   head: TransformNode;
   flame: InstancedMesh;
   tier: number;
+  kick: number;
   dispose(): void;
 }
 
@@ -113,13 +122,6 @@ interface BarricadeView {
   parts: InstancedMesh[];
   key: string;
   bar: HpBar;
-  dispose(): void;
-}
-
-interface ZoneView {
-  root: TransformNode;
-  disc: Mesh;
-  flames: InstancedMesh[];
   dispose(): void;
 }
 
@@ -133,6 +135,9 @@ export class Renderer {
   private night = 0;
   private time = 0;
   private cameraOffset = CAMERA_OFFSET.clone();
+  private localHeroId: EntityId | null = null;
+  /** Câți pași a făcut eroul local de la ultima citire (pentru sunetul de pași). */
+  private steps = 0;
 
   private zombiePrefabs = {} as Record<ZombieType, { model: ZombieModel; body: Prefab; armL: Prefab; armR: Prefab; legL: Prefab; legR: Prefab }>;
   private towerBases: Prefab[] = [];
@@ -141,21 +146,24 @@ export class Renderer {
   private walls = new Map<string, Prefab>();
   private mine!: Prefab;
   private coin!: Prefab;
+  private glob!: Prefab;
 
   private heroViews = new Map<EntityId, HeroView>();
   private zombieViews = new Map<EntityId, ZombieView>();
-  private dying: { view: ZombieView; t: number }[] = [];
+  private dying: { view: ZombieView; t: number; burned: boolean }[] = [];
   private towerViews = new Map<EntityId, TowerView>();
   private barricadeViews = new Map<EntityId, BarricadeView>();
   private mineViews = new Map<EntityId, { root: TransformNode; light: InstancedMesh | undefined; dispose(): void }>();
   private coinViews = new Map<EntityId, InstancedMesh>();
-  private zoneViews = new Map<EntityId, ZoneView>();
-  private killedIds = new Set<EntityId>();
+  private projectileViews = new Map<EntityId, { mesh: InstancedMesh; trail: number; dispose(): void }>();
+  private killed = new Map<EntityId, boolean>();
   private shelterShake = 0;
 
   private ghostTower: TransformNode;
   private ghostWall: TransformNode;
   private ghostParts: Mesh[] = [];
+  private footTower: Mesh;
+  private footWall: Mesh;
   private rangeRing: Mesh;
   private selectRing: Mesh;
   private m: Record<string, StandardMaterial> = {};
@@ -173,26 +181,25 @@ export class Renderer {
     this.camera.maxZ = 160;
 
     this.mats = new Materials(this.scene);
-    this.world = new World(this.scene, this.mats);
+    this.world = new World(this.scene, this.mats, this.camera);
     this.fx = new Fx(this.scene, this.mats);
 
     const tint = (name: string, c: Color3, a: number) => (this.m[name] = this.mats.tint(name, c, a));
-    tint("ghostOk", new Color3(0.3, 1, 0.45), 0.45);
-    tint("ghostBad", new Color3(1, 0.25, 0.2), 0.45);
-    tint("range", PAL.ice, 0.55);
-    tint("select", PAL.gold, 0.8);
+    tint("ghostOk", new Color3(0.35, 1, 0.5), 0.3);
+    tint("ghostBad", new Color3(1, 0.3, 0.25), 0.3);
+    tint("footOk", new Color3(0.3, 1, 0.45), 0.65);
+    tint("footBad", new Color3(1, 0.25, 0.2), 0.65);
+    tint("range", PAL.ice, 0.5);
+    tint("select", PAL.gold, 0.85);
     tint("hpBg", new Color3(0.05, 0.06, 0.08), 0.75);
     tint("hpZombie", mix(PAL.blood, new Color3(1, 0.2, 0.2), 0.5), 1);
     tint("hpWall", mix(PAL.oldWood, PAL.gold, 0.5), 1);
-    tint("shield", PAL.ice, 0.25);
-    tint("invuln", PAL.gold, 0.3);
-    tint("healZone", mix(PAL.ice, new Color3(0.4, 1, 0.6), 0.5), 0.22);
-    tint("fireZone", PAL.fire, 0.18);
 
     this.createPrefabs();
 
-    // Fantome pentru construcție: aceeași formă ca turnul / zidul final.
+    // Fantome pentru construcție: aceeași formă ca turnul / zidul final, plus „baza” pe sol bine vizibilă.
     this.ghostTower = new TransformNode("ghostTower", this.scene);
+    this.ghostTower.scaling.setAll(TOWER_SCALE);
     this.ghostWall = new TransformNode("ghostWall", this.scene);
     const ghostOf = (sources: Mesh[], parent: TransformNode, y = 0) => {
       for (const s of sources) {
@@ -207,11 +214,15 @@ export class Renderer {
     ghostOf(this.towerBases[0].sources, this.ghostTower);
     ghostOf(this.towerHeads[0].sources, this.ghostTower, towerHeadY(1));
     ghostOf(this.walls.get("1")!.sources, this.ghostWall);
+    this.footTower = MeshBuilder.CreateDisc("footTower", { radius: CONFIG.tower.radius + 0.2, tessellation: 40 }, this.scene);
+    this.footTower.rotation.x = Math.PI / 2;
+    this.footWall = MeshBuilder.CreateBox("footWall", { width: CONFIG.barricade.length, height: 0.02, depth: CONFIG.barricade.thickness + 0.35 }, this.scene);
     this.rangeRing = MeshBuilder.CreateTorus("range", { diameter: 2, thickness: 0.05, tessellation: 64 }, this.scene);
     this.rangeRing.material = this.m.range;
     this.selectRing = MeshBuilder.CreateTorus("select", { diameter: 2, thickness: 0.1, tessellation: 40 }, this.scene);
     this.selectRing.material = this.m.select;
-    for (const g of [this.ghostTower, this.ghostWall, this.rangeRing, this.selectRing]) g.setEnabled(false);
+    for (const g of [this.ghostTower, this.ghostWall, this.footTower, this.footWall, this.rangeRing, this.selectRing]) g.setEnabled(false);
+    for (const g of [this.footTower, this.footWall, this.rangeRing, this.selectRing]) g.isPickable = false;
 
     window.addEventListener("resize", () => this.engine.resize());
   }
@@ -221,7 +232,7 @@ export class Renderer {
     const caster = (p: Prefab) => {
       for (const src of p.sources) this.world.shadows.addShadowCaster(src);
     };
-    for (const type of ["walker", "runner", "brute", "boss"] as ZombieType[]) {
+    for (const type of ["walker", "runner", "spitter", "flyer", "brute", "boss"] as ZombieType[]) {
       const model = buildZombie(s, this.mats, type);
       const prefab = {
         model,
@@ -249,6 +260,9 @@ export class Renderer {
     }
     this.mine = new Prefab(buildMine(s, this.mats));
     this.coin = new Prefab([buildCoin(s, this.mats)]);
+    const gk = new ModelKit(s, this.mats, 1300);
+    gk.sphere(0.4, 8, {}, { color: hex("#9fe8c0"), mat: "glow" });
+    this.glob = new Prefab([gk.buildOne("glob")]);
   }
 
   // ---------- Sincronizare cu starea ----------
@@ -256,16 +270,18 @@ export class Renderer {
   /** Apelată o dată pe cadru: aduce scena la zi cu starea jocului. */
   sync(state: GameState, events: GameEvent[], localPlayerId: string, dt: number): void {
     this.time += dt;
-    this.killedIds.clear();
+    this.killed.clear();
+    const me = state.players[localPlayerId];
+    this.localHeroId = me?.heroId ?? null;
     for (const e of events) this.handleEvent(state, e);
 
     this.syncHeroes(state, dt);
     this.syncZombies(state, dt);
-    this.syncTowers(state);
+    this.syncTowers(state, dt);
     this.syncBarricades(state);
     this.syncMines(state);
     this.syncCoins(state);
-    this.syncZones(state);
+    this.syncProjectiles(state);
     this.updateDying(dt);
     this.fx.update(dt);
 
@@ -281,13 +297,24 @@ export class Renderer {
     this.night += (target - this.night) * Math.min(1, dt * 0.5);
 
     // Camera urmărește lin eroul local; felinarul lui se aprinde noaptea.
-    const me = state.players[localPlayerId];
     const hero = me && state.heroes.find((h) => h.id === me.heroId);
     const focus = hero ? new Vector3(hero.pos.x, terrainHeight(hero.pos.x, hero.pos.z), hero.pos.z) : Vector3.Zero();
     Vector3.LerpToRef(this.camera.position, focus.add(this.cameraOffset), Math.min(1, dt * 5), this.camera.position);
     this.camera.setTarget(this.camera.position.subtract(this.cameraOffset));
     if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.6, hero.pos.z);
     this.world.update(dt, this.night, focus, this.camera.position);
+  }
+
+  /** Cât de „noapte” e acum (0..1) — util pentru sunet și muzică. */
+  get nightAmount(): number {
+    return this.night;
+  }
+
+  /** Câți pași a făcut eroul local de la ultima întrebare (pentru sunetul de pași). */
+  drainSteps(): number {
+    const n = this.steps;
+    this.steps = 0;
+    return n;
   }
 
   /** Poziția pe ecran (în pixeli CSS) a unui punct de pe hartă. */
@@ -308,13 +335,12 @@ export class Renderer {
     this.cameraOffset.set(x, y, z);
   }
 
-  /** Cât de „noapte” e acum (0..1) — util pentru sunet. */
-  get nightAmount(): number {
-    return this.night;
-  }
-
   private at(p: Vec2, y = 0): Vector3 {
     return new Vector3(p.x, terrainHeight(p.x, p.z) + y, p.z);
+  }
+
+  private zombieY(type: ZombieType): number {
+    return CONFIG.zombies[type].flying ? CONFIG.zombieCommon.flyHeight : 0;
   }
 
   private handleEvent(state: GameState, e: GameEvent): void {
@@ -322,157 +348,114 @@ export class Renderer {
       case "shot": {
         if (e.source === "tower") {
           const t = state.towers.find((x) => x.pos.x === e.from.x && x.pos.z === e.from.z);
+          const view = t && this.towerViews.get(t.id);
+          if (view) view.kick = 1;
           const f = t?.facing ?? 0;
-          const from = this.at(e.from, towerHeadY(t?.tier ?? 1) + 0.6).add(new Vector3(Math.sin(f), 0, Math.cos(f)).scale(1.1));
-          this.fx.tracer(from, this.at(e.to, 1.1), mix(PAL.fire, PAL.bone, 0.4), 0.07, 0.08);
-          this.fx.muzzle(from, PAL.fire, 0.3);
+          const from = this.at(e.from, (towerHeadY(t?.tier ?? 1) + 0.6) * TOWER_SCALE).add(new Vector3(Math.sin(f), 0, Math.cos(f)).scale(0.8));
+          const target = state.zombies.find((z) => Math.abs(z.pos.x - e.to.x) < 0.01 && Math.abs(z.pos.z - e.to.z) < 0.01);
+          this.fx.bolt(from, this.at(e.to, 1.1 + (target ? this.zombieY(target.type) : 0)));
+          this.fx.muzzle(from, PAL.fire, 0.25);
           break;
         }
         const hero = e.heroId !== undefined ? state.heroes.find((h) => h.id === e.heroId) : undefined;
         const view = hero && this.heroViews.get(hero.id);
         const from = hero && view ? this.muzzleOf(hero, view) : this.at(e.from, 1.3);
+        if (view) view.recoil = 1;
         const weapon = hero ? state.players[hero.playerId]?.weapon : undefined;
         const color = e.crit ? mix(PAL.fire, PAL.blood, 0.2) : weapon === "iceLance" ? PAL.ice : mix(PAL.fire, PAL.bone, 0.55);
-        this.fx.tracer(from, this.at(e.to, 1.1), color, e.crit ? 0.12 : 0.05, e.crit ? 0.12 : 0.06);
+        this.fx.tracer(from, this.at(e.to, 1.1), color, e.crit ? 0.09 : 0.04, e.crit ? 0.1 : 0.05);
         this.fx.muzzle(from, weapon === "iceLance" ? PAL.ice : PAL.fire, 0.3);
+        break;
+      }
+      case "reloadStart": {
+        const v = this.heroViews.get(e.heroId);
+        if (v) {
+          v.reload = e.time;
+          v.reloadTotal = e.time;
+        }
         break;
       }
       case "zombieHit": {
         const view = this.zombieViews.get(e.id);
-        // Limităm sângele per zombie (focul de la Molotov lovește continuu).
-        if (view && this.time - view.lastBlood < 0.08) break;
+        // Limităm sângele per zombie (să nu facem sute de particule pe secundă).
+        if (view && this.time - view.lastBlood < 0.07) break;
         if (view) {
           view.lastBlood = this.time;
           view.knock = 1;
         }
-        const h = view ? (HP_BAR_Y[view.type] ?? 1.6) : 1.4;
-        const dir = new Vector3(e.pos.x - e.from.x, 0.2, e.pos.z - e.from.z);
-        this.fx.burst("blood", this.at(e.pos, h * 0.7), dir.lengthSquared() > 0.01 ? dir : null, 5, 4, 0.09);
-        if (Math.random() < 0.25) this.fx.decal(e.pos.x + (Math.random() - 0.5), e.pos.z + (Math.random() - 0.5), 0.35);
+        const z = state.zombies.find((x) => x.id === e.id);
+        const h = (view ? (HP_BAR_Y[view.type] ?? 1.5) * 0.65 : 1.1) + (z ? this.zombieY(z.type) : 0);
+        const dir = new Vector3(e.pos.x - e.from.x, 0.25, e.pos.z - e.from.z);
+        this.fx.blood(this.at(e.pos, h), dir.lengthSquared() > 0.01 ? dir : null, view?.type === "boss" || view?.type === "brute" ? 1.6 : 1);
+        if (Math.random() < 0.3) this.fx.decal(e.pos.x + dir.x * 0.1 + (Math.random() - 0.5), e.pos.z + dir.z * 0.1 + (Math.random() - 0.5), 0.6);
         break;
       }
       case "zombieDied": {
         const big = e.zombieType === "boss" ? 3 : e.zombieType === "brute" ? 1.8 : 1;
-        this.fx.burst("blood", this.at(e.pos, 1), null, Math.round(10 * big), 4.5, 0.12);
-        if (big > 1) this.fx.burst("bone", this.at(e.pos, 1.2), null, 8, 5, 0.12);
-        this.fx.decal(e.pos.x, e.pos.z, 0.9 * big);
-        this.killedIds.add(e.id);
+        if (!e.burned) {
+          this.fx.blood(this.at(e.pos, 1), null, 1.5 * big);
+          this.fx.decal(e.pos.x, e.pos.z, 1.4 * big);
+          if (big > 1) this.fx.burst("bone", this.at(e.pos, 1.2), null, 8, 5, 0.12);
+        } else {
+          this.fx.burst("spark", this.at(e.pos, 1), null, 10, 3, 0.08);
+        }
+        if (e.zombieType === "spitter") this.fx.burst("venom", this.at(e.pos, 1.2), null, 14, 4, 0.1);
+        this.killed.set(e.id, e.burned);
         break;
       }
+      case "zombieAttack": {
+        const v = this.zombieViews.get(e.id);
+        if (v) v.attack = 1;
+        break;
+      }
+      case "heroHit": {
+        // Sânge din erou, în direcția opusă loviturii.
+        const dir = new Vector3(e.pos.x - e.from.x, 0.3, e.pos.z - e.from.z);
+        this.fx.blood(this.at(e.pos, 1.3), dir.lengthSquared() > 0.01 ? dir : null, 0.8);
+        if (Math.random() < 0.5) this.fx.decal(e.pos.x + (Math.random() - 0.5) * 0.6, e.pos.z + (Math.random() - 0.5) * 0.6, 0.45);
+        break;
+      }
+      case "spit":
+        this.fx.burst("venom", this.at(e.from, 1.6), new Vector3(e.to.x - e.from.x, 0.5, e.to.z - e.from.z), 5, 3, 0.07);
+        break;
+      case "projectileHit":
+        this.fx.burst("venom", this.at(e.pos, 1), null, 12, 3.5, 0.09);
+        this.fx.ring(this.at(e.pos, 0.1), 1.2, hex("#9fe8c0"), 0.35);
+        break;
       case "barricadeHit":
-        this.fx.burst("wood", this.at(e.pos, 0.9), null, 3, 3, 0.1);
+        this.fx.burst("wood", this.at(e.pos, 0.9), null, 3, 3, 0.08);
         break;
       case "barricadeDestroyed":
-        this.fx.burst("wood", this.at(e.pos, 0.8), null, 18, 6, 0.16);
-        this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.2);
+        this.fx.burst("wood", this.at(e.pos, 0.8), null, 18, 6, 0.14);
+        this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.18);
         break;
       case "mineExploded":
         this.fx.explosion(this.at(e.pos), e.radius);
         break;
       case "shelterHit":
         this.shelterShake = 1;
-        if (Math.random() < 0.4) this.fx.burst("wood", new Vector3((Math.random() - 0.5) * 4, 1.5, -2.6), null, 3, 3, 0.1);
-        break;
-      case "healed":
-        this.fx.ring(this.at(e.pos, 0.15), 1.6, mix(PAL.ice, new Color3(0.4, 1, 0.6), 0.5), 0.5);
+        if (Math.random() < 0.4) this.fx.burst("wood", new Vector3((Math.random() - 0.5) * 4, 1.5, -2.6), null, 3, 3, 0.08);
         break;
       case "levelUp": {
         const h = state.heroes.find((x) => x.id === e.heroId);
         if (h) {
           this.fx.ring(this.at(h.pos, 0.15), 2.6, PAL.gold, 0.8);
-          this.fx.burst("spark", this.at(h.pos, 1.5), null, 16, 5, 0.08);
+          this.fx.burst("spark", this.at(h.pos, 1.5), null, 16, 5, 0.07);
         }
-        break;
-      }
-      case "heroRevived": {
-        const h = state.heroes.find((x) => x.id === e.id);
-        if (h) this.fx.ring(this.at(h.pos, 0.15), 2.6, PAL.ice, 0.8);
         break;
       }
       case "towerUpgraded": {
         const t = state.towers.find((x) => x.id === e.id);
-        if (t) this.fx.burst("spark", this.at(t.pos, 2.5), null, 14, 4, 0.08);
+        if (t) this.fx.burst("spark", this.at(t.pos, 2.5), null, 14, 4, 0.07);
         break;
       }
       case "barricadePlaced":
       case "towerPlaced":
       case "barricadeChanged": {
         const b = state.barricades.find((x) => x.id === e.id) ?? state.towers.find((x) => x.id === e.id);
-        if (b) this.fx.burst("snow", this.at(b.pos, 0.3), null, 10, 3, 0.18);
+        if (b) this.fx.burst("snow", this.at(b.pos, 0.3), null, 12, 3, 0.16);
         break;
       }
-      case "ability":
-        this.abilityFx(e);
-        break;
-    }
-  }
-
-  private abilityFx(e: Extract<GameEvent, { type: "ability" }>): void {
-    const pos = this.at(e.pos, 0.15);
-    const to = e.to ? this.at(e.to, 0.15) : null;
-    const up = (v: Vector3, y: number) => v.add(new Vector3(0, y, 0));
-    switch (e.ability) {
-      case "grenade":
-        if (to) {
-          this.fx.tracer(up(pos, 1.4), up(to, 0.3), PAL.fire, 0.12, 0.15);
-          this.fx.explosion(to, e.radius);
-        }
-        break;
-      case "molotov":
-        if (to) {
-          this.fx.tracer(up(pos, 1.4), up(to, 0.3), PAL.fire, 0.1, 0.15);
-          this.fx.burst("spark", up(to, 0.3), null, 18, 5, 0.1);
-          this.fx.ring(to, e.radius, PAL.fire, 0.5);
-        }
-        break;
-      case "airstrike":
-        for (let i = 0; i < 7; i++) {
-          const a = (i / 7) * Math.PI * 2;
-          const d = i === 0 ? 0 : e.radius * 0.6;
-          this.fx.explosion(this.at({ x: e.pos.x + Math.cos(a) * d, z: e.pos.z + Math.sin(a) * d }), 3.2);
-        }
-        break;
-      case "spray":
-        if (to) {
-          const base = Math.atan2(to.x - pos.x, to.z - pos.z);
-          for (let i = -3; i <= 3; i++) {
-            const a = base + i * 0.17;
-            this.fx.tracer(up(pos, 1.2), pos.add(new Vector3(Math.sin(a) * e.radius, 1.0, Math.cos(a) * e.radius)), mix(PAL.fire, PAL.bone, 0.5), 0.06, 0.1);
-          }
-        }
-        break;
-      case "pierce":
-        if (to) this.fx.tracer(up(pos, 1.2), up(to, 1.0), PAL.fire, 0.22, 0.25);
-        break;
-      case "iceShot":
-        if (to) {
-          this.fx.ring(to, e.radius, PAL.ice, 0.6);
-          this.fx.burst("ice", up(to, 0.8), null, 20, 5, 0.1);
-          this.fx.burst("snow", up(to, 0.3), null, 10, 3, 0.15);
-        }
-        break;
-      case "slam":
-        this.fx.ring(pos, e.radius, PAL.snowShadow, 0.5);
-        this.fx.burst("snow", up(pos, 0.3), null, 24, 6, 0.2);
-        break;
-      case "taunt":
-      case "fortress":
-        this.fx.ring(pos, e.radius, PAL.blood, 0.7);
-        break;
-      case "shield":
-        this.fx.ring(pos, 1.6, PAL.ice, 0.4);
-        break;
-      case "holyLight":
-        this.fx.ring(pos, e.radius, PAL.gold, 0.9);
-        this.fx.ring(pos, e.radius * 0.5, PAL.ice, 0.7);
-        this.fx.burst("ice", up(pos, 1), null, 24, 6, 0.08);
-        break;
-      case "headshot":
-      case "assassinate":
-        this.fx.ring(pos, 1.5, PAL.blood, 0.4);
-        break;
-      default:
-        this.fx.ring(pos, Math.max(1.8, e.radius), mix(PAL.ice, new Color3(0.4, 1, 0.6), 0.5), 0.6);
     }
   }
 
@@ -492,23 +475,25 @@ export class Renderer {
     const root = new TransformNode("hero", this.scene);
     const body = new TransformNode("heroBody", this.scene);
     body.parent = root;
-    for (const m of [...model.body, model.legL, model.legR]) {
-      m.parent = body;
-      this.world.shadows.addShadowCaster(m);
+    for (const m of model.body) m.parent = body;
+    for (const leg of [model.legL, model.legR]) {
+      leg.hip.parent = root;
+      for (const m of leg.meshes) this.world.shadows.addShadowCaster(m);
     }
-    const bubble = MeshBuilder.CreateSphere("bubble", { diameter: 2.7, segments: 10 }, this.scene);
-    bubble.position.y = 1.1;
-    bubble.parent = root;
-    bubble.isPickable = false;
+    for (const m of model.body) this.world.shadows.addShadowCaster(m);
     return {
       root,
       body,
       model,
       key: this.heroLookKey(state, hero),
-      bubble,
       lastPos: { ...hero.pos },
       walk: 0,
+      lastStepPhase: 0,
+      stepSide: 1,
       kneel: hero.alive ? 0 : 1,
+      recoil: 0,
+      reload: 0,
+      reloadTotal: 1,
       dispose: () => root.dispose(),
     };
   }
@@ -534,30 +519,57 @@ export class Renderer {
       }
       const y = terrainHeight(hero.pos.x, hero.pos.z);
       view.root.position.set(hero.pos.x, y, hero.pos.z);
-      view.root.rotation.y = hero.facing;
+      // Rotire lină spre direcția în care privește.
+      let diff = hero.facing - view.root.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      view.root.rotation.y += diff * Math.min(1, dt * 18);
 
-      // Mers: picioarele se leagănă, corpul se mișcă ușor în sus și în jos.
+      // Mers: coapsa se leagănă, genunchiul se îndoaie când piciorul vine în față,
+      // corpul urcă și coboară la fiecare pas și se apleacă puțin în față.
       const moved = Math.hypot(hero.pos.x - view.lastPos.x, hero.pos.z - view.lastPos.z);
       view.lastPos = { ...hero.pos };
       const speed = moved / Math.max(dt, 0.001);
-      view.walk += speed * dt * 2.4;
-      const amp = Math.min(1, speed / 4);
-      view.model.legL.rotation.x = Math.sin(view.walk) * 0.7 * amp;
-      view.model.legR.rotation.x = -Math.sin(view.walk) * 0.7 * amp;
+      const amp = Math.min(1, speed / 5);
+      view.walk += speed * dt * 1.9;
+      const w = view.walk;
+      const { legL, legR } = view.model;
+      legL.hip.rotation.x = Math.sin(w) * 0.75 * amp;
+      legR.hip.rotation.x = -Math.sin(w) * 0.75 * amp;
+      legL.knee.rotation.x = Math.max(0, -Math.cos(w)) * 1.1 * amp;
+      legR.knee.rotation.x = Math.max(0, Math.cos(w)) * 1.1 * amp;
+      const bob = Math.abs(Math.sin(w)) * 0.07 * amp;
+      const breathe = Math.sin(this.time * 2.2) * 0.012 * (1 - amp);
 
-      // Căzut: îngenunchează (nu dispare), ca Healer-ul să-l poată reînvia.
-      view.kneel += ((hero.alive ? 0 : 1) - view.kneel) * Math.min(1, dt * 6);
-      const k = view.kneel;
-      view.body.position.y = Math.abs(Math.sin(view.walk)) * 0.06 * amp - k * 0.5;
-      view.body.rotation.x = k * 0.45;
-      if (k > 0.01) {
-        view.model.legL.rotation.x = -k * 1.5;
-        view.model.legR.rotation.x = k * 0.2;
+      // Pași: o urmă în zăpadă și un mic nor de zăpadă la fiecare jumătate de ciclu.
+      const phase = Math.floor(w / Math.PI);
+      if (phase !== view.lastStepPhase && amp > 0.2 && hero.alive) {
+        view.lastStepPhase = phase;
+        view.stepSide *= -1;
+        const side = view.stepSide * 0.14;
+        const fx = hero.pos.x + Math.cos(view.root.rotation.y) * side;
+        const fz = hero.pos.z - Math.sin(view.root.rotation.y) * side;
+        this.fx.footprint(fx, fz, view.root.rotation.y);
+        this.fx.burst("snow", new Vector3(fx, y + 0.05, fz), null, 2, 1.2, 0.06);
+        if (hero.id === this.localHeroId) this.steps++;
       }
 
-      const b = hero.buffs;
-      view.bubble.setEnabled(hero.alive && (b.shield > 0 || b.invulnerable > 0));
-      view.bubble.material = b.invulnerable > 0 ? this.m.invuln : this.m.shield;
+      // Recul la tragere, animație de reîncărcare, îngenunchere la moarte.
+      view.recoil = Math.max(0, view.recoil - dt * 12);
+      view.reload = Math.max(0, view.reload - dt);
+      const r = view.reloadTotal > 0 ? view.reload / view.reloadTotal : 0;
+      const reloadPose = view.reload > 0 ? Math.sin(r * Math.PI) : 0;
+      view.kneel += ((hero.alive ? 0 : 1) - view.kneel) * Math.min(1, dt * 6);
+      const k = view.kneel;
+      view.body.position.y = bob + breathe - k * 0.5;
+      view.body.position.z = -view.recoil * 0.06;
+      view.body.rotation.x = amp * 0.12 - view.recoil * 0.08 + reloadPose * 0.35 + k * 0.45;
+      view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp;
+      if (k > 0.01) {
+        legL.hip.rotation.x = -k * 1.4;
+        legL.knee.rotation.x = k * 1.5;
+        legR.hip.rotation.x = k * 0.3;
+        legR.knee.rotation.x = k * 1.8;
+      }
     });
   }
 
@@ -584,11 +596,13 @@ export class Renderer {
       armR: pivot(prefab.armR, shoulder[0], shoulder[1], shoulder[2]),
       legL: pivot(prefab.legL, -hip[0], hip[1], 0),
       legR: pivot(prefab.legR, hip[0], hip[1], 0),
+      fire: null,
       bar,
       type,
       walk: (id * 1.7) % 6,
       lastPos: { ...pos },
       knock: 0,
+      attack: 0,
       lastBlood: -1,
       dispose: () => {
         root.dispose();
@@ -598,9 +612,25 @@ export class Renderer {
     return view;
   }
 
+  /** Flăcări pe un zombie care arde în zori. */
+  private ignite(view: ZombieView): void {
+    const fire = new TransformNode("zFire", this.scene);
+    fire.parent = view.root;
+    const big = view.type === "boss" ? 2.2 : view.type === "brute" ? 1.5 : 1;
+    for (let i = 0; i < 4; i++) {
+      const node = new TransformNode("zf", this.scene);
+      node.parent = fire;
+      node.position.set(Math.cos(i * 1.7) * 0.25 * big, 0.6 * big + i * 0.25 * big, Math.sin(i * 1.7) * 0.2 * big);
+      node.scaling.setAll(0.9 * big);
+      this.flame.instance("zFlame", node);
+    }
+    view.fire = fire;
+  }
+
   private syncZombies(state: GameState, dt: number): void {
     syncMap(this.zombieViews, state.zombies, (z) => this.createZombieView(z.type, z.id, z.pos), (view, z) => {
-      const y = terrainHeight(z.pos.x, z.pos.z);
+      const flying = CONFIG.zombies[z.type].flying;
+      const y = terrainHeight(z.pos.x, z.pos.z) + (flying ? CONFIG.zombieCommon.flyHeight + Math.sin(this.time * 3 + z.id) * 0.25 : 0);
       const moved = Math.hypot(z.pos.x - view.lastPos.x, z.pos.z - view.lastPos.z);
       view.lastPos = { ...z.pos };
       const speed = moved / Math.max(dt, 0.001);
@@ -609,27 +639,49 @@ export class Renderer {
       const amp = Math.min(1, speed / 1.5);
       const w = view.walk;
 
-      // Lovit: un mic recul înapoi.
+      // Lovit: un mic recul înapoi. Atac: un salt scurt înainte cu brațele.
       view.knock = Math.max(0, view.knock - dt * 6);
-      view.root.position.set(z.pos.x - Math.sin(z.facing) * view.knock * 0.15, y, z.pos.z - Math.cos(z.facing) * view.knock * 0.15);
-      view.root.rotation.set(view.knock * -0.15 + (runner ? 0.15 : 0), z.facing, Math.sin(w * 0.5) * 0.08);
+      view.attack = Math.max(0, view.attack - dt * 3);
+      const lunge = Math.sin(view.attack * Math.PI) * 0.25;
+      const back = view.knock * 0.15 - lunge;
+      view.root.position.set(z.pos.x - Math.sin(z.facing) * back, y, z.pos.z - Math.cos(z.facing) * back);
+      let diff = z.facing - view.root.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      view.root.rotation.y += diff * Math.min(1, dt * 8);
+      view.root.rotation.x = view.knock * -0.15 + (runner ? 0.15 : 0) + lunge * 0.4;
+      view.root.rotation.z = Math.sin(w * 0.5) * 0.08;
 
-      // Mers șchiopătat; brațele întinse înainte. Când stă pe loc (atacă), le ridică și lovește.
-      view.legL.rotation.x = Math.sin(w) * 0.6 * amp;
-      view.legR.rotation.x = -Math.sin(w) * 0.6 * amp;
-      const attacking = amp < 0.3;
-      const reach = attacking ? -1.5 + Math.abs(Math.sin(this.time * 5 + z.id)) * 1.0 : -0.9;
-      view.armL.rotation.x = reach + Math.sin(w + 1) * 0.3;
-      view.armR.rotation.x = reach + Math.sin(w + 2.2) * 0.3;
-      view.armL.rotation.z = -0.1;
-      view.armR.rotation.z = 0.1;
+      if (flying) {
+        // Aripile bat, picioarele atârnă.
+        const flap = Math.sin(this.time * 9 + z.id) * 0.7;
+        view.armL.rotation.z = flap;
+        view.armR.rotation.z = -flap;
+        view.legL.rotation.x = 0.3;
+        view.legR.rotation.x = 0.4;
+      } else {
+        // Mers șchiopătat; brațele întinse înainte. La atac le ridică și lovește.
+        view.legL.rotation.x = Math.sin(w) * 0.6 * amp;
+        view.legR.rotation.x = -Math.sin(w) * 0.6 * amp;
+        const reach = -1.0 - view.attack * 0.9;
+        view.armL.rotation.x = reach + Math.sin(w + 1) * 0.3;
+        view.armR.rotation.x = reach + Math.sin(w + 2.2) * 0.3 - view.attack * 0.4;
+        view.armL.rotation.z = -0.1;
+        view.armR.rotation.z = 0.1;
+      }
+
+      if (z.burning && !view.fire) this.ignite(view);
+      if (view.fire) {
+        for (const [i, c] of view.fire.getChildren().entries()) {
+          (c as TransformNode).scaling.y = (0.8 + Math.abs(Math.sin(this.time * 9 + i * 1.7)) * 0.7) * (view.type === "boss" ? 2 : 1);
+        }
+      }
       view.bar?.set(z.pos, y + (HP_BAR_Y[z.type] ?? 2), z.hp / z.maxHp);
     }, (id, view) => {
       // Zombie omorât: cade și se scufundă în zăpadă, în loc să dispară brusc.
-      if (!this.killedIds.has(id)) return false;
+      if (!this.killed.has(id)) return false;
       view.bar?.dispose();
       view.bar = null;
-      this.dying.push({ view, t: 0 });
+      this.dying.push({ view, t: 0, burned: this.killed.get(id)! });
       return true;
     });
   }
@@ -639,9 +691,11 @@ export class Renderer {
       const d = this.dying[i];
       d.t += dt;
       const fall = Math.min(1, d.t / 0.45);
+      const flying = CONFIG.zombies[d.view.type].flying;
       d.view.root.rotation.x = -fall * 1.45;
       d.view.armL.rotation.x = -fall * 2;
       d.view.armR.rotation.x = -fall * 1.6;
+      if (flying) d.view.root.position.y = Math.max(terrainHeight(d.view.root.position.x, d.view.root.position.z), d.view.root.position.y - dt * 8);
       if (d.t > 1.2) d.view.root.position.y -= dt * 0.9;
       if (d.t > 2.5) {
         d.view.dispose();
@@ -652,19 +706,25 @@ export class Renderer {
 
   // ---------- Construcții ----------
 
-  private syncTowers(state: GameState): void {
+  private syncTowers(state: GameState, dt: number): void {
     syncMap(this.towerViews, state.towers, () => {
       const root = new TransformNode("tower", this.scene);
+      root.scaling.setAll(TOWER_SCALE);
       const head = new TransformNode("towerHead", this.scene);
       head.parent = root;
       const flameNode = new TransformNode("towerFlame", this.scene);
       flameNode.parent = root;
       flameNode.position.set(0, 0.85, -1.15);
       const [flame] = this.flame.instance("towerFlame", flameNode);
-      return { root, base: [], head, flame, tier: 0, dispose: () => root.dispose() };
+      return { root, base: [], head, flame, tier: 0, kick: 0, dispose: () => root.dispose() };
     }, (view, t) => {
       view.root.position.set(t.pos.x, terrainHeight(t.pos.x, t.pos.z), t.pos.z);
-      view.head.rotation.y = t.facing;
+      // Arma de pe pivot se rotește lin spre țintă și „sare” puțin la fiecare foc.
+      let diff = t.facing - view.head.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      view.head.rotation.y += diff * Math.min(1, dt * 10);
+      view.kick = Math.max(0, view.kick - dt * 8);
+      view.head.rotation.x = -view.kick * 0.15;
       if (view.tier !== t.tier) {
         // Tier nou: altă bază și altă armă.
         for (const m of view.base) m.dispose();
@@ -731,35 +791,20 @@ export class Renderer {
     syncMap(this.coinViews, state.coins, () => this.coin.instance("coin")[0], (view, c) => {
       view.position.set(c.pos.x, terrainHeight(c.pos.x, c.pos.z) + 0.5 + Math.sin(this.time * 4 + c.id) * 0.12, c.pos.z);
       view.rotation.y = this.time * 3 + c.id;
+      // În ultimele 5 secunde moneda clipește: „ia-mă repede, că dispar”.
+      const left = CONFIG.coins.lifetime - c.age;
+      view.isVisible = left > 5 || Math.sin(this.time * (left < 2 ? 25 : 12)) > 0;
     });
   }
 
-  private syncZones(state: GameState): void {
-    syncMap(this.zoneViews, state.zones, (z) => {
-      const root = new TransformNode("zone", this.scene);
-      const disc = MeshBuilder.CreateDisc("zoneDisc", { radius: 1, tessellation: 36 }, this.scene);
-      disc.rotation.x = Math.PI / 2;
-      disc.parent = root;
-      disc.material = z.kind === "fire" ? this.m.fireZone : this.m.healZone;
-      disc.isPickable = false;
-      const flames: InstancedMesh[] = [];
-      if (z.kind === "fire") {
-        for (let i = 0; i < 9; i++) {
-          const node = new TransformNode("zf", this.scene);
-          node.parent = root;
-          const a = (i / 9) * Math.PI * 2;
-          const d = i === 0 ? 0 : z.radius * (0.35 + (i % 3) * 0.18);
-          node.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-          node.scaling.setAll(1.3);
-          flames.push(...this.flame.instance("zFlame", node));
-        }
-      }
-      return { root, disc, flames, dispose: () => root.dispose() };
-    }, (view, z) => {
-      view.root.position.set(z.pos.x, terrainHeight(z.pos.x, z.pos.z) + 0.06, z.pos.z);
-      const pulse = 1 + Math.sin(this.time * 5) * 0.04;
-      view.disc.scaling.set(z.radius * pulse, z.radius * pulse, 1);
-      view.flames.forEach((f, i) => f.scaling.set(1, 0.7 + Math.abs(Math.sin(this.time * 9 + i * 1.3)) * 0.9, 1));
+  private syncProjectiles(state: GameState): void {
+    syncMap(this.projectileViews, state.projectiles, () => {
+      const [mesh] = this.glob.instance("glob");
+      return { mesh, trail: 0, dispose: () => mesh.dispose() };
+    }, (view, p) => {
+      view.mesh.position.set(p.pos.x, terrainHeight(p.pos.x, p.pos.z) + 1.4 + Math.sin(this.time * 20) * 0.05, p.pos.z);
+      view.trail += 1;
+      if (view.trail % 3 === 0) this.fx.burst("venom", view.mesh.position, null, 1, 0.5, 0.06);
     });
   }
 
@@ -779,18 +824,31 @@ export class Renderer {
     return { x: ray.origin.x + ray.direction.x * t, z: ray.origin.z + ray.direction.z * t };
   }
 
-  /** Arată „fantoma” construcției (verde = se poate construi, roșu = nu), cu aceeași formă ca finalul. */
+  /**
+   * Arată „fantoma” construcției: modelul transparent + o bază pe sol bine vizibilă
+   * (verde = se poate construi, roșu = nu) + raza de tragere a turnului.
+   */
   setGhost(pos: Vec2 | null, kind: BuildKind, valid: boolean, range = 0, rotation = 0): void {
     const isTower = kind === "tower";
     this.ghostTower.setEnabled(!!pos && isTower);
     this.ghostWall.setEnabled(!!pos && !isTower);
+    this.footTower.setEnabled(!!pos && isTower);
+    this.footWall.setEnabled(!!pos && !isTower);
     this.rangeRing.setEnabled(!!pos && range > 0);
     if (!pos) return;
+    const y = terrainHeight(pos.x, pos.z);
     const node = isTower ? this.ghostTower : this.ghostWall;
-    node.position.set(pos.x, terrainHeight(pos.x, pos.z), pos.z);
+    node.position.set(pos.x, y, pos.z);
     node.rotation.y = rotation;
     for (const g of this.ghostParts) g.material = valid ? this.m.ghostOk : this.m.ghostBad;
-    this.rangeRing.position.set(pos.x, terrainHeight(pos.x, pos.z) + 0.1, pos.z);
+    const foot = isTower ? this.footTower : this.footWall;
+    foot.position.set(pos.x, y + 0.06, pos.z);
+    if (!isTower) foot.rotation.y = rotation;
+    foot.material = valid ? this.m.footOk : this.m.footBad;
+    // Baza „respiră” ușor, ca să atragă privirea.
+    const pulse = 1 + Math.sin(this.time * 6) * 0.05;
+    foot.scaling.set(pulse, 1, pulse);
+    this.rangeRing.position.set(pos.x, y + 0.1, pos.z);
     this.rangeRing.scaling.set(range, 1, range);
   }
 
@@ -809,7 +867,7 @@ export class Renderer {
   /** Șterge toate entitățile (pentru „Joacă din nou”). */
   reset(): void {
     const maps: Map<EntityId, { dispose(): void }>[] = [
-      this.heroViews, this.zombieViews, this.towerViews, this.barricadeViews, this.coinViews, this.zoneViews, this.mineViews,
+      this.heroViews, this.zombieViews, this.towerViews, this.barricadeViews, this.coinViews, this.mineViews, this.projectileViews,
     ];
     for (const map of maps) {
       for (const v of map.values()) v.dispose();

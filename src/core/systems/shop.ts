@@ -3,10 +3,10 @@
 // (pe server în multiplayer), cu RNG-ul din stare.
 
 import { CONFIG, type ShopRarity } from "../config";
-import { SHOP_POOLS, type ShopReward, WEAPONS } from "../items";
+import { REPEATABLE, SHOP_POOLS, type ShopReward, WEAPONS, rewardKey } from "../items";
 import { nextRandom } from "../math";
 import type { GameEvent, GameState, Player, PlayerId } from "../types";
-import { heroById, recomputeMaxHp } from "./heroes";
+import { gunStats, heroById, recomputeMaxHp } from "./heroes";
 
 const RARITY_RANK = { start: 0, common: 1, rare: 2, epic: 3, legendary: 4 } as const;
 
@@ -29,6 +29,7 @@ export function shopRoll(state: GameState, playerId: PlayerId, events: GameEvent
     ? options[Math.floor(nextRandom(state) * options.length)]
     : { kind: "wood", amount: 25 }; // tot ce era la raritatea asta îl ai deja
   applyReward(state, player, reward);
+  if (!REPEATABLE.includes(reward.kind)) player.unlocked.push(rewardKey(reward));
   events.push({ type: "shopRoll", playerId, rarity, reward });
   return true;
 }
@@ -43,8 +44,9 @@ export function rollRarity(roll: number): ShopRarity {
   return CONFIG.shop.odds[CONFIG.shop.odds.length - 1].rarity;
 }
 
-/** Nu dăm ceva ce jucătorul are deja sau care a atins limita. */
+/** Nu dăm ceva ce jucătorul are deja: fiecare premiu (în afară de lemn și mine) se câștigă o dată pe rundă. */
 function isUseful(player: Player, r: ShopReward): boolean {
+  if (player.unlocked.includes(rewardKey(r))) return false;
   switch (r.kind) {
     case "towerTier":
       return r.tier > player.towerTier;
@@ -53,10 +55,6 @@ function isUseful(player: Player, r: ShopReward): boolean {
         (RARITY_RANK[WEAPONS[r.weaponId].rarity] === RARITY_RANK[WEAPONS[player.weapon].rarity] && r.weaponId !== player.weapon);
     case "skin":
       return !player.skins.includes(r.skinId);
-    case "speed":
-      return player.speedBonus < CONFIG.shop.maxSpeedBonus;
-    case "repair":
-      return player.repairBonus < CONFIG.shop.maxRepairBonus;
     default:
       return true;
   }
@@ -79,13 +77,13 @@ function applyReward(state: GameState, player: Player, r: ShopReward): void {
       break;
     }
     case "speed":
-      player.speedBonus = Math.min(CONFIG.shop.maxSpeedBonus, player.speedBonus + r.pct);
+      player.speedBonus += r.pct;
       break;
     case "regen":
       player.regenPerSec += r.perSec;
       break;
     case "repair":
-      player.repairBonus = Math.min(CONFIG.shop.maxRepairBonus, player.repairBonus + r.pct);
+      player.repairBonus += r.pct;
       break;
     case "towerSlot":
       player.extraTowerSlots++;
@@ -93,12 +91,28 @@ function applyReward(state: GameState, player: Player, r: ShopReward): void {
     case "towerTier":
       player.towerTier = Math.max(player.towerTier, r.tier);
       break;
-    case "weapon":
+    case "weapon": {
       player.weapon = r.weaponId;
+      // Arma nouă vine cu încărcătorul plin.
+      const hero = heroById(state, player.heroId);
+      if (hero) {
+        hero.reloadTimer = 0;
+        hero.ammo = gunStats(state, hero).magazine;
+      }
       break;
+    }
     case "skin":
       player.skins.push(r.skinId);
       player.skin = r.skinId; // îl echipăm automat
       break;
   }
+}
+
+/** Ce mai poate câștiga jucătorul la fiecare raritate (pentru lista din magazin). */
+export function shopRemaining(player: Player): Record<ShopRarity, ShopReward[]> {
+  const out = {} as Record<ShopRarity, ShopReward[]>;
+  for (const [rarity, pool] of Object.entries(SHOP_POOLS) as [ShopRarity, ShopReward[]][]) {
+    out[rarity] = pool.filter((r) => isUseful(player, r));
+  }
+  return out;
 }

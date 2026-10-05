@@ -6,6 +6,8 @@ export class Keyboard {
 
   constructor() {
     window.addEventListener("keydown", (e) => {
+      // Space/Enter sunt comenzi de joc: nu lăsăm browserul să „apese” butonul care are focus.
+      if (e.code === "Space" || e.code === "Enter") e.preventDefault();
       if (!e.repeat) this.pressedHandlers.get(e.code)?.();
       this.down.add(e.code);
     });
@@ -16,6 +18,11 @@ export class Keyboard {
   /** Rulează `fn` o dată la apăsarea tastei (ex. "KeyB"). */
   onPress(code: string, fn: () => void): void {
     this.pressedHandlers.set(code, fn);
+  }
+
+  /** E ținută apăsată tasta? (ex. "Space") */
+  isDown(code: string): boolean {
+    return this.down.has(code);
   }
 
   /** Direcția de mișcare: x = dreapta, z = înainte (sus pe ecran). */
