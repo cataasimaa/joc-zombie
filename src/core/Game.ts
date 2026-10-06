@@ -274,6 +274,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       reserve: 0,
       aimDist: 0,
       hunger: 100,
+      thirst: 100,
       warmth: 100,
       action: false,
       actionPress: false,

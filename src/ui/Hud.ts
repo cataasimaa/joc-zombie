@@ -197,8 +197,6 @@ export class Hud {
     pickMine: $<HTMLButtonElement>("pick-mine"),
     mineCost: $("mine-cost"),
     survivalBars: $("survival-bars"),
-    hungerBar: $("hunger-bar"),
-    warmthBar: $("warmth-bar"),
     quickbar: $("quickbar"),
     modeBox: $("mode"),
     placeBar: $("place-bar"),
@@ -512,10 +510,12 @@ export class Hud {
     this.el.survivalBars.classList.toggle("hidden", !survival);
     this.el.hud.classList.toggle("survival", survival);
     if (survival) {
-      this.width(this.el.hungerBar, hero.hunger / 100);
-      this.width(this.el.warmthBar, hero.warmth / 100);
-      this.el.hungerBar.parentElement!.classList.toggle("alert", hero.hunger < 20);
-      this.el.warmthBar.parentElement!.classList.toggle("alert", hero.warmth < 20);
+      // Iconițele din dreapta se „golesc” de sus în jos; sub 20% clipesc.
+      for (const [id, v] of [["hunger", hero.hunger], ["thirst", hero.thirst], ["warmth", hero.warmth]] as const) {
+        const el = $(`stat-${id}`);
+        el.style.setProperty("--v", (Math.round(v) / 100).toFixed(2));
+        el.classList.toggle("alert", v < 20);
+      }
     }
     this.el.quickbar.classList.toggle("hidden", false);
     this.renderHotbar(state, player, hero);
@@ -563,6 +563,9 @@ export class Hud {
         break;
       case "starving":
         if (e.heroId === heroId) this.hint("🍖 Mori de foame! Mănâncă ceva (bara de jos)");
+        break;
+      case "thirsty":
+        if (e.heroId === heroId) this.hint("💧 Îți e sete! Bea apă la baltă sau topește zăpadă lângă un foc");
         break;
       case "freezing":
         if (e.heroId === heroId) this.hint("🥶 Îngheți! Stai lângă un foc");

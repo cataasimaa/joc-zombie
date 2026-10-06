@@ -23,11 +23,6 @@
         </div>
         <div class="bar big"><div id="hero-bar" class="fill hero"></div><span id="hero-text" class="bar-text"></span></div>
         <div class="bar big"><div id="xp-bar" class="fill xp"></div><span id="xp-text" class="bar-text"></span></div>
-        <!-- Supraviețuire: foamea și căldura -->
-        <div id="survival-bars" class="survival-bars hidden">
-          <div class="bar small" title="Foame"><div id="hunger-bar" class="fill hunger"></div><span class="bar-text">🍖</span></div>
-          <div class="bar small" title="Căldură"><div id="warmth-bar" class="fill warmth"></div><span class="bar-text">🔥</span></div>
-        </div>
         <!-- Resursele: lemn și aur -->
         <div class="resources left-res">
           <span title="Lemn (pentru construcții)">🪵 <b id="wood-text">0</b></span>
@@ -71,6 +66,22 @@
         <button id="qb-2" class="qb-slot"><i class="qb-k">3</i><span class="qb-ico"></span><b class="qb-n"></b></button>
         <button id="qb-3" class="qb-slot"><i class="qb-k">4</i><span class="qb-ico"></span><b class="qb-n"></b></button>
         <button id="qb-bag" class="qb-slot bag" title="Inventar (I): aici alegi ce pui în fiecare loc"><span class="qb-ico">🎒</span></button>
+      </div>
+
+      <!-- Supraviețuire (ca în Ark): foame, apă, căldură — iconițe pe dreapta care se golesc de sus în jos -->
+      <div id="survival-bars" class="status-icons hidden">
+          <div id="stat-hunger" class="stat stat-hunger" title="Foame">
+            <svg viewBox="0 0 24 24" class="stat-base"><path d="M16.5 2.5c3 0 5 2.5 5 5.3 0 3.2-2.6 5.4-5.6 5.4-.9 0-1.4.2-2 .8l-3.6 3.6c.3.9.1 1.9-.6 2.6a2.4 2.4 0 0 1-3.4 0 2.3 2.3 0 0 1-.6-1.2 2.3 2.3 0 0 1-1.2-.6 2.4 2.4 0 0 1 0-3.4c.7-.7 1.7-.9 2.6-.6l3.6-3.6c.6-.6.8-1.1.8-2 0-3 2.2-5.7 5-5.7z"/></svg>
+            <svg viewBox="0 0 24 24" class="stat-fill"><path d="M16.5 2.5c3 0 5 2.5 5 5.3 0 3.2-2.6 5.4-5.6 5.4-.9 0-1.4.2-2 .8l-3.6 3.6c.3.9.1 1.9-.6 2.6a2.4 2.4 0 0 1-3.4 0 2.3 2.3 0 0 1-.6-1.2 2.3 2.3 0 0 1-1.2-.6 2.4 2.4 0 0 1 0-3.4c.7-.7 1.7-.9 2.6-.6l3.6-3.6c.6-.6.8-1.1.8-2 0-3 2.2-5.7 5-5.7z"/></svg>
+          </div>
+          <div id="stat-thirst" class="stat stat-thirst" title="Apă (bei la baltă sau topești zăpadă la foc)">
+            <svg viewBox="0 0 24 24" class="stat-base"><path d="M12 2.2c2.6 3.7 7 8.6 7 12.6a7 7 0 0 1-14 0c0-4 4.4-8.9 7-12.6z"/></svg>
+            <svg viewBox="0 0 24 24" class="stat-fill"><path d="M12 2.2c2.6 3.7 7 8.6 7 12.6a7 7 0 0 1-14 0c0-4 4.4-8.9 7-12.6z"/></svg>
+          </div>
+          <div id="stat-warmth" class="stat stat-warmth" title="Căldură">
+            <svg viewBox="0 0 24 24" class="stat-base"><path d="M12.5 2c.9 3.4 4.1 5.2 5.3 8.6 1.6 4.6-1.4 10.9-5.8 11.2-4.4.3-7.6-3.3-7.1-7.6.3-2.6 1.8-4.2 3.1-5.8.1 1.9.7 3.3 2 4.2-.6-3.6.7-7 2.5-10.6z"/></svg>
+            <svg viewBox="0 0 24 24" class="stat-fill"><path d="M12.5 2c.9 3.4 4.1 5.2 5.3 8.6 1.6 4.6-1.4 10.9-5.8 11.2-4.4.3-7.6-3.3-7.1-7.6.3-2.6 1.8-4.2 3.1-5.8.1 1.9.7 3.3 2 4.2-.6-3.6.7-7 2.5-10.6z"/></svg>
+          </div>
       </div>
 
       <!-- Inventarul complet (se deschide din 🎒) -->

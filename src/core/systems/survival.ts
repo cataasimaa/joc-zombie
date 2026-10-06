@@ -8,6 +8,7 @@ import { type Vec2, angleOf, clamp, dist, nextRandom } from "../math";
 import type { Animal, Campfire, Drop, EntityId, GameEvent, GameState, Hero, PlayerId } from "../types";
 import { distToBarricade } from "./barricades";
 import { damageHero, gunStats, heroById } from "./heroes";
+import { GAME_MAP } from "../map";
 import { resolveCollisions } from "./physics";
 import { refundFactor } from "./towers";
 
@@ -181,16 +182,23 @@ export function updateSurvival(state: GameState, dt: number, events: GameEvent[]
   for (const hero of state.heroes) {
     if (!hero.alive) continue;
     hero.hunger = Math.max(0, hero.hunger - S.hungerPerSec * dt);
-    if (litFireNear(state, hero.pos)) hero.warmth = Math.min(100, hero.warmth + S.fireWarmPerSec * dt);
+    // Apa: pe malul bălții bei; lângă un foc aprins topești zăpadă (mai încet); altfel îți e sete.
+    const shore = dist(hero.pos, GAME_MAP.pond.pos) <= GAME_MAP.pond.radius + 1.6;
+    const fire = litFireNear(state, hero.pos);
+    if (shore) hero.thirst = Math.min(100, hero.thirst + S.drinkPerSec * dt);
+    else if (fire) hero.thirst = Math.min(100, hero.thirst + S.snowMeltPerSec * dt);
+    else hero.thirst = Math.max(0, hero.thirst - S.thirstPerSec * dt);
+    if (fire) hero.warmth = Math.min(100, hero.warmth + S.fireWarmPerSec * dt);
     else hero.warmth = Math.max(0, hero.warmth - S.coldPerSec * weather.cold * night * dt);
     // Flămând sau înghețat: pierzi viață încet.
-    const hurt = (hero.hunger <= 0 ? S.starveDamage : 0) + (hero.warmth <= 0 ? S.freezeDamage : 0);
+    const hurt = (hero.hunger <= 0 ? S.starveDamage : 0) + (hero.warmth <= 0 ? S.freezeDamage : 0) + (hero.thirst <= 0 ? S.thirstDamage : 0);
     if (hurt > 0) {
       const before = Math.floor(state.time / 2);
       damageHero(hero, hurt * dt, events, hero.pos, true);
       if (Math.floor((state.time + dt) / 2) !== before) {
         if (hero.hunger <= 0) events.push({ type: "starving", heroId: hero.id });
         if (hero.warmth <= 0) events.push({ type: "freezing", heroId: hero.id });
+        if (hero.thirst <= 0) events.push({ type: "thirsty", heroId: hero.id });
       }
     }
   }

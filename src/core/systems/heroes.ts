@@ -379,6 +379,7 @@ export function respawnHero(state: GameState, hero: Hero, events: GameEvent[]): 
   hero.respawnTimer = 0;
   hero.reloadTimer = 0;
   hero.hunger = Math.max(hero.hunger, 60);
+  hero.thirst = Math.max(hero.thirst, 60);
   hero.warmth = Math.max(hero.warmth, 60);
   // Reînvii cu încărcătorul plin, dar rezerva rămâne cât era (muniția e o resursă reală).
   hero.ammo = gunStats(state, hero).magazine;

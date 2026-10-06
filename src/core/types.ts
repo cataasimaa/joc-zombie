@@ -89,6 +89,8 @@ export interface Hero {
   /** Supraviețuire: 100 = sătul / cald, 0 = pierzi viață. */
   hunger: number;
   warmth: number;
+  /** Apa (setea): 100 = nu ți-e sete; bei de la baltă sau topești zăpadă la foc. */
+  thirst: number;
   /** Ține apăsat butonul de acțiune (târnăcop / undiță / vânzare). */
   action: boolean;
   /** Tocmai a apăsat (o singură dată): aruncă / trage undița, vinde. */
@@ -384,6 +386,7 @@ export type GameEvent =
   | { type: "animalAttack"; id: EntityId; pos: Vec2 }
   | { type: "starving"; heroId: EntityId }
   | { type: "freezing"; heroId: EntityId }
+  | { type: "thirsty"; heroId: EntityId }
   | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward; wood: number; ammo: number; meat: number }
   | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal" | "air"; pos: Vec2 }
   | { type: "lantern"; heroId: EntityId; on: boolean }

@@ -826,3 +826,18 @@ describe("unelte în mână", () => {
     expect(h.battery).toBeLessThan(100);
   });
 });
+
+describe("apa", () => {
+  it("setea scade; pe malul bălții bei, lângă foc topești zăpadă", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 3, mode: "survival" });
+    const h = sim.state.heroes[0];
+    h.pos = { x: 20, z: -20 };
+    run(sim, 10);
+    expect(h.thirst).toBeLessThan(100);
+    const dry = h.thirst;
+    const p = GAME_MAP.pond;
+    h.pos = { x: p.pos.x + p.radius + 0.8, z: p.pos.z };
+    run(sim, 1);
+    expect(h.thirst).toBeGreaterThan(dry);
+  });
+});

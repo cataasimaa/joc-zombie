@@ -214,7 +214,9 @@ sau texturi din acele jocuri.
   Supraviețuire, la ~9 m): acolo îți faci zidurile și turnurile.
 - **Moartea**: cine cade NU reînvie singur. Doar un coleg care stă lângă el 4 s îl ridică (cu 40%
   viață). Toți căzuți = pierzi (în ambele moduri); singur = mori = game over.
-- **Supraviețuire** (`CONFIG.survival`): foamea (−0,32/s) și căldura (−0,45/s, ×vreme, ziua ×0,6);
+- **Supraviețuire** (`CONFIG.survival`): foamea (−0,32/s), setea (−0,42/s; bei la baltă sau topești zăpadă lângă un foc) și căldura
+  (−0,45/s, ×vreme, ziua ×0,6), afișate ca în Ark: 3 iconițe semi-transparente pe dreapta
+  (pulpă / picătură / flacără) care se golesc de sus în jos și clipesc sub 20%;
   la 0 pierzi 3 HP/s. Focul (15 lemn, max 3) încălzește în 4,5 m, arde lemnul (1/s ×vreme; +5 lemn =
   +30%), gătește carnea în 15 s (apare pe jos). Eticheta de deasupra focului arată cât lemn mai are
   (ca la mină). Coteț / țarc mic (40 lemn, max 2, max 3 animale; încape în baza ta); găinile și

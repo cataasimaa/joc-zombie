@@ -154,6 +154,11 @@ export const CONFIG = {
   survival: {
     /** Foamea și căldura: 100 = bine, 0 = pierzi viață. */
     hungerPerSec: 0.32,
+    /** Setea: scade mai repede decât foamea; bei pe malul bălții (repede) sau topești zăpadă la foc (încet). */
+    thirstPerSec: 0.42,
+    drinkPerSec: 22,
+    snowMeltPerSec: 5,
+    thirstDamage: 3,
     coldPerSec: 0.45,
     starveDamage: 3,
     freezeDamage: 3,

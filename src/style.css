@@ -2314,3 +2314,66 @@ i.coin {
   pointer-events: none;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
 }
+
+/* ---------- Foame / apă / căldură în stil Ark: pe dreapta, ușor transparente ---------- */
+
+.status-icons {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  top: 32%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0.78;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.stat {
+  --v: 1;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+.stat svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Conturul gol, întunecat; peste el, culoarea care scade de sus în jos. */
+.stat-base path {
+  fill: rgba(10, 24, 32, 0.55);
+  stroke: rgba(160, 220, 240, 0.55);
+  stroke-width: 1;
+}
+
+.stat-fill {
+  clip-path: inset(calc((1 - var(--v)) * 100%) 0 0 0);
+  transition: clip-path 0.4s;
+}
+
+.stat-hunger .stat-fill path {
+  fill: #e9a640;
+}
+
+.stat-thirst .stat-fill path {
+  fill: #3fb8f2;
+}
+
+.stat-warmth .stat-fill path {
+  fill: #ff6a3d;
+}
+
+.stat.alert {
+  animation: statBlink 0.8s infinite;
+}
+
+@keyframes statBlink {
+  50% {
+    opacity: 0.35;
+  }
+}
