@@ -34,7 +34,7 @@ import {
   segmentEnds,
 } from "../core";
 import { Fx } from "./Fx";
-import { buildPickaxe, buildRod } from "./models/gathering";
+import { buildHandLantern, buildPickaxe, buildRod } from "./models/gathering";
 import { Materials, ModelKit, type Quality } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
 import {
@@ -107,6 +107,8 @@ interface HeroView {
   /** Uneltele din mână: târnăcopul (cu lovitura) și undița (cu vârful, pentru fir). */
   pickaxe: TransformNode;
   rod: TransformNode;
+  lantern: TransformNode;
+  lanternGlow: TransformNode;
   rodTip: TransformNode;
   /** Secunde de la ultima lovitură cu târnăcopul (animația: izbește, apoi îl ridică din nou). */
   swing: number;
@@ -206,6 +208,10 @@ export class Renderer {
   private iceShell!: Prefab;
   private flame!: Prefab;
   private pickaxePrefab!: Prefab;
+  private lanternPrefab!: Prefab;
+  private lanternGlowPrefab!: Prefab;
+  /** Barele de viață ale animalelor (apar când sunt rănite). */
+  private animalBars = new Map<EntityId, HpBar>();
   private rodPrefab!: Prefab;
   private walls = new Map<string, Prefab>();
   private mine!: Prefab;
@@ -335,6 +341,9 @@ export class Renderer {
     this.iceShell = new Prefab([buildIceShell(s, this.mats)]);
     this.flame = new Prefab([buildFlame(s, this.mats)]);
     this.pickaxePrefab = new Prefab(buildPickaxe(s, this.mats));
+    const hl = buildHandLantern(s, this.mats);
+    this.lanternPrefab = new Prefab(hl.body);
+    this.lanternGlowPrefab = new Prefab(hl.glow);
     this.rodPrefab = new Prefab(buildRod(s, this.mats));
     for (const level of [1, 2, 3]) {
       for (const door of [false, true]) {
@@ -373,6 +382,7 @@ export class Renderer {
     this.syncShells(state);
     this.syncFires(state);
     this.survival.sync(state, dt);
+    this.syncAnimalBars(state);
     // Selecția: inelul pulsează ușor; dacă ținta a dispărut, selecția se șterge.
     if (this.selectedId !== null) {
       const id = this.selectedId;
@@ -447,6 +457,27 @@ export class Renderer {
     const n = this.steps;
     this.steps = 0;
     return n;
+  }
+
+  /** Bara de viață deasupra animalelor rănite (urs, căprioară, găină, porc) — scade când le lovești. */
+  private syncAnimalBars(state: GameState): void {
+    const seen = new Set<EntityId>();
+    for (const a of state.animals) {
+      if (a.hp >= a.maxHp) continue;
+      seen.add(a.id);
+      let bar = this.animalBars.get(a.id);
+      if (!bar) {
+        bar = new HpBar(this.scene, this.m.hpBg, this.m.hpZombie, a.kind === "bear" ? 1.5 : a.kind === "deer" ? 1.1 : 0.7);
+        this.animalBars.set(a.id, bar);
+      }
+      const h = a.kind === "bear" ? 2.3 : a.kind === "deer" ? 2.0 : a.kind === "pig" ? 1.2 : 0.8;
+      bar.set(a.pos, terrainHeight(a.pos.x, a.pos.z) + h, a.hp / a.maxHp);
+    }
+    for (const [id, bar] of this.animalBars) {
+      if (seen.has(id)) continue;
+      bar.dispose();
+      this.animalBars.delete(id);
+    }
   }
 
   /** Calitatea grafică (din meniu): rezoluția randării + umbre, SSAO, efecte. */
@@ -652,13 +683,15 @@ export class Renderer {
         const v = this.heroViews.get(e.heroId);
         if (v) {
           v.swing = 0;
-          v.toolShow = 1.2;
         }
         const at = this.at(e.pos, e.target === "tree" ? 1.1 : 0.5);
         if (e.target === "tree") {
           // Așchii de lemn și zăpadă care cade din crengi.
           this.fx.burst("wood", at, null, 5, 3.5, 0.07);
           this.fx.burst("snow", this.at(e.pos, 3.5), new Vector3(0, -1, 0), 6, 1.5, 0.1);
+        } else if (e.target === "air") {
+          // În gol: târnăcopul intră în zăpadă.
+          this.fx.burst("snow", this.at(e.pos, 0.1), new Vector3(0, 1, 0), 6, 2.2, 0.08);
         } else if (e.target === "ore") {
           this.fx.burst("spark", at, null, 6, 4, 0.05);
           this.fx.burst("stone", at, null, 4, 3, 0.08);
@@ -743,14 +776,14 @@ export class Renderer {
   private heroLookKey(state: GameState, hero: Hero): string {
     const p = state.players[hero.playerId];
     const gear = hero.level >= 8 ? 3 : hero.level >= 5 ? 2 : hero.level >= 3 ? 1 : 0;
-    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}|${p?.tool ?? "gun"}`;
+    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}|${p?.tool === "gun" || !p ? "gun" : "tool"}`;
   }
 
   private buildHeroView(state: GameState, hero: Hero): HeroView {
     const p = state.players[hero.playerId];
     const skin = p?.skin ? SKINS.find((s) => s.id === p.skin) : null;
     const coat = new Color3(...(skin ? skin.color : DEFAULT_SKIN_COLOR[hero.heroClass]));
-    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory, noGun: p?.tool === "pickaxe" });
+    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory, noGun: !!p && p.tool !== "gun" });
     const root = new TransformNode("hero", this.scene);
     const body = new TransformNode("heroBody", this.scene);
     body.parent = root;
@@ -784,22 +817,36 @@ export class Renderer {
   }
 
   /** Târnăcopul și undița, atașate eroului (ascunse până le folosește). */
-  private heroTools(root: TransformNode): { pickaxe: TransformNode; rod: TransformNode; rodTip: TransformNode } {
+  private heroTools(root: TransformNode): { pickaxe: TransformNode; rod: TransformNode; rodTip: TransformNode; lantern: TransformNode; lanternGlow: TransformNode } {
+    // Târnăcopul e prins în mâini (în fața pieptului): pivotul e la mâini, coada coboară puțin
+    // sub ele, iar capul de fier e sus. Lovitura rotește tot în jurul mâinilor.
     const pickaxe = new TransformNode("pickaxe", this.scene);
     pickaxe.parent = root;
-    pickaxe.position.set(0.32, 1.22, 0.45);
-    pickaxe.scaling.setAll(1.3);
-    this.pickaxePrefab.instance("pickaxeMesh", pickaxe);
+    pickaxe.position.set(0.1, 1.3, 0.55);
+    const grip = new TransformNode("pickaxeGrip", this.scene);
+    grip.parent = pickaxe;
+    grip.position.set(0, -0.25, 0);
+    grip.scaling.setAll(1.1);
+    this.pickaxePrefab.instance("pickaxeMesh", grip);
     pickaxe.setEnabled(false);
+    // Felinarul, ținut în mâna stângă, ușor în față.
+    const lantern = new TransformNode("handLantern", this.scene);
+    lantern.parent = root;
+    lantern.position.set(-0.3, 1.0, 0.6);
+    this.lanternPrefab.instance("handLanternMesh", lantern);
+    const lanternGlow = new TransformNode("handLanternGlow", this.scene);
+    lanternGlow.parent = lantern;
+    this.lanternGlowPrefab.instance("handLanternGlowMesh", lanternGlow);
+    lantern.setEnabled(false);
     const rod = new TransformNode("rod", this.scene);
     rod.parent = root;
-    rod.position.set(0.3, 0.95, 0.25);
+    rod.position.set(0.12, 1.25, 0.5);
     this.rodPrefab.instance("rodMesh", rod);
     const rodTip = new TransformNode("rodTip", this.scene);
     rodTip.parent = rod;
     rodTip.position.set(0, 2.2, 0);
     rod.setEnabled(false);
-    return { pickaxe, rod, rodTip };
+    return { pickaxe, rod, rodTip, lantern, lanternGlow };
   }
 
   /** Poziția gurii armei, în lume (pentru trasoare și flacără). */
@@ -859,21 +906,34 @@ export class Renderer {
 
       // Unelte: târnăcopul cât ții apăsat acțiunea (se ridică și lovește), undița cât pescuiești.
       const fishing = hero.alive && hero.fishTimer >= 0;
-      const holding = state.players[hero.playerId]?.tool === "pickaxe";
-      const working = hero.alive && !fishing && (hero.action || (holding && hero.firing));
-      view.toolShow = working ? 1.2 : Math.max(0, view.toolShow - dt);
+      const tool = state.players[hero.playerId]?.tool ?? "gun";
+      const holding = tool === "pickaxe";
+      const working = hero.alive && holding && (hero.firing || hero.action);
       view.swing += dt;
-      view.pickaxe.setEnabled(hero.alive && !fishing && (holding || view.toolShow > 0));
-      // Lovitura: izbește repede (0,12 s), apoi ridică încet târnăcopul deasupra capului (0,5 s)
-      // și așteaptă acolo lovitura următoare. Fără lucru: îl ține pe umăr.
-      const RAISED = -2.0;
-      const STRUCK = 1.05;
-      const REST = -0.5;
+      view.pickaxe.setEnabled(hero.alive && holding);
+      // Lovitura, cu ambele mâini: izbește repede în față (0,1 s), stă o clipă jos, apoi ridică
+      // încet târnăcopul peste umăr și așteaptă acolo lovitura următoare. Fără lucru: îl ține
+      // pieziș în fața pieptului.
+      const RAISED = -1.65;
+      const STRUCK = 1.35;
+      const REST = 0.35;
       const t = view.swing;
-      const swingAngle = t < 0.12 ? RAISED + (STRUCK - RAISED) * (t / 0.12) : t < 0.62 ? STRUCK + (RAISED - STRUCK) * ((t - 0.12) / 0.5) : working ? RAISED : REST;
+      const ease = (k: number) => k * k * (3 - 2 * k);
+      const swingAngle =
+        t < 0.1 ? RAISED + (STRUCK - RAISED) * ease(t / 0.1) :
+        t < 0.2 ? STRUCK :
+        t < 0.6 ? STRUCK + ((working ? RAISED : REST) - STRUCK) * ease((t - 0.2) / 0.4) :
+        working ? RAISED : REST;
       view.pickaxe.rotation.x = swingAngle;
-      const strikeLean = t < 0.25 ? Math.sin((t / 0.25) * Math.PI) * 0.25 : 0;
-      view.rod.setEnabled(fishing);
+      view.pickaxe.rotation.z = holding ? -0.15 : 0;
+      // Corpul însoțește lovitura: se lasă pe spate când ridică, se apleacă în față când izbește.
+      const strikeLean = !holding ? 0 : t < 0.2 ? Math.sin((t / 0.2) * Math.PI * 0.5) * 0.32 : t < 0.6 ? 0.32 * (1 - ease((t - 0.2) / 0.4)) - (working ? 0.12 * ease((t - 0.2) / 0.4) : 0) : working ? -0.12 : 0;
+      // Felinarul în mână (aprins = flacăra și lumina).
+      view.lantern.setEnabled(hero.alive && tool === "lantern");
+      view.lanternGlow.setEnabled(hero.lantern);
+      view.lantern.rotation.z = Math.sin(this.time * 2.3) * 0.08;
+      view.rod.setEnabled(hero.alive && (fishing || tool === "rod"));
+      if (!fishing && tool === "rod") view.rod.rotation.x = 0.5 + Math.sin(this.time * 1.5) * 0.03;
       if (fishing) {
         const bite = hero.biteTimer > 0;
         view.rod.rotation.x = 0.95 + (bite ? Math.sin(this.time * 40) * 0.08 : Math.sin(this.time * 1.7) * 0.03);

@@ -34,15 +34,20 @@ pauză automată (noaptea și păcănelele stau pe loc).
 Controale în browser: **WASD / săgeți** mișcare, **click ținut** trage spre cursor,
 **Space** trage (spre cursor sau automat), **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
 (**1/2/3/4** turn / zid / mină / foc; în afara construcției 1–4 = locurile din bara rapidă), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
-**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **G** acțiune (ții apăsat:
-târnăcop; apeși: undiță / vânzare), **I** inventar.
+**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **I** inventar.
 Pe telefon: joystick în stânga; ții degetul oriunde pe ecran = tragi acolo; în dreapta 2 butoane —
-🔨 construcție și ✛ tragere (ții apăsat = ochire automată, tragi cu degetul = ochești tu); lângă un
-brad / zăcământ / animal / copcă / tarabă apare al treilea buton, de acțiune (🪓 ⛏️ 🔪 🎣 💰).
-Bara de jos = 4 locuri pe care le aranjezi tu (armă, târnăcop, lanternă, mine, mâncare, pește):
-în 🎒 apeși 1–4 pe un obiect (sau atingi obiectul, apoi locul). Apăsat pe loc: armă / târnăcop în
-mână, lanterna aprinsă / stinsă, mina pusă, mâncarea mâncată. Cu târnăcopul în mână, ✛ lovește.
-HUD stânga sus: nume, nivel, viață, XP, lemn și aur (fără vreme, fără contoare de turnuri / ziduri).
+🔨 construcție și ✛ = **butonul principal**, care face ce face obiectul din mână: arma trage (arată
+gloanțele; ții apăsat = ochire automată, tragi cu degetul = ochești tu), târnăcopul lovește (doar
+iconița, fără gloanțe), undița aruncă / trage peștele („TRAGE 2/5”), lanterna se aprinde / stinge
+(arată bateria; cercul din jur se golește). Nu mai există buton separat de acțiune; peștele se
+vinde singur când ajungi la tarabă.
+Bara de jos (stil Ark) = 4 locuri: armă, târnăcop, undiță, lanternă, mine, mâncare, pește.
+Apăsat pe loc = îl iei în mână / îl folosești (încă o dată = înapoi la armă). În 🎒 (grilă de
+iconițe) **tragi cu degetul** un obiect pe un loc din bară (sau tap pe obiect, apoi pe loc); tragi
+un loc din bară în afara ei = îl golești; între locuri = se schimbă între ele.
+HUD stânga sus: nume, nivel, viață, XP, lemn și aur. Sus: ceas zi / noapte ca în Warcraft 3 (soare
+sau lună într-un inel auriu care se umple), „Ziua 2” / „Noaptea 1/10” și timpul — fără numărul de
+zombi. Animalele rănite au bară de viață deasupra.
 Meniul: 🖥 Grafică Înaltă / Medie / Mică.
 În consola din dev: `game().state`, `renderer.setCameraOffset(x, y, z)`.
 
@@ -217,15 +222,16 @@ sau texturi din acele jocuri.
   +10 HP; pește: +18 foame.
 - **Animale sălbatice** (ambele moduri, ziua, la 16–34 m de mină, departe de eroi): căprioare (fug,
   12 aur), urși (atacă, max 2, 40 aur). Aurul cade pe jos ca monede, plus carne.
-- **Unelte** (`CONFIG.gather`, butonul de acțiune / G, sau târnăcopul ținut în mână + ✛): lovește
-  ținta din raza brațului (animal > zăcământ > brad) la 0,7 s (brad), 1 s (piatră), 0,6 s (animal);
-  se vede cum ridică târnăcopul și izbește. Brad: +1 lemn pe lovitură, cade după 50 și dispare.
+- **Unelte** (`CONFIG.gather`, unealta în mână + ✛): târnăcopul (ținut cu ambele mâini) lovește
+  ținta din raza brațului (animal > zăcământ > brad) la 0,7 s (brad), 1 s (piatră), 0,6 s (animal),
+  sau în gol la 0,8 s; îl ridică peste umăr, izbește, corpul se apleacă odată cu lovitura.
+  Lanterna: bateria ține ~6 min aprinsă, se reîncarcă în ~4 min stinsă. Brad: +1 lemn pe lovitură, cade după 50 și dispare.
   Zăcăminte de argint (8 lovituri, 18 aur) și aur (12 lovituri, 45 aur) apar ziua aleator (3 pe zi,
   max 6); se micșorează la fiecare lovitură și se sparg. Cu târnăcopul / undița în mână nu tragi.
-- **Pescuit** (ziua, de pe malul bălții — apă deschisă, 7 m rază, cu ponton și stuf): arunci undița,
+- **Pescuit** (undița în mână, ziua, de pe malul bălții — apă deschisă, 7 m rază, cu ponton și stuf): arunci undița,
   peștele mușcă după 4–10 s, apoi trebuie să tragi de mai multe ori până nu scapă: biban (2 trageri
   în 1,8 s, 8 aur), păstrăv (3 / 2,2 s, 15), știucă (5 / 2,8 s, 28), somn (8 / 3,6 s, 60, rar).
-  Butonul arată „TRAGE! 2/5”. Peștii se vând la taraba negustorului (la ~12 m de mină).
+  Butonul arată „TRAGE 2/5”. Peștii se vând singuri la taraba negustorului (la ~12 m de mină).
 - **Muniție** (`CONFIG.ammo`): încărcător + rezervă (8 încărcătoare la start, max 12). Zombii lasă
   cutii (30%, 0,6 încărcător), plus 3 încărcătoare în fiecare zori și din cufărul boss-ului.
 - **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe

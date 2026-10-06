@@ -43,11 +43,14 @@
 
       <!-- Sus centru: zi/noapte și cronometrul -->
       <div class="top-center">
-        <div class="panel wave-panel">
-          <div id="wave-text"></div>
-          <div id="timer-text"></div>
-          <div class="bar thin"><div id="phase-bar" class="fill phase"></div></div>
-          <button id="start-wave" class="small-btn">🌙 Începe noaptea</button>
+        <!-- Ceasul zi / noapte (ca în Warcraft 3): soare sau lună într-un inel care se umple -->
+        <div class="wave-panel clock-panel">
+          <div id="clock" class="clock"><span id="clock-icon" class="clock-icon">☀</span></div>
+          <div class="clock-info">
+            <div id="wave-text"></div>
+            <div id="timer-text"></div>
+          </div>
+          <button id="start-wave" class="small-btn clock-skip" title="Începe noaptea acum">🌙▸</button>
         </div>
         <div id="boss-panel" class="panel boss-panel hidden">
           <div class="bar-label">☠ Lich-ul de gheață</div>
@@ -78,11 +81,11 @@
 
       <!-- Dreapta jos: doar două butoane — trage (și ochește) și construiește -->
       <div class="action-buttons">
-        <button id="act-btn" class="action act hidden" title="Acțiune (G): târnăcop, undiță, vânzare"><span id="act-ico">⛏️</span><small id="act-label"></small></button>
         <button id="build-btn" class="action build" title="Construiește (B)"><svg class="ico-svg" viewBox="0 0 48 48" aria-hidden="true"><g transform="rotate(-38 24 24)"><rect x="21.5" y="15" width="5" height="29" rx="2" fill="currentColor" opacity=".85"/><path d="M10 7h24l4 3v7H10z" fill="currentColor"/><rect x="10" y="17" width="4" height="3" fill="currentColor"/></g></svg></button>
         <div id="fire-stick" class="fire-stick">
           <div id="fire-knob" class="fire-knob">
             <span class="fire-icon"><svg class="ico-svg" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="13" fill="none" stroke="currentColor" stroke-width="3"/><path d="M24 4v10M24 34v10M4 24h10M34 24h10" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/><circle cx="24" cy="24" r="3" fill="currentColor"/></svg></span>
+            <span id="tool-icon" class="tool-icon hidden"></span>
             <span id="ammo-text" class="ammo-text">0/0</span>
           </div>
           <svg class="reload-ring" viewBox="0 0 100 100"><circle id="reload-arc" cx="50" cy="50" r="46" /></svg>

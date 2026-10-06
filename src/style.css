@@ -2043,3 +2043,274 @@ i.coin {
   max-height: 70vh;
   overflow-y: auto;
 }
+
+/* ---------- Ceasul zi / noapte (ca în Warcraft 3) ---------- */
+
+.clock-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  min-width: 0;
+  border-radius: 30px;
+  background: linear-gradient(180deg, rgba(40, 30, 14, 0.85), rgba(16, 12, 6, 0.85));
+  border: 1px solid rgba(232, 192, 80, 0.55);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.clock {
+  --p: 0;
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  /* Inelul auriu se umple pe măsură ce trece ziua / noaptea. */
+  background:
+    radial-gradient(circle, #1d2c3c 55%, transparent 57%),
+    conic-gradient(#ffd36a calc(var(--p) * 360deg), rgba(255, 211, 106, 0.18) 0);
+  box-shadow: 0 0 0 2px #8a6a25, inset 0 0 6px rgba(0, 0, 0, 0.8), 0 0 10px rgba(255, 200, 80, 0.35);
+}
+
+.clock.night {
+  background:
+    radial-gradient(circle, #0c1626 55%, transparent 57%),
+    conic-gradient(#bcd4ff calc(var(--p) * 360deg), rgba(188, 212, 255, 0.15) 0);
+  box-shadow: 0 0 0 2px #4a5f80, inset 0 0 6px rgba(0, 0, 0, 0.8), 0 0 10px rgba(140, 180, 255, 0.35);
+}
+
+.clock-icon {
+  font-size: 20px;
+  filter: drop-shadow(0 0 4px rgba(255, 220, 120, 0.8));
+}
+
+.clock.night .clock-icon {
+  filter: drop-shadow(0 0 4px rgba(170, 200, 255, 0.9));
+}
+
+.clock-info {
+  line-height: 1.1;
+  text-align: left;
+}
+
+.clock-info #wave-text {
+  font-size: 12px;
+  font-weight: 800;
+  color: #f1dca0;
+  letter-spacing: 0.3px;
+}
+
+.clock-info #timer-text {
+  font-size: 18px;
+}
+
+.clock-skip {
+  padding: 4px 8px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+
+/* ---------- Butonul principal după unealta din mână ---------- */
+
+.tool-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.fire-stick:not(.tool-gun) .fire-icon {
+  display: none;
+}
+
+.fire-stick.tool-rod.bite .fire-knob {
+  background: #d8483a;
+  animation: barGlow 0.4s infinite;
+}
+
+.fire-stick.tool-lantern.lantern-on .fire-knob {
+  box-shadow: 0 0 18px rgba(255, 200, 110, 0.85);
+}
+
+.fire-stick:not(.tool-gun) .ammo-text {
+  font-size: 11px;
+}
+
+/* ---------- Stil Ark: bara rapidă și inventarul ---------- */
+
+.quickbar {
+  gap: 3px;
+  padding: 4px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(14, 36, 48, 0.82), rgba(6, 18, 26, 0.88));
+  border: 1px solid rgba(80, 190, 225, 0.55);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(60, 170, 210, 0.12);
+}
+
+.quickbar .qb-slot {
+  width: 52px;
+  height: 52px;
+  border-radius: 3px;
+  border: 1px solid rgba(90, 170, 200, 0.45);
+  background: radial-gradient(circle at 50% 40%, rgba(40, 80, 100, 0.55), rgba(8, 22, 30, 0.85));
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.7);
+  touch-action: none;
+}
+
+.quickbar .qb-slot.equipped {
+  border-color: #7fe3ff;
+  box-shadow: inset 0 0 8px rgba(127, 227, 255, 0.45), 0 0 8px rgba(127, 227, 255, 0.6);
+}
+
+.quickbar .qb-slot.bag {
+  border-color: rgba(232, 192, 80, 0.6);
+  margin-left: 4px;
+}
+
+.quickbar.dropping .qb-slot:not(.bag) {
+  border-color: #7fe3ff;
+  animation: barGlow 0.8s infinite;
+}
+
+.qb-slot .qb-ico {
+  font-size: 26px;
+  pointer-events: none;
+}
+
+.qb-slot .qb-k {
+  color: #9fd8ec;
+}
+
+.qb-slot .qb-n,
+.inv-cell .qb-n {
+  pointer-events: none;
+}
+
+/* Bara subțire de jos (gloanțele din încărcător, bateria lanternei). */
+.qb-fill {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 3px;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.qb-fill span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #39c6f0, #9ff0ff);
+}
+
+/* Inventarul: grilă de căsuțe, aproape fără text. */
+.inventory {
+  min-width: 0;
+  width: min(330px, 92vw);
+  padding: 8px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(14, 36, 48, 0.93), rgba(6, 18, 26, 0.95));
+  border: 1px solid rgba(80, 190, 225, 0.6);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(60, 170, 210, 0.1);
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 70px);
+}
+
+.inv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #bfefff;
+  font-size: 14px;
+}
+
+.inv-res {
+  flex: 1;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #e8f6fb;
+}
+
+.inv-close {
+  border: none;
+  background: transparent;
+  color: #bfefff;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.inv-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  border: 1px solid rgba(90, 170, 200, 0.35);
+  background: radial-gradient(circle at 50% 40%, rgba(40, 80, 100, 0.5), rgba(8, 22, 30, 0.85));
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  touch-action: none;
+}
+
+.inv-cell.blank {
+  opacity: 0.45;
+}
+
+.inv-cell.picked {
+  border-color: #7fe3ff;
+  box-shadow: 0 0 8px rgba(127, 227, 255, 0.7);
+}
+
+.inv-cell .qb-ico {
+  font-size: 26px;
+  pointer-events: none;
+}
+
+.inv-cell .qb-k {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  color: #ffd36a;
+}
+
+.inv-cell .qb-n {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 11px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #000;
+}
+
+.inv-sel {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9fd8ec;
+  text-align: center;
+  min-height: 14px;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 50;
+  font-size: 34px;
+  transform: translate(-50%, -60%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}

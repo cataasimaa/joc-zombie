@@ -396,6 +396,11 @@ export const CONFIG = {
       catfish: { name: "Somn", icon: "🐋", weight: 7, price: 60, pulls: 8, time: 3.6, food: 30 },
     } satisfies Record<FishKind, { name: string; icon: string; weight: number; price: number; pulls: number; time: number; food: number }>,
     sellReach: 2.8,
+    /** Lovitură în gol cu târnăcopul (nu e nimic în față): cât durează. */
+    missInterval: 0.8,
+    /** Lanterna: bateria ține ~6 minute aprinsă și se reîncarcă în ~4 minute stinsă. */
+    batteryDrain: 100 / 360,
+    batteryCharge: 100 / 240,
   },
 
   coins: {

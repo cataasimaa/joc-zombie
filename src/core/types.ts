@@ -15,7 +15,10 @@ export type Phase = "day" | "night" | "victory" | "gameover";
  * Ce poate sta într-un loc din bara rapidă (4 locuri, le aranjezi cum vrei):
  * o armă pe care o ai, târnăcopul, lanterna, minele sau mâncare / pește.
  */
-export type SlotItem = `weapon:${WeaponId}` | "pickaxe" | "lantern" | "mine" | ItemKind;
+export type SlotItem = `weapon:${WeaponId}` | "pickaxe" | "rod" | "lantern" | "mine" | ItemKind;
+
+/** Ce ții în mână: butonul principal (✛) face ce face unealta asta. */
+export type HeldTool = "gun" | "pickaxe" | "rod" | "lantern";
 
 export interface Player {
   id: PlayerId;
@@ -49,8 +52,8 @@ export interface Player {
   weapons: WeaponId[];
   /** Bara rapidă: 4 locuri, fiecare cu ce vrei tu (sau gol). */
   hotbar: (SlotItem | null)[];
-  /** Ce ții în mână: arma sau târnăcopul. */
-  tool: "gun" | "pickaxe";
+  /** Ce ții în mână: arma, târnăcopul, undița sau lanterna. */
+  tool: HeldTool;
 }
 
 export interface Hero {
@@ -98,8 +101,9 @@ export interface Hero {
   /** Peștele agățat și de câte ori ai tras deja de el. */
   hooked: FishKind | null;
   reel: number;
-  /** Lanterna aprinsă (o stingi / aprinzi din bara rapidă). */
+  /** Lanterna aprinsă (o iei în mână și apeși ✛) și cât mai are bateria (0..100). */
   lantern: boolean;
+  battery: number;
   /** Căzut: cât l-a ridicat un coleg (0..CONFIG.heroCommon.reviveTime). */
   reviveProgress: number;
 }
@@ -381,7 +385,8 @@ export type GameEvent =
   | { type: "starving"; heroId: EntityId }
   | { type: "freezing"; heroId: EntityId }
   | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward; wood: number; ammo: number; meat: number }
-  | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal"; pos: Vec2 }
+  | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal" | "air"; pos: Vec2 }
+  | { type: "lantern"; heroId: EntityId; on: boolean }
   | { type: "treeFelled"; index: number; pos: Vec2 }
   | { type: "oreSpawned"; id: EntityId; kind: Ore["kind"]; pos: Vec2 }
   | { type: "oreMined"; id: EntityId; kind: Ore["kind"]; pos: Vec2; playerId: PlayerId; coins: number }

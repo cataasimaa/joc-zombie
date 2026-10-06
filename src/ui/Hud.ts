@@ -2,7 +2,6 @@
 // Ca și randarea, doar CITEȘTE starea. Acțiunile jucătorului ies prin callback-uri.
 
 import {
-  type ActionHint,
   CONFIG,
   FISH_KINDS,
   type FishKind,
@@ -181,7 +180,6 @@ export class Hud {
     heroSubtitle: $("hero-subtitle"),
     waveText: $("wave-text"),
     timerText: $("timer-text"),
-    phaseBar: $("phase-bar"),
     startWave: $<HTMLButtonElement>("start-wave"),
     bossPanel: $("boss-panel"),
     bossBar: $("boss-bar"),
@@ -235,17 +233,9 @@ export class Hud {
     $("campfire-cost").textContent = `🪵 ${CONFIG.survival.campfireCost}`;
     $("chicken-cost").textContent = `🪵 ${CONFIG.survival.farmCost}`;
     $("pig-cost").textContent = `🪵 ${CONFIG.survival.farmCost}`;
-    for (let i = 0; i < HOTBAR_SIZE; i++) $(`qb-${i}`).addEventListener("click", () => this.onSlotClick(i));
+    for (let i = 0; i < HOTBAR_SIZE; i++) $(`qb-${i}`).addEventListener("click", () => !this.suppressClick && this.onSlotClick(i));
+    this.setupDrag();
     $("qb-bag").addEventListener("click", () => this.toggleInventory());
-    // Butonul de acțiune: ții apăsat (târnăcop), sau apeși o dată (undiță, vânzare).
-    const act = $("act-btn");
-    const press = (on: boolean) => (e: Event) => {
-      e.preventDefault();
-      act.classList.toggle("held", on);
-      cb.onAction(on);
-    };
-    act.addEventListener("pointerdown", press(true));
-    for (const ev of ["pointerup", "pointercancel", "pointerleave"]) act.addEventListener(ev, press(false));
     $("menu-board").addEventListener("click", () => this.showBoard(true));
     $("board-close").addEventListener("click", () => this.showBoard(false));
     $("palette-close").addEventListener("click", () => cb.onToggleBuild());
@@ -478,27 +468,36 @@ export class Hud {
     this.width(this.el.mineFill, sh.hp / sh.maxHp);
     this.el.mineHp.classList.toggle("low", sh.hp / sh.maxHp < 0.35);
 
-    // Muniție + cercul de reîncărcare de pe butonul de tras.
+    // Muniție + cercul de reîncărcare de pe butonul de tras (doar cu arma în mână).
     const gun = gunStats(state, hero);
-    this.text(this.el.ammo, hero.reloadTimer > 0 ? "↻" : `${hero.ammo}/${hero.reserve}`);
-    this.el.fireStick.classList.toggle("empty", hero.ammo <= 0 && hero.reserve <= 0);
-    this.el.fireStick.classList.toggle("reloading", hero.reloadTimer > 0);
-    this.el.fireStick.classList.toggle("low", hero.reloadTimer <= 0 && hero.ammo <= Math.ceil(gun.magazine * 0.25));
-    const progress = hero.reloadTimer > 0 ? 1 - hero.reloadTimer / gun.reloadTime : 0;
+    const holdsGun = player.tool === "gun";
+    $("tool-icon").classList.toggle("hidden", holdsGun);
+    if (holdsGun) {
+      this.toolKey = "";
+      this.text(this.el.ammo, hero.reloadTimer > 0 ? "↻" : `${hero.ammo}/${hero.reserve}`);
+    }
+    this.el.fireStick.classList.toggle("empty", holdsGun && hero.ammo <= 0 && hero.reserve <= 0);
+    this.el.fireStick.classList.toggle("reloading", holdsGun && hero.reloadTimer > 0);
+    this.el.fireStick.classList.toggle("low", holdsGun && hero.reloadTimer <= 0 && hero.ammo <= Math.ceil(gun.magazine * 0.25));
+    // Cercul: reîncărcarea (arma) sau bateria (lanterna).
+    const progress = player.tool === "lantern" ? hero.battery / 100 : holdsGun && hero.reloadTimer > 0 ? 1 - hero.reloadTimer / gun.reloadTime : 0;
     this.el.reloadArc.style.strokeDashoffset = String(289 * (1 - progress));
 
     // Zi / noapte + cronometru
     const night = state.phase === "night";
     this.el.hud.classList.toggle("is-night", night);
+    // Ceasul: doar ziua / noaptea și timpul rămas (câți zombi vin rămâne un mister).
     if (state.phase === "day") {
-      this.text(this.el.waveText, state.wave === 0 ? "☀ Prima zi · construiește!" : `☀ Ziua ${state.wave + 1} · construiește!`);
-      this.text(this.el.timerText, `noaptea vine în ${fmtTime(state.phaseTimer)}`);
+      this.text(this.el.waveText, `Ziua ${state.wave + 1}`);
+      this.text(this.el.timerText, fmtTime(state.phaseTimer));
     } else if (night) {
-      this.text(this.el.waveText, `🌙 Noaptea ${state.wave}/${state.totalWaves}`);
-      const left = state.zombies.filter((z) => !z.burning).length + state.spawnQueue.length;
-      this.text(this.el.timerText, `🧟 ${left} · zori în ${fmtTime(state.phaseTimer)}`);
+      this.text(this.el.waveText, `Noaptea ${state.wave}/${state.totalWaves}`);
+      this.text(this.el.timerText, fmtTime(state.phaseTimer));
     }
-    this.width(this.el.phaseBar, state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0);
+    const clock = $("clock");
+    clock.style.setProperty("--p", String(state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0));
+    clock.classList.toggle("night", night);
+    this.text($("clock-icon"), night ? "🌙" : "☀️");
     this.el.startWave.classList.toggle("hidden", state.phase !== "day");
 
     const boss = state.zombies.find((z) => z.type === "boss");
@@ -872,27 +871,32 @@ export class Hud {
 
   // ---------- Butonul de acțiune, reînvierea, inventarul ----------
 
-  private actKey = "";
-  private updateActionButton(state: GameState, hero: GameState["heroes"][number]): void {
-    const hint: ActionHint = actionHint(state, hero);
+  /**
+   * Butonul principal (✛) arată unealta din mână: arma = gloanțele; târnăcopul = doar iconița;
+   * undița = „aruncă” / „TRAGE! 2/5”; lanterna = bateria (și cercul din jur se golește).
+   */
+  private toolKey = "";
+  private updateActionButton(state: GameState, hero: Hero): void {
+    const player = state.players[hero.playerId];
+    const tool = player.tool;
     const bite = hero.hooked !== null;
     const pulls = hero.hooked ? CONFIG.gather.fish[hero.hooked].pulls : 0;
-    const look: Record<Exclude<ActionHint, null>, [string, string]> = {
-      chop: ["🪓", "taie"],
-      mine: ["⛏️", "minează"],
-      hunt: ["🔪", "taie"],
-      fish: ["🎣", "pescuiește"],
-      reel: [bite ? "❗" : "🎣", bite ? `TRAGE! ${hero.reel}/${pulls}` : "așteaptă"],
-      sell: ["💰", "vinde"],
-    };
-    const key = `${hint}|${bite}|${hero.reel}`;
-    const btn = $("act-btn");
-    btn.classList.toggle("hidden", hint === null);
-    btn.classList.toggle("alert", bite);
-    if (key === this.actKey || !hint) return;
-    this.actKey = key;
-    $("act-ico").textContent = look[hint][0];
-    $("act-label").textContent = look[hint][1];
+    const stick = this.el.fireStick;
+    for (const t of ["gun", "pickaxe", "rod", "lantern"]) stick.classList.toggle(`tool-${t}`, tool === t);
+    stick.classList.toggle("bite", tool === "rod" && bite);
+    if (tool === "gun") return;
+    const icon = tool === "pickaxe" ? "⛏️" : tool === "rod" ? (bite ? "❗" : "🎣") : hero.lantern ? "🔦" : "🔦";
+    const hint = actionHint(state, hero);
+    const label =
+      tool === "pickaxe" ? "" :
+      tool === "rod" ? (bite ? `TRAGE ${hero.reel}/${pulls}` : hint === "reel" ? "așteaptă" : hint === "fish" ? "aruncă" : "la baltă") :
+      `${Math.round(hero.battery)}%`;
+    const key = `${tool}|${icon}|${label}|${hero.lantern}`;
+    if (key === this.toolKey) return;
+    this.toolKey = key;
+    this.text($("tool-icon"), icon);
+    this.text(this.el.ammo, label);
+    stick.classList.toggle("lantern-on", tool === "lantern" && hero.lantern);
   }
 
   private updateRevive(state: GameState, hero: GameState["heroes"][number]): void {
@@ -909,67 +913,133 @@ export class Hud {
   private invOpen = false;
   toggleInventory(open = !this.invOpen): void {
     this.invOpen = open;
-    if (!open) this.pendingSlotItem = null;
+    if (!open) this.selectedItem = null;
     this.hotbarKey = "";
     $("inventory").classList.toggle("hidden", !open);
     if (open && this.lastState && this.playerId) this.renderInventory(this.lastState, this.playerId);
   }
 
-  // ---------- Bara rapidă (4 locuri, le aranjezi tu) ----------
+  // ---------- Bara rapidă (4 locuri) și inventarul (grilă), în stil Ark ----------
 
-  /** Iconița, numele și câte ai dintr-un obiect. */
-  private itemInfo(item: SlotItem, p: Player, hero: Hero): { icon: string; name: string; help: string; count: number | null } {
+  /** Iconița, numele și câte ai dintr-un obiect; `fill` = bara subțire de sub iconiță (0..1). */
+  private itemInfo(item: SlotItem, p: Player, hero: Hero): { icon: string; name: string; count: number | null; fill: number | null } {
     if (item.startsWith("weapon:")) {
       const id = item.slice(7) as WeaponId;
-      return { icon: WEAPON_ICONS[id], name: WEAPONS[id].name, help: "o iei în mână (tragi cu ✛)", count: null };
+      const held = p.weapon === id;
+      return { icon: WEAPON_ICONS[id], name: WEAPONS[id].name, count: null, fill: held ? hero.ammo / Math.max(1, gunStats(this.lastState!, hero).magazine) : null };
     }
     switch (item) {
       case "pickaxe":
-        return { icon: "⛏️", name: "Târnăcop", help: "îl iei în mână: tai brazi, spargi piatră, tai animale (tragi cu ✛)", count: null };
+        return { icon: "⛏️", name: "Târnăcop", count: null, fill: null };
+      case "rod":
+        return { icon: "🎣", name: "Undiță", count: null, fill: null };
       case "lantern":
-        return { icon: hero.lantern ? "🔦" : "🌑", name: "Lanternă", help: "o aprinzi / stingi (noaptea luminează în jur)", count: null };
+        return { icon: "🔦", name: hero.lantern ? "Lanternă (aprinsă)" : "Lanternă", count: null, fill: hero.battery / 100 };
       case "mine":
-        return { icon: "💣", name: "Mină", help: "o pui unde stai; explodează când trece un zombi", count: p.mines };
+        return { icon: "💣", name: "Mină", count: p.mines, fill: null };
       case "cookedMeat":
-        return { icon: "🍗", name: "Carne friptă", help: "+45 foame, +10 viață", count: p.inventory.cookedMeat };
+        return { icon: "🍗", name: "Carne friptă", count: p.inventory.cookedMeat, fill: null };
       case "rawMeat":
-        return { icon: "🥩", name: "Carne crudă", help: "o pui pe focul de lângă tine (15 s) sau o mănânci crudă", count: p.inventory.rawMeat };
+        return { icon: "🥩", name: "Carne crudă", count: p.inventory.rawMeat, fill: null };
       default: {
         const f = CONFIG.gather.fish[item as FishKind];
-        return { icon: f.icon, name: f.name, help: `se vinde la tarabă cu ${f.price} aur (sau o mănânci)`, count: p.inventory[item as FishKind] };
+        return { icon: f.icon, name: `${f.name} · ${f.price} aur`, count: p.inventory[item as FishKind], fill: null };
       }
     }
   }
 
+  /** Conținutul unei căsuțe (bară sau inventar): iconiță, număr, bara de jos. */
+  private cellHtml(info: { icon: string; count: number | null; fill: number | null } | null, key?: string): string {
+    if (!info) return key ? `<i class="qb-k">${key}</i>` : "";
+    return `${key ? `<i class="qb-k">${key}</i>` : ""}<span class="qb-ico">${info.icon}</span>${
+      info.count !== null ? `<b class="qb-n">${info.count}</b>` : ""}${
+      info.fill !== null ? `<span class="qb-fill"><span style="width:${Math.round(Math.max(0, Math.min(1, info.fill)) * 100)}%"></span></span>` : ""}`;
+  }
+
   private hotbarKey = "";
   private renderHotbar(state: GameState, p: Player, hero: Hero): void {
-    const key = `${p.hotbar.join(",")}|${p.tool}|${p.weapon}|${hero.lantern}|${p.mines}|${Object.values(p.inventory).join(",")}|${this.pendingSlotItem}`;
+    const key = `${p.hotbar.join(",")}|${p.tool}|${p.weapon}|${hero.lantern}|${Math.round(hero.battery / 5)}|${hero.ammo}|${p.mines}|${Object.values(p.inventory).join(",")}|${this.selectedItem}`;
     if (key === this.hotbarKey) return;
     this.hotbarKey = key;
     p.hotbar.forEach((item, i) => {
       const btn = $<HTMLButtonElement>(`qb-${i}`);
       const info = item ? this.itemInfo(item, p, hero) : null;
-      (btn.querySelector(".qb-ico") as HTMLElement).textContent = info ? info.icon : "";
-      (btn.querySelector(".qb-n") as HTMLElement).textContent = info?.count !== null && info?.count !== undefined ? String(info.count) : "";
-      btn.title = info ? `${info.name}: ${info.help}` : "Loc gol (pune ceva din 🎒)";
-      const equipped = item === "pickaxe" ? p.tool === "pickaxe" : item === `weapon:${p.weapon}` && p.tool === "gun";
+      btn.innerHTML = this.cellHtml(info, String(i + 1));
+      btn.title = info ? info.name : "Loc gol";
+      const equipped = item === `weapon:${p.weapon}` ? p.tool === "gun" : item === p.tool;
       btn.classList.toggle("equipped", equipped);
-      btn.classList.toggle("empty", !item || (info?.count === 0));
-      btn.classList.toggle("target", this.pendingSlotItem !== null);
+      btn.classList.toggle("empty", !item || info?.count === 0);
+      btn.classList.toggle("target", this.selectedItem !== null);
     });
     void state;
   }
 
-  /** Obiectul ales în inventar care așteaptă un loc din bară (tap pe un loc = îl pui acolo). */
-  private pendingSlotItem: SlotItem | null = null;
+  /** Obiectul ales în inventar (tap): următorul tap pe un loc din bară îl pune acolo. */
+  private selectedItem: SlotItem | null = null;
+  /** Tras cu degetul: obiectul, de unde vine (loc din bară sau inventar) și „fantoma” care urmărește degetul. */
+  private drag: { item: SlotItem | null; fromSlot: number | null; ghost: HTMLElement | null; x: number; y: number; moved: boolean } | null = null;
+
   private onSlotClick(slot: number): void {
-    if (this.pendingSlotItem) {
-      this.cb.onSetSlot(slot, this.pendingSlotItem);
-      this.pendingSlotItem = null;
-      this.invKey = "";
+    if (this.selectedItem) {
+      this.cb.onSetSlot(slot, this.selectedItem);
+      this.selectedItem = null;
+      this.invKey = this.hotbarKey = "";
       return;
     }
     this.cb.onUseSlot(slot);
+  }
+
+  /** Pornește un „drag” (de pe o căsuță din inventar sau din bară). */
+  private startDrag(e: PointerEvent, item: SlotItem | null, fromSlot: number | null): void {
+    this.drag = { item, fromSlot, ghost: null, x: e.clientX, y: e.clientY, moved: false };
+  }
+
+  private setupDrag(): void {
+    window.addEventListener("pointermove", (e) => {
+      const d = this.drag;
+      if (!d || !d.item) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return;
+      if (!d.moved) {
+        d.moved = true;
+        const g = document.createElement("div");
+        g.className = "drag-ghost";
+        g.textContent = this.lastState && this.playerId ? this.itemInfo(d.item, this.lastState.players[this.playerId], this.myHero()!).icon : "";
+        document.body.appendChild(g);
+        d.ghost = g;
+        $("quickbar").classList.add("dropping");
+      }
+      d.ghost!.style.left = `${e.clientX}px`;
+      d.ghost!.style.top = `${e.clientY}px`;
+    });
+    window.addEventListener("pointerup", (e) => {
+      const d = this.drag;
+      this.drag = null;
+      if (!d) return;
+      $("quickbar").classList.remove("dropping");
+      d.ghost?.remove();
+      if (!d.moved) return; // a fost un tap: îl tratează click-ul
+      // Unde l-a lăsat: pe un loc din bară = îl pune acolo; în afara barei (din bară) = golește locul.
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>(".qb-slot[id^='qb-']");
+      const slot = el && el.id !== "qb-bag" ? Number(el.id.slice(3)) : -1;
+      if (slot >= 0 && d.item) this.cb.onSetSlot(slot, d.item);
+      else if (d.fromSlot !== null) this.cb.onSetSlot(d.fromSlot, null);
+      this.suppressClick = true;
+      setTimeout(() => (this.suppressClick = false), 50);
+      this.invKey = this.hotbarKey = "";
+    });
+    for (let i = 0; i < HOTBAR_SIZE; i++) {
+      $(`qb-${i}`).addEventListener("pointerdown", (e) => {
+        const p = this.lastState && this.playerId ? this.lastState.players[this.playerId] : null;
+        this.startDrag(e, p?.hotbar[i] ?? null, i);
+      });
+    }
+  }
+  private suppressClick = false;
+
+  private myHero(): Hero | undefined {
+    const st = this.lastState;
+    if (!st || !this.playerId) return undefined;
+    return st.heroes.find((h) => h.id === st.players[this.playerId!].heroId);
   }
 
   private invKey = "";
@@ -978,41 +1048,34 @@ export class Hud {
     const hero = state.heroes.find((h) => h.id === p.heroId)!;
     const items: SlotItem[] = [
       ...p.weapons.map((w) => `weapon:${w}` as SlotItem),
-      "pickaxe", "lantern", "mine", "cookedMeat", "rawMeat",
+      "pickaxe", "rod", "lantern",
+      ...(p.mines > 0 ? ["mine" as SlotItem] : []),
+      ...(["cookedMeat", "rawMeat"] as SlotItem[]).filter((k) => p.inventory[k as "rawMeat"] > 0),
       ...FISH_KINDS.filter((k) => p.inventory[k] > 0),
     ];
-    const key = `${items.join(",")}|${p.hotbar.join(",")}|${Object.values(p.inventory).join(",")}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}|${this.pendingSlotItem}`;
+    const key = `${items.join(",")}|${p.hotbar.join(",")}|${Object.values(p.inventory).join(",")}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}|${Math.round(hero.battery / 5)}|${this.selectedItem}`;
     if (key === this.invKey) return;
     this.invKey = key;
-    const el = $("inventory");
-    const row = (item: SlotItem) => {
+    const cells = Array.from({ length: Math.max(15, Math.ceil(items.length / 5) * 5) }, (_, i) => {
+      const item = items[i];
+      if (!item) return `<div class="inv-cell blank"></div>`;
       const info = this.itemInfo(item, p, hero);
-      const slots = Array.from({ length: HOTBAR_SIZE }, (_, i) =>
-        `<button class="slot-btn ${p.hotbar[i] === item ? "on" : ""}" data-item="${item}" data-slot="${i}" title="Pune în locul ${i + 1}">${i + 1}</button>`).join("");
-      return `<div class="inv-row ${this.pendingSlotItem === item ? "picked" : ""}" data-pick="${item}"><span class="inv-ico">${info.icon}</span><span class="inv-name">${info.name}<small>${info.help}</small></span><b>${info.count ?? ""}</b><span class="slot-btns">${slots}</span></div>`;
-    };
-    const plain = (ico: string, name: string, help: string, n: number) =>
-      `<div class="inv-row"><span class="inv-ico">${ico}</span><span class="inv-name">${name}<small>${help}</small></span><b>${n}</b></div>`;
-    el.innerHTML = `<h3>🎒 Inventar <small>· apasă 1–4 ca să pui obiectul în bara de jos</small></h3>` +
-      items.map(row).join("") +
-      plain("📦", "Gloanțe", "în rezervă", hero.reserve) +
-      plain("🪵", "Lemn", "construcții; tai brazi cu târnăcopul", p.wood) +
-      plain("🪙", "Aur", "magazinul norocului; pește, vânat, zăcăminte", p.coins);
-    for (const b of el.querySelectorAll<HTMLButtonElement>("button[data-slot]")) {
-      b.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const slot = Number(b.dataset.slot);
-        const item = b.dataset.item as SlotItem;
-        this.cb.onSetSlot(slot, p.hotbar[slot] === item ? null : item);
-      });
-    }
-    // Tap pe un rând = îl „ridici”; apoi tap pe un loc din bara de jos = îl pui acolo.
-    for (const r of el.querySelectorAll<HTMLElement>(".inv-row[data-pick]")) {
-      r.addEventListener("click", () => {
-        const item = r.dataset.pick as SlotItem;
-        this.pendingSlotItem = this.pendingSlotItem === item ? null : item;
-        this.invKey = "";
-        this.hotbarKey = "";
+      const inBar = p.hotbar.indexOf(item);
+      return `<button class="inv-cell ${this.selectedItem === item ? "picked" : ""}" data-item="${item}" title="${info.name}">${this.cellHtml(info, inBar >= 0 ? String(inBar + 1) : undefined)}</button>`;
+    }).join("");
+    const sel = this.selectedItem ? this.itemInfo(this.selectedItem, p, hero).name : "Trage un obiect pe bara de jos";
+    $("inventory").innerHTML =
+      `<div class="inv-head"><span>INVENTAR</span><span class="inv-res">🪵 ${p.wood} · <i class="coin"></i> ${p.coins} · 📦 ${hero.reserve}</span><button class="inv-close">✕</button></div>` +
+      `<div class="inv-grid">${cells}</div><div class="inv-sel">${sel}</div>`;
+    $("inventory").querySelector(".inv-close")!.addEventListener("click", () => this.toggleInventory(false));
+    for (const c of $("inventory").querySelectorAll<HTMLElement>(".inv-cell[data-item]")) {
+      const item = c.dataset.item as SlotItem;
+      c.addEventListener("pointerdown", (e) => this.startDrag(e, item, null));
+      c.addEventListener("click", () => {
+        if (this.suppressClick) return;
+        // Tap: îl alegi (locurile din bară clipesc); încă un tap = renunți.
+        this.selectedItem = this.selectedItem === item ? null : item;
+        this.invKey = this.hotbarKey = "";
         this.renderInventory(state, playerId);
       });
     }

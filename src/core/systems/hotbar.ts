@@ -13,15 +13,15 @@ export const HOTBAR_SIZE = 4;
 
 const FOOD: ItemKind[] = ["cookedMeat", "rawMeat", ...FISH_KINDS];
 
-/** Bara de start: arma, târnăcopul, apoi mâncare (Supraviețuire) sau mină + lanternă. */
+/** Bara de start: arma, târnăcopul, undița, apoi mâncare (Supraviețuire) sau lanterna. */
 export function defaultHotbar(mode: GameMode): (SlotItem | null)[] {
-  return mode === "survival" ? ["weapon:rusty", "pickaxe", "cookedMeat", "rawMeat"] : ["weapon:rusty", "pickaxe", "mine", "lantern"];
+  return mode === "survival" ? ["weapon:rusty", "pickaxe", "rod", "cookedMeat"] : ["weapon:rusty", "pickaxe", "rod", "lantern"];
 }
 
 /** Poate jucătorul să pună asta în bară? (Armele doar dacă le are.) */
 export function canHold(player: Player, item: SlotItem): boolean {
   if (item.startsWith("weapon:")) return player.weapons.includes(item.slice(7) as WeaponId);
-  return item === "pickaxe" || item === "lantern" || item === "mine" || FOOD.includes(item as ItemKind);
+  return item === "pickaxe" || item === "rod" || item === "lantern" || item === "mine" || FOOD.includes(item as ItemKind);
 }
 
 export function setSlot(state: GameState, playerId: PlayerId, slot: number, item: SlotItem | null): boolean {
@@ -55,12 +55,10 @@ export function useSlot(state: GameState, playerId: PlayerId, slot: number, even
   if (!player || !item || !hero || !hero.alive) return false;
   if (item.startsWith("weapon:")) {
     equipWeapon(state, player, hero, item.slice(7) as WeaponId);
-  } else if (item === "pickaxe") {
-    // Târnăcopul în mână; încă o apăsare = înapoi la armă.
-    player.tool = player.tool === "pickaxe" ? "gun" : "pickaxe";
+  } else if (item === "pickaxe" || item === "rod" || item === "lantern") {
+    // Unealta în mână (butonul ✛ o folosește); încă o apăsare pe același loc = înapoi la armă.
+    player.tool = player.tool === item ? "gun" : item;
     hero.firing = false;
-  } else if (item === "lantern") {
-    hero.lantern = !hero.lantern;
   } else if (item === "mine") {
     return placeMine(state, playerId);
   } else {

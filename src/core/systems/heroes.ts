@@ -128,7 +128,8 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
     // 4. Tragere în direcția în care ochește jucătorul.
     hero.fireTimer -= dt;
     // Cu târnăcopul sau undița în mână nu tragi.
-    if (!hero.firing || hero.action || hero.fishTimer >= 0 || player.tool === "pickaxe") continue;
+    // Tragi doar cu arma în mână (cu târnăcopul / undița / lanterna, ✛ face altceva).
+    if (!hero.firing || hero.action || hero.fishTimer >= 0 || player.tool !== "gun") continue;
     if (hero.autoAim) {
       // Ochire automată: zombii întâi, apoi vânatul sălbatic (niciodată animalele de la fermă).
       const target: { pos: Vec2 } | null = findNearestZombie(state, hero.pos, gun.range) ?? nearestWildAnimal(state, hero.pos, gun.range);

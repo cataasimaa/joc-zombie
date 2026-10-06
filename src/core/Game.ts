@@ -140,6 +140,8 @@ export class GameSimulation {
         if (!hero || !hero.alive) return;
         const len = Math.hypot(cmd.x, cmd.z);
         if (len > 0.001) hero.aim = { x: cmd.x / len, z: cmd.z / len };
+        // Apăsarea butonului principal (o singură dată): aruncă undița, trage peștele, aprinde lanterna.
+        if (cmd.firing && !hero.firing) hero.actionPress = true;
         hero.firing = cmd.firing;
         hero.autoAim = cmd.auto;
         hero.aimDist = cmd.dist !== undefined && cmd.dist > 0 ? Math.min(60, cmd.dist) : 0;
@@ -280,7 +282,8 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       biteTimer: 0,
       hooked: null,
       reel: 0,
-      lantern: true,
+      lantern: false,
+      battery: 100,
       reviveProgress: 0,
     });
     const hero = state.heroes[state.heroes.length - 1];

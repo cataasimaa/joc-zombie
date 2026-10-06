@@ -635,12 +635,17 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
   const near = (sim: GameSimulation, x: number, z: number) => {
     sim.state.heroes[0].pos = { x, z };
   };
+  /** Unealta din mână (butonul principal o folosește). */
+  const hold = (sim: GameSimulation, tool: "pickaxe" | "rod" | "lantern" | "gun") => {
+    sim.state.players.p1.tool = tool;
+  };
 
   it("lovești un brad cu târnăcopul: +1 lemn pe lovitură, cade după 50", () => {
     const sim = newGame();
     const s = sim.state;
     const t = GAME_MAP.trees[0];
     near(sim, t.pos.x + t.radius + 0.8, t.pos.z);
+    hold(sim, "pickaxe");
     const wood = s.players.p1.wood;
     sim.enqueue({ type: "action", playerId: "p1", on: true });
     // Lovituri la 0,7 s: în 2,05 s = 3 lovituri (la 0; 0,7; 1,4).
@@ -664,6 +669,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     const s = sim.state;
     s.ores = [{ id: 999, kind: "gold", pos: { x: 12, z: 12 }, hits: 2 }];
     near(sim, 13.2, 12);
+    hold(sim, "pickaxe");
     sim.enqueue({ type: "action", playerId: "p1", on: true });
     run(sim, 1.2);
     expect(s.ores.length).toBe(0);
@@ -675,6 +681,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     const s = sim.state;
     const p = GAME_MAP.pond;
     near(sim, p.pos.x + p.radius + 0.8, p.pos.z);
+    hold(sim, "rod");
     const tap = () => {
       sim.enqueue({ type: "action", playerId: "p1", on: true });
       sim.step(DT);
@@ -693,10 +700,10 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     expect(s.players.p1.inventory[fish]).toBe(0); // încă se zbate
     tap();
     expect(s.players.p1.inventory[fish]).toBe(1);
+    // Lângă tarabă peștele se vinde singur.
     const tr = GAME_MAP.trader.pos;
     near(sim, tr.x + 2, tr.z + 1);
     sim.step(DT);
-    tap();
     expect(s.players.p1.inventory[fish]).toBe(0);
     expect(s.players.p1.coins).toBe(CONFIG.gather.fish[fish].price);
   });
@@ -706,6 +713,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     const s = sim.state;
     const p = GAME_MAP.pond;
     near(sim, p.pos.x + p.radius + 0.8, p.pos.z);
+    hold(sim, "rod");
     sim.enqueue({ type: "action", playerId: "p1", on: true });
     sim.step(DT);
     sim.enqueue({ type: "action", playerId: "p1", on: false });
@@ -721,6 +729,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     const s = sim.state;
     s.animals.push({ id: 900, kind: "chicken", pos: { x: 10, z: 10 }, facing: 0, hp: 8, maxHp: 8, goal: { x: 10, z: 10 }, timer: 99, attackTimer: 0, farmId: null });
     near(sim, 11, 10);
+    hold(sim, "pickaxe");
     sim.enqueue({ type: "action", playerId: "p1", on: true });
     sim.step(DT);
     expect(s.animals.some((a) => a.id === 900)).toBe(false);
@@ -788,5 +797,32 @@ describe("bara rapidă", () => {
     sim.enqueue({ type: "useSlot", playerId: "p1", slot: 3 });
     sim.step(DT);
     expect(p.tool).toBe("pickaxe");
+  });
+});
+
+describe("unelte în mână", () => {
+  it("butonul principal: cu târnăcopul lovește (și în gol), nu trage; lanterna se aprinde și consumă bateria", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const h = s.heroes[0];
+    h.pos = { x: 0, z: -6 };
+    s.players.p1.tool = "pickaxe";
+    const ammo = h.ammo;
+    sim.enqueue({ type: "aim", playerId: "p1", x: 0, z: -1, firing: true, auto: false });
+    const events: GameEvent[] = [];
+    for (let i = 0; i < 10; i++) {
+      sim.step(DT);
+      events.push(...sim.drainEvents());
+    }
+    expect(h.ammo).toBe(ammo);
+    expect(events.some((e) => e.type === "toolHit" && e.target === "air")).toBe(true);
+    sim.enqueue({ type: "aim", playerId: "p1", x: 0, z: -1, firing: false, auto: false });
+    s.players.p1.tool = "lantern";
+    sim.step(DT);
+    sim.enqueue({ type: "aim", playerId: "p1", x: 0, z: -1, firing: true, auto: false });
+    sim.step(DT);
+    expect(h.lantern).toBe(true);
+    run(sim, 10);
+    expect(h.battery).toBeLessThan(100);
   });
 });

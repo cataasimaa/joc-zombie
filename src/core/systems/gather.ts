@@ -71,8 +71,6 @@ export function toolTarget(state: GameState, hero: Hero): Target | null {
 export function actionHint(state: GameState, hero: Hero): ActionHint {
   if (!hero.alive) return null;
   if (hero.fishTimer >= 0) return "reel";
-  const player = state.players[hero.playerId];
-  if (nearTrader(hero) && fishCount(player) > 0) return "sell";
   if (nearFishingHole(hero) && state.phase === "day") return "fish";
   const t = toolTarget(state, hero);
   if (!t) return null;
@@ -103,12 +101,42 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
     }
     hero.actionTimer -= dt;
     const player = state.players[hero.playerId];
+    // „Folosești” unealta: ții apăsat butonul principal (✛) sau acțiunea (G / comanda veche).
+    const using = hero.firing || hero.action;
+
+    // Lanterna: bateria se descarcă cât e aprinsă și se reîncarcă cât e stinsă.
+    if (hero.lantern) {
+      hero.battery = Math.max(0, hero.battery - G.batteryDrain * dt);
+      if (hero.battery <= 0) {
+        hero.lantern = false;
+        events.push({ type: "lantern", heroId: hero.id, on: false });
+      }
+    } else {
+      hero.battery = Math.min(100, hero.battery + G.batteryCharge * dt);
+    }
+    if (player.tool === "lantern" && press) {
+      hero.lantern = !hero.lantern && hero.battery > 1;
+      events.push({ type: "lantern", heroId: hero.id, on: hero.lantern });
+    }
+
+    // Lângă tarabă, peștele se vinde singur.
+    if (nearTrader(hero) && fishCount(player) > 0) {
+      let coins = 0;
+      let fish = 0;
+      for (const k of FISH_KINDS) {
+        coins += player.inventory[k] * G.fish[k].price;
+        fish += player.inventory[k];
+        player.inventory[k] = 0;
+      }
+      player.coins += coins;
+      events.push({ type: "sold", playerId: player.id, fish, coins, pos: { ...GAME_MAP.trader.pos } });
+    }
 
     // 1. Pescuit în curs.
     if (hero.fishTimer >= 0) {
       const bob = bobberPos(hero);
       const moving = hero.moveInput.x !== 0 || hero.moveInput.z !== 0;
-      if (moving || state.phase !== "day" || !nearFishingHole(hero)) {
+      if (moving || state.phase !== "day" || !nearFishingHole(hero) || player.tool !== "rod") {
         hero.fishTimer = -1;
         hero.hooked = null;
         hero.biteTimer = 0;
@@ -157,20 +185,8 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
       continue;
     }
 
-    // 2. O apăsare: vinzi la tarabă sau arunci undița.
-    if (press) {
-      if (nearTrader(hero) && fishCount(player) > 0) {
-        let coins = 0;
-        let fish = 0;
-        for (const k of FISH_KINDS) {
-          coins += player.inventory[k] * G.fish[k].price;
-          fish += player.inventory[k];
-          player.inventory[k] = 0;
-        }
-        player.coins += coins;
-        events.push({ type: "sold", playerId: player.id, fish, coins, pos: { ...GAME_MAP.trader.pos } });
-        continue;
-      }
+    // 2. Cu undița în mână: o apăsare pe malul bălții (ziua) aruncă undița.
+    if (press && player.tool === "rod") {
       if (nearFishingHole(hero) && state.phase === "day") {
         hero.fishTimer = nextBite(state);
         hero.biteTimer = 0;
@@ -182,11 +198,15 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
       }
     }
 
-    // 3. Târnăcopul: cât ții apăsat acțiunea (sau „tragi” cu târnăcopul în mână), lovești ținta.
-    const swinging = hero.action || (player.tool === "pickaxe" && hero.firing);
-    if (!swinging || hero.actionTimer > 1e-6) continue;
+    // 3. Târnăcopul în mână: cât ții apăsat, lovești ținta din față (sau dai în gol).
+    if (player.tool !== "pickaxe" || !using || hero.actionTimer > 1e-6) continue;
     const target = toolTarget(state, hero);
-    if (!target) continue;
+    if (!target) {
+      hero.actionTimer = G.missInterval;
+      const f = hero.facing;
+      events.push({ type: "toolHit", heroId: hero.id, target: "air", pos: { x: hero.pos.x + Math.sin(f) * 1.2, z: hero.pos.z + Math.cos(f) * 1.2 } });
+      continue;
+    }
     hero.actionTimer = G.hitInterval[target.kind];
     hero.facing = angleOf(target.pos.x - hero.pos.x, target.pos.z - hero.pos.z);
     events.push({ type: "toolHit", heroId: hero.id, target: target.kind, pos: { ...target.pos } });

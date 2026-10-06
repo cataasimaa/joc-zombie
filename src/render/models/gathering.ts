@@ -97,8 +97,25 @@ export function buildOre(scene: Scene, mats: Materials, kind: "silver" | "gold")
 export function buildPickaxe(scene: Scene, mats: Materials): Mesh[] {
   const k = new ModelKit(scene, mats, 4400);
   k.cyl(1.0, 0.06, 0.07, 6, { p: [0, 0.5, 0] }, { color: PAL.oldWood, wear: 0.25 });
-  k.cyl(0.85, 0.02, 0.1, 5, { p: [0, 1.0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.8] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  // Capul de fier stă în planul loviturii (vârful în față, ciocanul în spate), ca la un târnăcop adevărat.
+  k.cyl(0.36, 0.015, 0.09, 5, { p: [0, 1.0, 0.18], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  k.cyl(0.22, 0.07, 0.09, 6, { p: [0, 1.0, -0.1], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  k.box(0.1, 0.12, 0.12, { p: [0, 1.0, 0] }, { color: PAL.rust, mat: "metal", wear: 0.3 });
   return k.build("pickaxe");
+}
+
+/** Felinarul ținut în mână: ramă de fier cu mâner și sticlă; `glow` = flacăra (doar aprins). */
+export function buildHandLantern(scene: Scene, mats: Materials): { body: Mesh[]; glow: Mesh[] } {
+  const k = new ModelKit(scene, mats, 4600);
+  k.box(0.22, 0.04, 0.22, { p: [0, 0, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  k.box(0.22, 0.04, 0.22, { p: [0, 0.3, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  for (const [x, z] of [[-0.1, -0.1], [0.1, -0.1], [-0.1, 0.1], [0.1, 0.1]]) k.cyl(0.3, 0.025, 0.025, 4, { p: [x, 0.15, z] }, { color: PAL.iron, mat: "metal" });
+  k.cyl(0.08, 0.1, 0.16, 6, { p: [0, 0.36, 0] }, { color: PAL.rust, mat: "metal" });
+  k.cyl(0.03, 0.18, 0.18, 8, { p: [0, 0.45, 0], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal" });
+  const body = k.build("handLantern");
+  const g = new ModelKit(scene, mats, 4601);
+  g.sphere(0.14, 6, { p: [0, 0.15, 0], s: [1, 1.3, 1] }, { color: PAL.window, mat: "glow" });
+  return { body, glow: g.build("handLanternGlow") };
 }
 
 /** Undița: băț lung de alun cu mulinetă. */
