@@ -13,7 +13,7 @@ import {
   upgradeBarricade,
 } from "./systems/barricades";
 import { updateChests, updateCoins } from "./systems/coins";
-import { addFuel, buildBuilding, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
+import { addFuel, buildBuilding, craftCanteen, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
 import { spawnDayOres, updateGather } from "./systems/gather";
 import { defaultHotbar, setSlot, useSlot } from "./systems/hotbar";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
@@ -147,6 +147,9 @@ export class GameSimulation {
         hero.aimDist = cmd.dist !== undefined && cmd.dist > 0 ? Math.min(60, cmd.dist) : 0;
         break;
       }
+      case "craftCanteen":
+        craftCanteen(s, cmd.playerId, this.events);
+        break;
       case "useItem":
         useItem(s, cmd.playerId, cmd.item, this.events);
         break;
@@ -213,6 +216,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
     chests: [],
     campfires: [],
     farms: [],
+    wells: [],
     animals: [],
     drops: [],
     ores: [],
@@ -246,7 +250,8 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       skin: null,
       unlocked: [],
       kills: 0,
-      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, perch: 0, trout: 0, pike: 0, catfish: 0 },
+      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, canteen: mode === "survival" ? 1 : 0, perch: 0, trout: 0, pike: 0, catfish: 0 },
+      water: mode === "survival" ? CONFIG.survival.canteenDrinks : 0,
       weapons: ["rusty"],
       hotbar: defaultHotbar(mode),
       tool: "gun",
@@ -283,6 +288,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       biteTimer: 0,
       hooked: null,
       reel: 0,
+      tugTimer: 0,
       lantern: false,
       battery: 100,
       reviveProgress: 0,

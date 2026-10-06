@@ -89,6 +89,7 @@ function rollFish(state: GameState): FishKind {
 }
 
 const nextBite = (state: GameState) => G.biteMin + nextRandom(state) * (G.biteMax - G.biteMin);
+const nextTug = (state: GameState) => G.tugMin + nextRandom(state) * (G.tugMax - G.tugMin);
 
 export function updateGather(state: GameState, dt: number, events: GameEvent[]): void {
   for (const hero of state.heroes) {
@@ -145,6 +146,13 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
       }
       if (hero.hooked) {
         const f = G.fish[hero.hooked];
+        // Peștele se zbate: din când în când se smucește și îți smulge firul înapoi.
+        hero.tugTimer -= dt;
+        if (hero.tugTimer <= 0) {
+          hero.tugTimer = nextTug(state);
+          hero.reel = Math.max(0, hero.reel - f.tug);
+          events.push({ type: "fishTug", heroId: hero.id, playerId: hero.playerId, pos: bob, reel: hero.reel });
+        }
         if (press) {
           // Tragi de pește: încă o dată... și încă o dată, până iese.
           hero.reel++;
@@ -179,6 +187,7 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
         hero.fishTimer = 0;
         hero.hooked = fish;
         hero.reel = 0;
+        hero.tugTimer = nextTug(state);
         hero.biteTimer = G.fish[fish].time;
         events.push({ type: "fishBite", heroId: hero.id, pos: bob, fish });
       }

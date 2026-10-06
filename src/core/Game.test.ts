@@ -696,6 +696,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     const fish = s.heroes[0].hooked!;
     expect(fish).not.toBeNull();
     const pulls = CONFIG.gather.fish[fish].pulls;
+    s.heroes[0].tugTimer = 99; // fără smucituri aici (vezi testul de mai jos)
     for (let i = 0; i < pulls - 1; i++) tap();
     expect(s.players.p1.inventory[fish]).toBe(0); // încă se zbate
     tap();
@@ -706,6 +707,27 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     sim.step(DT);
     expect(s.players.p1.inventory[fish]).toBe(0);
     expect(s.players.p1.coins).toBe(CONFIG.gather.fish[fish].price);
+  });
+
+  it("peștele se smucește: îți smulge firul înapoi și vibrează telefonul (eveniment)", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const p = GAME_MAP.pond;
+    near(sim, p.pos.x + p.radius + 0.8, p.pos.z);
+    hold(sim, "rod");
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    sim.enqueue({ type: "action", playerId: "p1", on: false });
+    s.heroes[0].fishTimer = 0.05;
+    run(sim, 0.2);
+    const h = s.heroes[0];
+    expect(h.hooked).not.toBeNull();
+    h.reel = 3;
+    h.tugTimer = 0.01;
+    sim.drainEvents();
+    sim.step(DT);
+    expect(h.reel).toBe(3 - CONFIG.gather.fish[h.hooked!].tug);
+    expect(sim.drainEvents().some((e) => e.type === "fishTug")).toBe(true);
   });
 
   it("peștele scapă dacă nu tragi destul de repede", () => {
@@ -720,7 +742,7 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     s.heroes[0].fishTimer = 0.05;
     run(sim, 0.2);
     expect(s.heroes[0].hooked).not.toBeNull();
-    run(sim, 4);
+    run(sim, 12); // cel mai rezistent pește ține 11 s
     expect(s.heroes[0].hooked).toBeNull();
   });
 
@@ -828,6 +850,50 @@ describe("unelte în mână", () => {
 });
 
 describe("apa", () => {
+  it("foamea ține 4 minute, setea 5; carnea friptă = un sfert din foame", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 3, mode: "survival" });
+    const h = sim.state.heroes[0];
+    h.pos = { x: 20, z: -20 };
+    run(sim, 30); // ziua (noaptea vin zombii)
+    expect(h.hunger).toBeCloseTo(100 - 30 / 2.4, 0);
+    expect(h.thirst).toBeCloseTo(100 - 30 / 3, 0);
+    h.hunger = 50;
+    sim.enqueue({ type: "useItem", playerId: "p1", item: "cookedMeat" });
+    sim.step(DT);
+    expect(h.hunger).toBeCloseTo(75, 0);
+  });
+
+  it("canistra: 2 plinuri, apoi o umpli la fântână; la fântână faci canistre noi", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 3, mode: "survival" });
+    const s = sim.state;
+    const h = s.heroes[0];
+    const p = s.players.p1;
+    h.pos = { x: 20, z: -20 };
+    expect(p.inventory.canteen).toBe(1);
+    expect(p.water).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      h.thirst = 10;
+      sim.enqueue({ type: "useItem", playerId: "p1", item: "canteen" });
+      sim.step(DT);
+    }
+    // Al treilea „plin” nu mai e: canistra e goală.
+    expect(p.water).toBe(0);
+    expect(h.thirst).toBeLessThan(11);
+    // Construiești o fântână lângă tine.
+    p.wood = 100;
+    sim.enqueue({ type: "build", playerId: "p1", kind: "well", x: 22, z: -20 });
+    sim.step(DT);
+    expect(s.wells.length).toBe(1);
+    run(sim, 1);
+    expect(p.water).toBe(2);
+    expect(h.thirst).toBeGreaterThan(30);
+    sim.enqueue({ type: "craftCanteen", playerId: "p1" });
+    sim.step(DT);
+    expect(p.inventory.canteen).toBe(2);
+    expect(p.water).toBe(4);
+    expect(p.wood).toBe(100 - CONFIG.survival.wellCost - CONFIG.survival.canteenCost);
+  });
+
   it("setea scade; pe malul bălții bei, lângă foc topești zăpadă", () => {
     const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }], seed: 3, mode: "survival" });
     const h = sim.state.heroes[0];

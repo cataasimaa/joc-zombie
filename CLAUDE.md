@@ -214,14 +214,19 @@ sau texturi din acele jocuri.
   Supraviețuire, la ~9 m): acolo îți faci zidurile și turnurile.
 - **Moartea**: cine cade NU reînvie singur. Doar un coleg care stă lângă el 4 s îl ridică (cu 40%
   viață). Toți căzuți = pierzi (în ambele moduri); singur = mori = game over.
-- **Supraviețuire** (`CONFIG.survival`): foamea (−0,32/s), setea (−0,42/s; bei la baltă sau topești zăpadă lângă un foc) și căldura
+- **Supraviețuire** (`CONFIG.survival`): foamea (se golește în 4 min), setea (în 5 min; bei la baltă / fântână, din canistră
+  sau topești zăpadă lângă un foc) și căldura
   (−0,45/s, ×vreme, ziua ×0,6), afișate ca în Ark: 3 iconițe semi-transparente pe dreapta
   (pulpă / picătură / flacără) care se golesc de sus în jos și clipesc sub 20%;
   la 0 pierzi 3 HP/s. Focul (15 lemn, max 3) încălzește în 4,5 m, arde lemnul (1/s ×vreme; +5 lemn =
   +30%), gătește carnea în 15 s (apare pe jos). Eticheta de deasupra focului arată cât lemn mai are
   (ca la mină). Coteț / țarc mic (40 lemn, max 2, max 3 animale; încape în baza ta); găinile și
-  porcii se taie cu târnăcopul pentru carne. Carne crudă: +12 foame, −6 HP; friptă: +45 foame,
-  +10 HP; pește: +18 foame.
+  porcii se taie cu târnăcopul pentru carne. Carne crudă: +12 foame, −6 HP; friptă: +25 foame
+  (un sfert), +10 HP; pește: +14…30 foame.
+  **Fântâna** (🪣, 30 lemn, max 2): puț de piatră cu acoperiș și găleată, are mereu apă; lângă ea
+  (2,2 m) bei repede și canistrele se umplu singure; din meniul ei faci **canistre** noi (10 lemn,
+  max 3). **Canistra** (🧴, ai una la start, în bara rapidă): o apăsare = setea la 100%; ține 2
+  plinuri, apoi o umpli la fântână sau pe malul bălții.
 - **Animale sălbatice** (ambele moduri, ziua, la 16–34 m de mină, departe de eroi): căprioare (fug,
   12 aur), urși (atacă, max 2, 40 aur). Aurul cade pe jos ca monede, plus carne.
 - **Unelte** (`CONFIG.gather`, unealta în mână + ✛): târnăcopul (ținut cu ambele mâini) lovește
@@ -231,9 +236,11 @@ sau texturi din acele jocuri.
   Zăcăminte de argint (8 lovituri, 18 aur) și aur (12 lovituri, 45 aur) apar ziua aleator (3 pe zi,
   max 6); se micșorează la fiecare lovitură și se sparg. Cu târnăcopul / undița în mână nu tragi.
 - **Pescuit** (undița în mână, ziua, de pe malul bălții — apă deschisă, 7 m rază, cu ponton și stuf): arunci undița,
-  peștele mușcă după 4–10 s, apoi trebuie să tragi de mai multe ori până nu scapă: biban (2 trageri
-  în 1,8 s, 8 aur), păstrăv (3 / 2,2 s, 15), știucă (5 / 2,8 s, 28), somn (8 / 3,6 s, 60, rar).
-  Butonul arată „TRAGE 2/5”. Peștii se vând singuri la taraba negustorului (la ~12 m de mină).
+  peștele mușcă după 4–10 s (telefonul vibrează), apoi te lupți cu el: apeși repede ✛, iar el se
+  smucește la 0,7–1,5 s (vibrează, butonul tremură, apa plescăie) și îți smulge firul înapoi:
+  biban (4 trageri în 6 s, smucitură −1, 8 aur), păstrăv (6 / 7 s / −1,5, 15), știucă (9 / 9 s /
+  −2, 28), somn (13 / 11 s / −3, 60, rar). Butonul arată „TRAGE 2/5”. Vibrația merge pe Android;
+  pe iPhone o vom face cu Capacitor Haptics. Peștii se vând singuri la taraba negustorului (la ~12 m de mină).
 - **Muniție** (`CONFIG.ammo`): încărcător + rezervă (8 încărcătoare la start, max 12). Zombii lasă
   cutii (30%, 0,6 încărcător), plus 3 încărcătoare în fiecare zori și din cufărul boss-ului.
 - **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe

@@ -114,6 +114,44 @@ export function buildFarm(scene: Scene, mats: Materials, kind: "chicken" | "pig"
   return k.build(`farm_${kind}`);
 }
 
+// ---------- Fântâna ----------
+
+/** Puț de țară: ghizduri de piatră, apă neagră, doi stâlpi cu acoperiș, vârtej (manivelă) și găleată. */
+export function buildWell(scene: Scene, mats: Materials): Mesh[] {
+  const k = new ModelKit(scene, mats, 3300);
+  // Ghizdul: un inel de pietre (două rânduri) + gura de sus.
+  for (let row = 0; row < 2; row++) {
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * Math.PI * 2 + row * 0.28;
+      k.ico(0.24, { p: [Math.cos(a) * 0.68, 0.18 + row * 0.3, Math.sin(a) * 0.68], s: [1.2, 0.8, 1], r: [0, -a, 0] },
+        { color: row ? PAL.stone : PAL.stoneDark, wear: 0.3, frost: 0.7, frostNormal: 0.4, smooth: true });
+    }
+  }
+  // Buza de sus: lespezi pe margine (nu un capac), ca să se vadă apa neagră din puț.
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    k.box(0.5, 0.1, 0.26, { p: [Math.cos(a) * 0.66, 0.66, Math.sin(a) * 0.66], r: [0, -a + Math.PI / 2, 0] },
+      { color: PAL.stone, wear: 0.3, frost: 0.8, frostNormal: 0.4 });
+  }
+  k.cyl(0.04, 1.1, 1.1, 18, { p: [0, 0.6, 0] }, { color: hex("#0b1a21"), mat: "metal", wear: 0.03, smooth: true });
+  // Stâlpii, bârna cu vârtejul și manivela.
+  for (const side of [1, -1]) k.box(0.13, 1.5, 0.13, { p: [side * 0.72, 1.35, 0] }, { color: PAL.oldWood, wear: 0.3, frost: 0.4 });
+  k.cyl(1.55, 0.14, 0.14, 7, { p: [0, 1.7, 0], r: [0, 0, Math.PI / 2] }, { color: PAL.darkWood, wear: 0.25 });
+  k.cyl(0.28, 0.17, 0.17, 7, { p: [0.15, 1.7, 0], r: [0, 0, Math.PI / 2] }, { color: hex("#8a7a60"), wear: 0.4 }); // frânghia înfășurată
+  k.box(0.06, 0.32, 0.06, { p: [0.86, 1.56, 0] }, { color: PAL.iron, mat: "metal", wear: 0.5 });
+  k.box(0.22, 0.05, 0.05, { p: [0.95, 1.42, 0] }, { color: PAL.darkWood });
+  // Frânghia și găleata (de lemn, legată cu fier), puțin deasupra gurii.
+  k.cyl(0.5, 0.02, 0.02, 4, { p: [0.15, 1.38, 0] }, { color: hex("#8a7a60") });
+  k.cyl(0.3, 0.28, 0.22, 8, { p: [0.15, 1.0, 0] }, { color: PAL.oldWood, wear: 0.3 });
+  k.cyl(0.04, 0.29, 0.29, 8, { p: [0.15, 1.1, 0] }, { color: PAL.iron, mat: "metal", wear: 0.5 });
+  // Acoperișul în două ape, cu zăpadă.
+  for (const side of [1, -1]) {
+    k.box(1.9, 0.07, 0.75, { p: [0, 2.28, side * 0.3], r: [side * 0.62, 0, 0] }, { color: PAL.burntWood, wear: 0.25, frost: 1, frostNormal: 0.3 });
+  }
+  k.box(1.95, 0.08, 0.08, { p: [0, 2.5, 0] }, { color: PAL.darkWood });
+  return k.build("well");
+}
+
 // ---------- Focul de tabără ----------
 
 /** Cercul de pietre și buștenii (flăcările sunt separate, animate). */

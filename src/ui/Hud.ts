@@ -65,7 +65,7 @@ export interface HudCallbacks {
   onSpinResult(rarity: ShopRarity): void;
 }
 
-export type PickKind = "tower" | "wall" | "mine" | "campfire" | "farmChicken" | "farmPig";
+export type PickKind = "tower" | "wall" | "mine" | "campfire" | "farmChicken" | "farmPig" | "well";
 
 export interface MenuOption {
   label: string;
@@ -227,10 +227,11 @@ export class Hud {
     this.el.pickTower.addEventListener("click", () => cb.onPick("tower"));
     this.el.pickWall.addEventListener("click", () => cb.onPick("wall"));
     this.el.pickMine.addEventListener("click", () => cb.onPick("mine"));
-    for (const kind of ["campfire", "farmChicken", "farmPig"] as PickKind[]) $(`pick-${kind}`).addEventListener("click", () => cb.onPick(kind));
+    for (const kind of ["campfire", "farmChicken", "farmPig", "well"] as PickKind[]) $(`pick-${kind}`).addEventListener("click", () => cb.onPick(kind));
     $("campfire-cost").textContent = `🪵 ${CONFIG.survival.campfireCost}`;
     $("chicken-cost").textContent = `🪵 ${CONFIG.survival.farmCost}`;
     $("pig-cost").textContent = `🪵 ${CONFIG.survival.farmCost}`;
+    $("well-cost").textContent = `🪵 ${CONFIG.survival.wellCost}`;
     for (let i = 0; i < HOTBAR_SIZE; i++) $(`qb-${i}`).addEventListener("click", () => !this.suppressClick && this.onSlotClick(i));
     this.setupDrag();
     $("qb-bag").addEventListener("click", () => this.toggleInventory());
@@ -565,7 +566,21 @@ export class Hud {
         if (e.heroId === heroId) this.hint("🍖 Mori de foame! Mănâncă ceva (bara de jos)");
         break;
       case "thirsty":
-        if (e.heroId === heroId) this.hint("💧 Îți e sete! Bea apă la baltă sau topește zăpadă lângă un foc");
+        if (e.heroId === heroId) this.hint("💧 Îți e sete! Bea din canistră, la fântână, la baltă sau topește zăpadă lângă un foc");
+        break;
+      case "refilled":
+        if (e.playerId === playerId) this.hint("💧 Canistrele sunt pline");
+        break;
+      case "fishBite":
+        if (state.heroes.find((h) => h.id === e.heroId)?.playerId === playerId) this.buzz([90, 50, 140]);
+        break;
+      case "fishTug":
+        if (e.playerId === playerId) {
+          this.buzz(60);
+          this.el.fireStick.classList.remove("tug");
+          void this.el.fireStick.offsetWidth; // repornește animația
+          this.el.fireStick.classList.add("tug");
+        }
         break;
       case "freezing":
         if (e.heroId === heroId) this.hint("🥶 Îngheți! Stai lângă un foc");
@@ -656,6 +671,7 @@ export class Hud {
       kind === "tower" ? towerCost()
       : kind === "wall" ? CONFIG.barricade.levels[0].cost
       : kind === "campfire" ? CONFIG.survival.campfireCost
+      : kind === "well" ? CONFIG.survival.wellCost
       : CONFIG.survival.farmCost;
     this.text(this.el.wallPlace, mode === "move" ? "✔ Mută aici" : `✔ Pune · 🪵${cost}`);
     const help: Record<PickKind, string> = {
@@ -665,6 +681,7 @@ export class Hud {
       campfire: "Focul te încălzește și gătește carnea",
       farmChicken: "Cotețul face găini din când în când",
       farmPig: "Țarcul face porci din când în când",
+      well: "Fântâna are mereu apă: bei și îți umpli canistrele",
     };
     this.text(this.el.placeHint, problem ?? help[kind]);
     this.el.placeHint.classList.toggle("bad", problem !== null);
@@ -892,7 +909,7 @@ export class Hud {
     const hint = actionHint(state, hero);
     const label =
       tool === "pickaxe" ? "" :
-      tool === "rod" ? (bite ? `TRAGE ${hero.reel}/${pulls}` : hint === "reel" ? "așteaptă" : hint === "fish" ? "aruncă" : "la baltă") :
+      tool === "rod" ? (bite ? `TRAGE ${Math.floor(hero.reel)}/${pulls}` : hint === "reel" ? "așteaptă" : hint === "fish" ? "aruncă" : "la baltă") :
       `${Math.round(hero.battery)}%`;
     const key = `${tool}|${icon}|${label}|${hero.lantern}`;
     if (key === this.toolKey) return;
@@ -922,6 +939,18 @@ export class Hud {
     if (open && this.lastState && this.playerId) this.renderInventory(this.lastState, this.playerId);
   }
 
+  /**
+   * Vibrația telefonului (Android / Chrome). Safari pe iPhone nu o are; în aplicația iOS
+   * (Capacitor) o vom face cu pluginul Haptics.
+   */
+  private buzz(pattern: number | number[]): void {
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      // fără vibrație: nu e nimic de făcut
+    }
+  }
+
   // ---------- Bara rapidă (4 locuri) și inventarul (grilă), în stil Ark ----------
 
   /** Iconița, numele și câte ai dintr-un obiect; `fill` = bara subțire de sub iconiță (0..1). */
@@ -944,6 +973,10 @@ export class Hud {
         return { icon: "🍗", name: "Carne friptă", count: p.inventory.cookedMeat, fill: null };
       case "rawMeat":
         return { icon: "🥩", name: "Carne crudă", count: p.inventory.rawMeat, fill: null };
+      case "canteen": {
+        const full = p.inventory.canteen * CONFIG.survival.canteenDrinks;
+        return { icon: "🧴", name: `Canistră · ${p.water}/${full} plinuri de apă`, count: p.water, fill: full > 0 ? p.water / full : 0 };
+      }
       default: {
         const f = CONFIG.gather.fish[item as FishKind];
         return { icon: f.icon, name: `${f.name} · ${f.price} aur`, count: p.inventory[item as FishKind], fill: null };
@@ -961,7 +994,7 @@ export class Hud {
 
   private hotbarKey = "";
   private renderHotbar(state: GameState, p: Player, hero: Hero): void {
-    const key = `${p.hotbar.join(",")}|${p.tool}|${p.weapon}|${hero.lantern}|${Math.round(hero.battery / 5)}|${hero.ammo}|${p.mines}|${Object.values(p.inventory).join(",")}|${this.selectedItem}`;
+    const key = `${p.hotbar.join(",")}|${p.tool}|${p.weapon}|${hero.lantern}|${Math.round(hero.battery / 5)}|${hero.ammo}|${p.mines}|${Object.values(p.inventory).join(",")}|${p.water}|${this.selectedItem}`;
     if (key === this.hotbarKey) return;
     this.hotbarKey = key;
     p.hotbar.forEach((item, i) => {
@@ -1053,7 +1086,7 @@ export class Hud {
       ...p.weapons.map((w) => `weapon:${w}` as SlotItem),
       "pickaxe", "rod", "lantern",
       ...(p.mines > 0 ? ["mine" as SlotItem] : []),
-      ...(["cookedMeat", "rawMeat"] as SlotItem[]).filter((k) => p.inventory[k as "rawMeat"] > 0),
+      ...(["canteen", "cookedMeat", "rawMeat"] as SlotItem[]).filter((k) => p.inventory[k as "rawMeat"] > 0),
       ...FISH_KINDS.filter((k) => p.inventory[k] > 0),
     ];
     const key = `${items.join(",")}|${p.hotbar.join(",")}|${Object.values(p.inventory).join(",")}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}|${Math.round(hero.battery / 5)}|${this.selectedItem}`;

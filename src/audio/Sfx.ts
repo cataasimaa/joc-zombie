@@ -328,6 +328,22 @@ export class Sfx {
       case "ate":
         if (e.playerId === f.localPlayer) for (let i = 0; i < 3; i++) this.noiseHit({ type: "bandpass", freq: 900, dur: 0.06, vol: 0.12, delay: i * 0.14 });
         break;
+      case "drank":
+        // Înghițituri: trei „glug”-uri joase.
+        if (e.playerId === f.localPlayer) for (let i = 0; i < 3; i++) this.tone(260, 150, 0.09, "sine", 0.22, i * 0.17, 900);
+        break;
+      case "refilled":
+        // Apa care curge în canistră: un șuvoi care urcă în ton.
+        if (e.playerId === f.localPlayer) {
+          this.noiseHit({ type: "bandpass", freq: 700, sweepTo: 1600, dur: 0.7, vol: 0.14 });
+          this.tone(380, 620, 0.5, "sine", 0.06, 0.1);
+        }
+        break;
+      case "fishTug":
+        // Peștele se smucește: firul zbârnâie și apa plescăie.
+        this.noiseHit({ type: "bandpass", freq: 3200, sweepTo: 2200, dur: 0.14, vol: 0.16 });
+        this.noiseHit({ type: "lowpass", freq: 700, dur: 0.16, vol: 0.3, delay: 0.03 });
+        break;
       case "fuelAdded":
         this.thunk(150, 0.2);
         this.noiseHit({ type: "highpass", freq: 3000, dur: 0.6, vol: 0.06 });

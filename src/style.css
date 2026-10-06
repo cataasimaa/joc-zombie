@@ -2128,6 +2128,20 @@ i.coin {
   animation: barGlow 0.4s infinite;
 }
 
+/* Peștele se smucește: butonul tremură (și telefonul vibrează, unde se poate). */
+.fire-stick.tool-rod.bite.tug .fire-knob {
+  animation: fishTug 0.32s ease-out, barGlow 0.4s infinite;
+}
+
+@keyframes fishTug {
+  0% { translate: 0 0; }
+  20% { translate: -6px 3px; }
+  40% { translate: 5px -3px; }
+  60% { translate: -4px 2px; }
+  80% { translate: 3px -1px; }
+  100% { translate: 0 0; }
+}
+
 .fire-stick.tool-lantern.lantern-on .fire-knob {
   box-shadow: 0 0 18px rgba(255, 200, 110, 0.85);
 }

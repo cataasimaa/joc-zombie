@@ -11,11 +11,11 @@ import { useItem } from "./survival";
 
 export const HOTBAR_SIZE = 4;
 
-const FOOD: ItemKind[] = ["cookedMeat", "rawMeat", ...FISH_KINDS];
+const FOOD: ItemKind[] = ["cookedMeat", "rawMeat", "canteen", ...FISH_KINDS];
 
-/** Bara de start: arma, târnăcopul, undița, apoi mâncare (Supraviețuire) sau lanterna. */
+/** Bara de start: arma, târnăcopul, apoi canistra + mâncare (Supraviețuire) sau undița + lanterna. */
 export function defaultHotbar(mode: GameMode): (SlotItem | null)[] {
-  return mode === "survival" ? ["weapon:rusty", "pickaxe", "rod", "cookedMeat"] : ["weapon:rusty", "pickaxe", "rod", "lantern"];
+  return mode === "survival" ? ["weapon:rusty", "pickaxe", "canteen", "cookedMeat"] : ["weapon:rusty", "pickaxe", "rod", "lantern"];
 }
 
 /** Poate jucătorul să pună asta în bară? (Armele doar dacă le are.) */

@@ -17,7 +17,7 @@ import type { Fx } from "./Fx";
 import type { Materials } from "./ModelKit";
 import { AMBER, buildChest, buildFlame } from "./models/structures";
 import { buildOre } from "./models/gathering";
-import { type AnimalModel, buildAnimal, buildCampfire, buildDrop, buildEmbers, buildFarm } from "./models/survival";
+import { type AnimalModel, buildAnimal, buildCampfire, buildDrop, buildEmbers, buildFarm, buildWell } from "./models/survival";
 import { PAL } from "./palette";
 import { terrainHeight } from "./Terrain";
 import { Prefab } from "./World";
@@ -66,6 +66,8 @@ export class SurvivalView {
 
   private fireViews = new Map<EntityId, FireView>();
   private farmViews = new Map<EntityId, TransformNode>();
+  private well: Prefab;
+  private wellViews = new Map<EntityId, TransformNode>();
   private animalViews = new Map<EntityId, AnimalView>();
   private dropViews = new Map<EntityId, TransformNode>();
   private chestViews = new Map<EntityId, ChestView>();
@@ -80,6 +82,7 @@ export class SurvivalView {
     this.embers = new Prefab([buildEmbers(scene, mats)]);
     this.flame = new Prefab([buildFlame(scene, mats)]);
     this.farms = { chicken: cast(new Prefab(buildFarm(scene, mats, "chicken"))), pig: cast(new Prefab(buildFarm(scene, mats, "pig"))) };
+    this.well = cast(new Prefab(buildWell(scene, mats)));
     for (const kind of ["deer", "bear", "chicken", "pig"] as AnimalKind[]) {
       const model = buildAnimal(scene, mats, kind);
       this.animals[kind] = { model, body: cast(new Prefab(model.body)), leg: cast(new Prefab([model.leg])) };
@@ -106,6 +109,7 @@ export class SurvivalView {
     this.time += dt;
     this.syncFires(state);
     this.syncFarms(state);
+    this.syncWells(state);
     this.syncAnimals(state, dt);
     this.syncDrops(state);
     this.syncOres(state);
@@ -165,6 +169,17 @@ export class SurvivalView {
       return root;
     }, (root, f) => {
       root.position.copyFrom(this.at(f.pos.x, f.pos.z));
+    });
+  }
+
+  private syncWells(state: GameState): void {
+    sync(this.wellViews, state.wells, (w) => {
+      const root = new TransformNode("well", this.scene);
+      root.rotation.y = (w.id * 1.7) % Math.PI;
+      this.well.instance("wellMesh", root);
+      return root;
+    }, (root, w) => {
+      root.position.copyFrom(this.at(w.pos.x, w.pos.z));
     });
   }
 
@@ -263,7 +278,7 @@ export class SurvivalView {
   }
 
   reset(): void {
-    for (const map of [this.fireViews, this.farmViews, this.animalViews, this.dropViews, this.chestViews, this.oreViews] as Map<EntityId, Disposable>[]) {
+    for (const map of [this.fireViews, this.farmViews, this.wellViews, this.animalViews, this.dropViews, this.chestViews, this.oreViews] as Map<EntityId, Disposable>[]) {
       for (const v of map.values()) v.dispose();
       map.clear();
     }

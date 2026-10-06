@@ -387,7 +387,7 @@ export class Renderer {
     if (this.selectedId !== null) {
       const id = this.selectedId;
       const alive = state.towers.some((t) => t.id === id) || state.barricades.some((b) => b.id === id) ||
-        state.campfires.some((f) => f.id === id) || state.farms.some((f) => f.id === id);
+        state.campfires.some((f) => f.id === id) || state.farms.some((f) => f.id === id) || state.wells.some((w) => w.id === id);
       if (!alive) this.setSelection(null);
     }
     if (this.selectRing.isEnabled()) this.selectRing.rotation.y = this.time * 0.8;
@@ -710,6 +710,9 @@ export class Renderer {
         this.fx.burst("stone", this.at(e.pos, 0.5), null, 14, 5, 0.12);
         this.fx.burst("spark", this.at(e.pos, 0.6), new Vector3(0, 1, 0), 18, 5, 0.06);
         this.fx.ring(this.at(e.pos, 0.15), 1.6, PAL.gold, 0.5);
+        break;
+      case "fishTug":
+        this.fx.burst("ice", new Vector3(e.pos.x, -0.1, e.pos.z), new Vector3(0, 1, 0), 9, 3.5, 0.07);
         break;
       case "fishReel":
         this.fx.burst("ice", new Vector3(e.pos.x, -0.1, e.pos.z), new Vector3(0, 1, 0), 5, 3, 0.06);
@@ -1517,7 +1520,7 @@ export class Renderer {
    */
   setGhost(pos: Vec2 | null, kind: BuildKind, valid: boolean, range = 0, rotation = 0): void {
     // Focul și fermele: doar „amprenta” rotundă pe sol, la mărimea lor.
-    const building = kind === "campfire" || kind === "farmChicken" || kind === "farmPig";
+    const building = kind === "campfire" || kind === "farmChicken" || kind === "farmPig" || kind === "well";
     const isTower = kind === "tower" || building;
     this.ghostTower.setEnabled(!!pos && kind === "tower");
     this.ghostWall.setEnabled(!!pos && kind === "barricade");
@@ -1535,7 +1538,7 @@ export class Renderer {
     if (!isTower) foot.rotation.y = rotation;
     foot.material = valid ? this.m.footOk : this.m.footBad;
     // Baza „respiră” ușor, ca să atragă privirea.
-    const pulse = (1 + Math.sin(this.time * 6) * 0.05) * (kind === "campfire" ? 0.9 : building ? 1.6 : 1);
+    const pulse = (1 + Math.sin(this.time * 6) * 0.05) * (kind === "campfire" ? 0.9 : kind === "well" ? 1.1 : building ? 1.6 : 1);
     foot.scaling.set(pulse, 1, pulse);
     this.rangeRing.position.set(pos.x, y + 0.1, pos.z);
     this.rangeRing.scaling.set(range, 1, range);

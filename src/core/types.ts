@@ -48,6 +48,8 @@ export interface Player {
   kills: number;
   /** Inventarul: carne crudă, carne friptă și peștii prinși (pe specii). */
   inventory: Record<ItemKind, number>;
+  /** Câte „plinuri” de apă mai ai în canistre (fiecare canistră ține CONFIG.survival.canteenDrinks). */
+  water: number;
   /** Armele pe care le ai (cea din mână e `weapon`). */
   weapons: WeaponId[];
   /** Bara rapidă: 4 locuri, fiecare cu ce vrei tu (sau gol). */
@@ -103,6 +105,8 @@ export interface Hero {
   /** Peștele agățat și de câte ori ai tras deja de el. */
   hooked: FishKind | null;
   reel: number;
+  /** Secunde până la următoarea smucitură a peștelui agățat. */
+  tugTimer: number;
   /** Lanterna aprinsă (o iei în mână și apeși ✛) și cât mai are bateria (0..100). */
   lantern: boolean;
   battery: number;
@@ -217,6 +221,13 @@ export interface Ore {
   hits: number;
 }
 
+/** Fântână (puț): are mereu apă; lângă ea bei și îți umpli canistrele. */
+export interface Well {
+  id: EntityId;
+  ownerId: PlayerId;
+  pos: Vec2;
+}
+
 /** Fermă: coteț de găini sau țarc de porci. */
 export interface Farm {
   id: EntityId;
@@ -320,6 +331,7 @@ export interface GameState {
   chests: Chest[];
   campfires: Campfire[];
   farms: Farm[];
+  wells: Well[];
   animals: Animal[];
   drops: Drop[];
   ores: Ore[];
@@ -396,6 +408,9 @@ export type GameEvent =
   | { type: "fishCast"; heroId: EntityId; pos: Vec2 }
   | { type: "fishBite"; heroId: EntityId; pos: Vec2; fish: FishKind }
   | { type: "fishReel"; heroId: EntityId; pos: Vec2; reel: number; pulls: number }
+  | { type: "fishTug"; heroId: EntityId; playerId: PlayerId; pos: Vec2; reel: number }
+  | { type: "drank"; playerId: PlayerId; pos: Vec2; canteen: boolean }
+  | { type: "refilled"; playerId: PlayerId; pos: Vec2 }
   | { type: "fishCaught"; heroId: EntityId; playerId: PlayerId; pos: Vec2; fish: FishKind }
   | { type: "fishLost"; heroId: EntityId; pos: Vec2 }
   | { type: "sold"; playerId: PlayerId; fish: number; coins: number; pos: Vec2 }

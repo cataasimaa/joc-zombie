@@ -4,7 +4,7 @@
 import type { ItemKind, TowerKind } from "./config";
 import type { EntityId, PlayerId, SlotItem } from "./types";
 
-export type BuildKind = "tower" | "barricade" | "campfire" | "farmChicken" | "farmPig";
+export type BuildKind = "tower" | "barricade" | "campfire" | "farmChicken" | "farmPig" | "well";
 
 export type Command =
   /** Direcția joystick-ului (x = dreapta, z = înainte), lungime 0..1. */
@@ -31,6 +31,8 @@ export type Command =
   | { type: "reload"; playerId: PlayerId }
   /** Bara rapidă: mănânci (sau pui carnea crudă pe focul de lângă tine). */
   | { type: "useItem"; playerId: PlayerId; item: ItemKind }
+  /** La fântâna ta: faci o canistră nouă (costă lemn). */
+  | { type: "craftCanteen"; playerId: PlayerId }
   /** Pui lemne pe foc. */
   | { type: "addFuel"; playerId: PlayerId; fireId: EntityId }
   /** Demolezi un foc sau o fermă. */

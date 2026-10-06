@@ -5,7 +5,7 @@
 import { type AnimalKind, CONFIG, type ItemKind } from "../config";
 import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, angleOf, clamp, dist, nextRandom } from "../math";
-import type { Animal, Campfire, Drop, EntityId, GameEvent, GameState, Hero, PlayerId } from "../types";
+import type { Animal, Campfire, Drop, EntityId, Farm, Well, GameEvent, GameState, Hero, PlayerId } from "../types";
 import { distToBarricade } from "./barricades";
 import { damageHero, gunStats, heroById } from "./heroes";
 import { GAME_MAP } from "../map";
@@ -14,10 +14,11 @@ import { refundFactor } from "./towers";
 
 const S = CONFIG.survival;
 
-export type BuildingKind = "campfire" | "farmChicken" | "farmPig";
+export type BuildingKind = "campfire" | "farmChicken" | "farmPig" | "well";
 
-export const buildingRadius = (kind: BuildingKind): number => (kind === "campfire" ? 0.8 : 1.0);
-export const buildingCost = (kind: BuildingKind): number => (kind === "campfire" ? S.campfireCost : S.farmCost);
+export const buildingRadius = (kind: BuildingKind): number => (kind === "campfire" ? 0.8 : kind === "well" ? 0.9 : 1.0);
+export const buildingCost = (kind: BuildingKind): number =>
+  kind === "campfire" ? S.campfireCost : kind === "well" ? S.wellCost : S.farmCost;
 
 /** Un loc liber pentru un foc sau o fermă? null = da, altfel motivul. */
 export function canBuildBuilding(state: GameState, playerId: PlayerId, kind: BuildingKind, pos: Vec2): string | null {
@@ -28,7 +29,8 @@ export function canBuildBuilding(state: GameState, playerId: PlayerId, kind: Bui
   const cost = buildingCost(kind);
   if (player.wood < cost) return `Ai nevoie de ${cost} lemn`;
   if (kind === "campfire" && state.campfires.filter((f) => f.ownerId === playerId).length >= S.maxCampfires) return `Cel mult ${S.maxCampfires} focuri`;
-  if (kind !== "campfire" && state.farms.filter((f) => f.ownerId === playerId).length >= S.maxFarms) return `Cel mult ${S.maxFarms} ferme`;
+  if (kind === "well" && state.wells.filter((w) => w.ownerId === playerId).length >= S.maxWells) return `Cel mult ${S.maxWells} fântâni`;
+  if ((kind === "farmChicken" || kind === "farmPig") && state.farms.filter((f) => f.ownerId === playerId).length >= S.maxFarms) return `Cel mult ${S.maxFarms} ferme`;
   const r = buildingRadius(kind);
   const edge = CONFIG.map.halfSize - r;
   if (Math.abs(pos.x) > edge || Math.abs(pos.z) > edge) return "În afara hărții";
@@ -38,6 +40,7 @@ export function canBuildBuilding(state: GameState, playerId: PlayerId, kind: Bui
   for (const b of state.barricades) if (distToBarricade(pos, b) < r) return "Loc ocupat";
   for (const f of state.campfires) if (dist(pos, f.pos) < buildingRadius("campfire") + r) return "Loc ocupat";
   for (const f of state.farms) if (dist(pos, f.pos) < buildingRadius("farmPig") + r) return "Loc ocupat";
+  for (const w of state.wells) if (dist(pos, w.pos) < buildingRadius("well") + r) return "Loc ocupat";
   for (const o of state.ores) if (dist(pos, o.pos) < 0.8 + r) return "Loc ocupat";
   return null;
 }
@@ -48,6 +51,8 @@ export function buildBuilding(state: GameState, playerId: PlayerId, kind: Buildi
   const id = state.nextId++;
   if (kind === "campfire") {
     state.campfires.push({ id, ownerId: playerId, pos: { ...pos }, fuel: S.campfireFuel, cooking: [] });
+  } else if (kind === "well") {
+    state.wells.push({ id, ownerId: playerId, pos: { ...pos } });
   } else {
     const farmKind = kind === "farmChicken" ? "chicken" : "pig";
     state.farms.push({ id, ownerId: playerId, pos: { ...pos }, kind: farmKind, timer: 3 });
@@ -56,13 +61,43 @@ export function buildBuilding(state: GameState, playerId: PlayerId, kind: Buildi
   return true;
 }
 
-/** Focul sau ferma aflată în punctul dat (pentru tap → meniu). */
-export function buildingAt(state: GameState, pos: Vec2): Campfire | (typeof state.farms)[number] | null {
+/** Focul, ferma sau fântâna aflată în punctul dat (pentru tap → meniu). */
+export function buildingAt(state: GameState, pos: Vec2): Campfire | Farm | Well | null {
   return (
     state.campfires.find((f) => dist(f.pos, pos) <= 1.3) ??
     state.farms.find((f) => dist(f.pos, pos) <= 1.4) ??
+    state.wells.find((w) => dist(w.pos, pos) <= 1.3) ??
     null
   );
+}
+
+/** Ești lângă o fântână (a oricui) sau pe malul bălții: acolo e apă. */
+export function wellNear(state: GameState, pos: Vec2): Well | null {
+  return state.wells.find((w) => dist(w.pos, pos) <= S.wellReach) ?? null;
+}
+export const onShore = (pos: Vec2): boolean => dist(pos, GAME_MAP.pond.pos) <= GAME_MAP.pond.radius + 1.6;
+
+/** Poți face o canistră nouă? (Lângă o fântână, cu lemn, cel mult 3.) null = da. */
+export function canCraftCanteen(state: GameState, playerId: PlayerId): string | null {
+  const player = state.players[playerId];
+  const hero = player && heroById(state, player.heroId);
+  if (!player || !hero || !hero.alive) return "Erou căzut";
+  if (player.inventory.canteen >= S.maxCanteens) return `Cel mult ${S.maxCanteens} canistre`;
+  if (player.wood < S.canteenCost) return `Ai nevoie de ${S.canteenCost} lemn`;
+  if (!wellNear(state, hero.pos)) return "Stai lângă fântână";
+  return null;
+}
+
+export function craftCanteen(state: GameState, playerId: PlayerId, events: GameEvent[]): boolean {
+  if (canCraftCanteen(state, playerId) !== null) return false;
+  const player = state.players[playerId];
+  player.wood -= S.canteenCost;
+  player.inventory.canteen++;
+  // Lângă fântână se umple pe loc.
+  player.water = player.inventory.canteen * S.canteenDrinks;
+  const hero = heroById(state, player.heroId)!;
+  events.push({ type: "refilled", playerId, pos: { ...hero.pos } });
+  return true;
 }
 
 export function demolishBuilding(state: GameState, playerId: PlayerId, id: EntityId, events: GameEvent[]): boolean {
@@ -71,6 +106,14 @@ export function demolishBuilding(state: GameState, playerId: PlayerId, id: Entit
     const f = state.campfires[fi];
     state.campfires.splice(fi, 1);
     events.push({ type: "structureRemoved", id: f.id, pos: { ...f.pos } });
+    return true;
+  }
+  const wi = state.wells.findIndex((w) => w.id === id && w.ownerId === playerId);
+  if (wi >= 0) {
+    const w = state.wells[wi];
+    state.wells.splice(wi, 1);
+    state.players[playerId].wood += Math.floor(S.wellCost * refundFactor(state));
+    events.push({ type: "structureRemoved", id: w.id, pos: { ...w.pos } });
     return true;
   }
   const ri = state.farms.findIndex((f) => f.id === id && f.ownerId === playerId);
@@ -125,6 +168,14 @@ export function useItem(state: GameState, playerId: PlayerId, item: ItemKind, ev
   const player = state.players[playerId];
   const hero = player && heroById(state, player.heroId);
   if (!player || !hero || !hero.alive || player.inventory[item] <= 0) return false;
+  if (item === "canteen") {
+    // Bei din canistră: setea la 100%. O canistră ține 2 plinuri, apoi o umpli la fântână / baltă.
+    if (player.water <= 0 || hero.thirst >= 99.5) return false;
+    player.water--;
+    hero.thirst = 100;
+    events.push({ type: "drank", playerId, pos: { ...hero.pos }, canteen: true });
+    return true;
+  }
   if (item !== "cookedMeat" && item !== "rawMeat") {
     // Peștele se poate și mânca (crud, dar nu te doare burta); mai bine îl vinzi la tarabă.
     player.inventory[item]--;
@@ -182,10 +233,17 @@ export function updateSurvival(state: GameState, dt: number, events: GameEvent[]
   for (const hero of state.heroes) {
     if (!hero.alive) continue;
     hero.hunger = Math.max(0, hero.hunger - S.hungerPerSec * dt);
-    // Apa: pe malul bălții bei; lângă un foc aprins topești zăpadă (mai încet); altfel îți e sete.
-    const shore = dist(hero.pos, GAME_MAP.pond.pos) <= GAME_MAP.pond.radius + 1.6;
+    // Apa: pe malul bălții sau la fântână bei (și îți umpli canistrele); lângă un foc aprins
+    // topești zăpadă (mai încet); altfel îți e sete.
+    const player = state.players[hero.playerId];
+    const water = onShore(hero.pos) || wellNear(state, hero.pos) !== null;
     const fire = litFireNear(state, hero.pos);
-    if (shore) hero.thirst = Math.min(100, hero.thirst + S.drinkPerSec * dt);
+    const full = player.inventory.canteen * S.canteenDrinks;
+    if (water && player.water < full) {
+      player.water = full;
+      events.push({ type: "refilled", playerId: player.id, pos: { ...hero.pos } });
+    }
+    if (water) hero.thirst = Math.min(100, hero.thirst + S.drinkPerSec * dt);
     else if (fire) hero.thirst = Math.min(100, hero.thirst + S.snowMeltPerSec * dt);
     else hero.thirst = Math.max(0, hero.thirst - S.thirstPerSec * dt);
     if (fire) hero.warmth = Math.min(100, hero.warmth + S.fireWarmPerSec * dt);

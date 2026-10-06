@@ -15,7 +15,7 @@ export type AnimalKind = "deer" | "bear" | "chicken" | "pig";
 /** Peștii din baltă: de la cel mai des (biban) la cel mai rar și mai greu de scos (somn). */
 export type FishKind = "perch" | "trout" | "pike" | "catfish";
 export const FISH_KINDS: FishKind[] = ["perch", "trout", "pike", "catfish"];
-export type ItemKind = "rawMeat" | "cookedMeat" | FishKind;
+export type ItemKind = "rawMeat" | "cookedMeat" | "canteen" | FishKind;
 
 export interface WeatherStats {
   name: string;
@@ -152,10 +152,10 @@ export const CONFIG = {
   dropLifetime: 40,
 
   survival: {
-    /** Foamea și căldura: 100 = bine, 0 = pierzi viață. */
-    hungerPerSec: 0.32,
-    /** Setea: scade mai repede decât foamea; bei pe malul bălții (repede) sau topești zăpadă la foc (încet). */
-    thirstPerSec: 0.42,
+    /** Foamea și căldura: 100 = bine, 0 = pierzi viață. Foamea se golește în 4 minute. */
+    hungerPerSec: 100 / 240,
+    /** Setea se golește în 5 minute; bei pe malul bălții / la fântână (repede) sau topești zăpadă la foc (încet). */
+    thirstPerSec: 100 / 300,
     drinkPerSec: 22,
     snowMeltPerSec: 5,
     thirstDamage: 3,
@@ -167,7 +167,8 @@ export const CONFIG = {
     fireWarmPerSec: 9,
     rawMeatFood: 12,
     rawMeatHurt: 6,
-    cookedMeatFood: 45,
+    /** O bucată de carne friptă = un sfert din foame. */
+    cookedMeatFood: 25,
     cookTime: 15,
     /** Focul: costă lemn, arde lemn (100 = plin), 1 punct pe secundă. */
     campfireCost: 15,
@@ -178,6 +179,14 @@ export const CONFIG = {
     /** Fermele: dau găini sau porci din când în când, limitat (să nu facă lag). */
     farmCost: 40,
     maxFarms: 2,
+    /** Fântâna (puțul): are mereu apă; lângă ea bei și îți umpli canistrele. */
+    wellCost: 30,
+    maxWells: 2,
+    wellReach: 2.2,
+    /** Canistra: o umpli la fântână sau la baltă; ține 2 „plinuri” (bei = setea la 100%). */
+    canteenDrinks: 2,
+    canteenCost: 10,
+    maxCanteens: 3,
     chickenEvery: 35,
     pigEvery: 60,
     maxPerFarm: 3,
@@ -391,15 +400,18 @@ export const CONFIG = {
     biteMin: 4,
     biteMax: 10,
     /**
-     * Peștii: șansă (pondere), preț la tarabă, de câte ori trebuie să tragi ca să-l scoți și cât
-     * timp ai (secunde). Cu cât e mai rar, cu atât se zbate mai tare.
+     * Peștii: șansă (pondere), preț la tarabă, de câte ori trebuie să tragi ca să-l scoți, cât
+     * timp ai (secunde) și cât de tare se zbate: la fiecare smucitură (la `tugMin`–`tugMax` s,
+     * telefonul vibrează) îți smulge înapoi `tug` trageri. Cu cât e mai rar, cu atât e mai greu.
      */
     fish: {
-      perch: { name: "Biban", icon: "🐟", weight: 45, price: 8, pulls: 2, time: 1.8, food: 14 },
-      trout: { name: "Păstrăv", icon: "🐠", weight: 30, price: 15, pulls: 3, time: 2.2, food: 18 },
-      pike: { name: "Știucă", icon: "🦈", weight: 18, price: 28, pulls: 5, time: 2.8, food: 22 },
-      catfish: { name: "Somn", icon: "🐋", weight: 7, price: 60, pulls: 8, time: 3.6, food: 30 },
-    } satisfies Record<FishKind, { name: string; icon: string; weight: number; price: number; pulls: number; time: number; food: number }>,
+      perch: { name: "Biban", icon: "🐟", weight: 45, price: 8, pulls: 4, time: 6, tug: 1, food: 14 },
+      trout: { name: "Păstrăv", icon: "🐠", weight: 30, price: 15, pulls: 6, time: 7, tug: 1.5, food: 18 },
+      pike: { name: "Știucă", icon: "🦈", weight: 18, price: 28, pulls: 9, time: 9, tug: 2, food: 22 },
+      catfish: { name: "Somn", icon: "🐋", weight: 7, price: 60, pulls: 13, time: 11, tug: 3, food: 30 },
+    } satisfies Record<FishKind, { name: string; icon: string; weight: number; price: number; pulls: number; time: number; tug: number; food: number }>,
+    tugMin: 0.7,
+    tugMax: 1.5,
     sellReach: 2.8,
     /** Lovitură în gol cu târnăcopul (nu e nimic în față): cât durează. */
     missInterval: 0.8,

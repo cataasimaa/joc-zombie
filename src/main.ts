@@ -16,6 +16,7 @@ import {
   buildingCost,
   canAddFuel,
   canBuildBuilding,
+  canCraftCanteen,
   GameSimulation,
   type GameState,
   type HeroClass,
@@ -109,7 +110,7 @@ let buildMode: BuildMode = "off";
 
 /** Ce pui sau muți acum (fantoma care urmează tap-urile). */
 type PlaceKind = "tower" | "wall" | BuildingKind;
-const isBuilding = (k: PlaceKind): k is BuildingKind => k === "campfire" || k === "farmChicken" || k === "farmPig";
+const isBuilding = (k: PlaceKind): k is BuildingKind => k === "campfire" || k === "farmChicken" || k === "farmPig" || k === "well";
 
 interface Placing {
   kind: PlaceKind;
@@ -247,7 +248,7 @@ function ownStructure(pos: Vec2): { id: EntityId; pos: Vec2; radius: number } | 
   const b = barricadeAt(s, pos);
   if (b && b.ownerId === LOCAL_PLAYER) return { id: b.id, pos: b.pos, radius: 1.7 };
   const f = buildingAt(s, pos);
-  if (f && ("fuel" in f || f.ownerId === LOCAL_PLAYER)) return { id: f.id, pos: f.pos, radius: "fuel" in f ? 1.2 : 2.4 };
+  if (f && ("fuel" in f || f.ownerId === LOCAL_PLAYER)) return { id: f.id, pos: f.pos, radius: "fuel" in f ? 1.2 : "kind" in f ? 2.4 : 1.3 };
   return null;
 }
 function ownStructureAt(pos: Vec2): boolean {
@@ -370,6 +371,25 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
     renderer.setSelection(f.pos, 1.2, f.id);
     const cooking = f.cooking.length ? ` · 🍖 gata în ${Math.ceil(Math.min(...f.cooking))} s` : "";
     hud.showBuildMenu(screenX, screenY, options, `🔥 Foc · ${f.fuel > 0 ? `${Math.ceil(f.fuel)}% lemn` : "stins"}${cooking}`);
+    return;
+  }
+  if (f && !("kind" in f)) {
+    // Fântâna: faci canistre noi (și o poți demola, dacă e a ta).
+    const p = s.players[LOCAL_PLAYER];
+    const options: MenuOption[] = [
+      {
+        label: "🧴 Canistră nouă",
+        detail: `🪵 ${CONFIG.survival.canteenCost} · ai ${p.inventory.canteen}/${CONFIG.survival.maxCanteens}`,
+        blocked: canCraftCanteen(s, LOCAL_PLAYER),
+        onClick: act({ type: "craftCanteen", playerId: LOCAL_PLAYER }),
+      },
+    ];
+    if (f.ownerId === LOCAL_PLAYER) {
+      options.push({ label: "🔨 Demolează", detail: `+${Math.floor(buildingCost("well") * refundFactor(s))} 🪵`, onClick: act({ type: "demolishBuilding", playerId: LOCAL_PLAYER, buildingId: f.id }) });
+    }
+    options.push(cancel);
+    renderer.setSelection(f.pos, 1.3, f.id);
+    hud.showBuildMenu(screenX, screenY, options, `🪣 Fântână · apă oricând · 💧 ${p.water}/${p.inventory.canteen * CONFIG.survival.canteenDrinks}`);
     return;
   }
   if (f && f.ownerId === LOCAL_PLAYER) {

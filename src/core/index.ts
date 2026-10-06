@@ -33,7 +33,7 @@ export type { ActionHint } from "./systems/gather";
 export type { GunStats } from "./systems/heroes";
 export { canPlaceMine } from "./systems/mines";
 export { canShopRoll, shopRemaining } from "./systems/shop";
-export { buildingAt, buildingCost, canAddFuel, canBuildBuilding, litFireNear } from "./systems/survival";
+export { buildingAt, buildingCost, canAddFuel, canBuildBuilding, canCraftCanteen, litFireNear } from "./systems/survival";
 export type { BuildingKind } from "./systems/survival";
 export {
   canBuildTower,
