@@ -71,10 +71,57 @@ export const TOWER_COLORS: Record<TowerKind, Color3> = {
   frost: PAL.ice,
 };
 
-/** Arma de pe pivot, după tip și nivel. Privește spre +z. */
-export function buildTowerHead(scene: Scene, mats: Materials, kind: TowerKind, level: number): Mesh[] {
-  const k = new ModelKit(scene, mats, 600 + level * 10 + kind.length);
+/** Piesele animate ale armei de pe turn (fiecare are pivotul ei, în coordonatele capului). */
+export type TowerPartName = "armL" | "armR" | "string" | "bolt" | "pod" | "barrel" | "orb" | "crystal";
+
+export interface TowerHeadPart {
+  name: TowerPartName;
+  meshes: Mesh[];
+  /** Unde stă pivotul piesei în capul turnului (geometria piesei e construită relativ la el). */
+  pivot: [number, number, number];
+}
+
+export interface TowerHeadModel {
+  /** Ce nu se mișcă față de cap (pivotul de fier, afetul, grinda...). */
+  fixed: Mesh[];
+  /** Piesele care se animă la tragere: brațele arbaletei, țeava tunului, sfera Tesla... */
+  parts: TowerHeadPart[];
+}
+
+/** Gura armei în coordonatele capului (înainte de scara turnului): de aici pleacă efectele. */
+export function towerMuzzleLocal(kind: TowerKind, level: number): [number, number, number] {
   const s = 1 + (level - 1) * 0.12;
+  switch (kind) {
+    case "crossbow":
+      return [0, 0.65, 1.45 * s];
+    case "rocket":
+      return [0, 0.88, 1.0];
+    case "cannon":
+      return [0, 0.8 + 0.1 * s, 0.35 + 0.86 * s];
+    case "tesla":
+      return [0, 1.85 * s, 0];
+    case "frost":
+      return [0, 2.35 * s, 0];
+  }
+}
+
+/**
+ * Arma de pe pivot, după tip și nivel. Privește spre +z.
+ * E împărțită în partea fixă și câteva piese animate (fiecare un Prefab separat, tot cu instanțe):
+ * arbaleta — brațele, coarda și săgeata; rachetele — blocul de tuburi; tunul — țeava;
+ * Tesla — sfera de energie; gheața — cristalul mare.
+ */
+export function buildTowerHead(scene: Scene, mats: Materials, kind: TowerKind, level: number): TowerHeadModel {
+  const seed = 600 + level * 10 + kind.length;
+  const k = new ModelKit(scene, mats, seed);
+  const s = 1 + (level - 1) * 0.12;
+  const parts: TowerHeadPart[] = [];
+  /** O piesă animată: `build` primește o funcție care mută coordonatele absolute în cele ale pivotului. */
+  const part = (name: TowerPartName, pivot: [number, number, number], build: (pk: ModelKit, at: (x: number, y: number, z: number) => [number, number, number]) => void) => {
+    const pk = new ModelKit(scene, mats, seed * 7 + parts.length);
+    build(pk, (x, y, z) => [x - pivot[0], y - pivot[1], z - pivot[2]]);
+    parts.push({ name, meshes: pk.build(`towerPart_${kind}${level}_${name}`), pivot });
+  };
   // Pivotul de fier comun.
   k.cyl(0.3, 0.55, 0.65, 8, { p: [0, 0.15, 0] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
   switch (kind) {
@@ -82,65 +129,82 @@ export function buildTowerHead(scene: Scene, mats: Materials, kind: TowerKind, l
       // Arbaletă mare (balistă): grindă, arcuri, coardă, săgeată cu vârf de fier.
       const armColor = level >= 3 ? PAL.iron : level === 2 ? PAL.bone : PAL.darkWood;
       k.box(0.3 * s, 0.26 * s, 1.7 * s, { p: [0, 0.48, 0.15] }, { color: PAL.oldWood, wear: 0.2 });
-      for (const side of [1, -1]) {
-        k.box(1.1 * s, 0.13, 0.16, { p: [side * 0.55 * s, 0.5, 0.75 * s], r: [0, side * -0.4, 0] }, { color: armColor, mat: level >= 3 ? "metal" : "matte", wear: 0.15 });
-      }
-      k.box(2.0 * s, 0.035, 0.035, { p: [0, 0.52, 0.38 * s] }, { color: PAL.cloth });
-      k.cyl(1.4 * s, 0.07, 0.07, 5, { p: [0, 0.65, 0.55 * s], r: [Math.PI / 2, 0, 0] }, { color: PAL.oldWood });
-      k.cyl(0.26, 0, 0.16, 4, { p: [0, 0.65, 1.3 * s], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal" });
       for (const z of [-0.3, 0.45]) k.box(0.38 * s, 0.32 * s, 0.07, { p: [0, 0.48, z * s] }, { color: PAL.iron, mat: "metal" });
+      // Brațele arcului: pivotul e la capătul dinspre grindă (acolo se îndoaie).
+      for (const side of [1, -1]) {
+        part(side > 0 ? "armR" : "armL", [side * 0.05 * s, 0.5, 0.54 * s], (pk, at) => {
+          pk.box(1.1 * s, 0.13, 0.16, { p: at(side * 0.55 * s, 0.5, 0.75 * s), r: [0, side * -0.4, 0] }, { color: armColor, mat: level >= 3 ? "metal" : "matte", wear: 0.15 });
+        });
+      }
+      part("string", [0, 0.52, 0.38 * s], (pk, at) => {
+        pk.box(2.0 * s, 0.035, 0.035, { p: at(0, 0.52, 0.38 * s) }, { color: PAL.cloth });
+      });
+      part("bolt", [0, 0.65, 0.55 * s], (pk, at) => {
+        pk.cyl(1.4 * s, 0.07, 0.07, 5, { p: at(0, 0.65, 0.55 * s), r: [Math.PI / 2, 0, 0] }, { color: PAL.oldWood });
+        pk.cyl(0.26, 0, 0.16, 4, { p: at(0, 0.65, 1.3 * s), r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal" });
+      });
       break;
     }
     case "rocket": {
       // Lansator: cutie de fier cu 4 (nivel 3: 6) tuburi; rachetele au vârf roșu.
       k.box(1.0 * s, 0.25, 0.8, { p: [0, 0.38, -0.05] }, { color: PAL.oldWood, wear: 0.2 });
-      const cols = level >= 3 ? [-0.33, 0, 0.33] : [-0.2, 0.2];
-      for (const x of cols) {
-        for (const y of [0.68, 1.02]) {
-          k.cyl(1.25, 0.3, 0.3, 8, { p: [x * s, y, 0.2], r: [Math.PI / 2 - 0.15, 0, 0] }, { color: mix(PAL.iron, PAL.rust, 0.35), mat: "metal", wear: 0.3 });
-          k.cyl(0.22, 0, 0.22, 6, { p: [x * s, y + 0.1, 0.85], r: [Math.PI / 2 - 0.15, 0, 0] }, { color: hex("#9a2a22"), wear: 0.2 });
-        }
-      }
       k.box(0.12, 0.7, 0.12, { p: [0.62 * s, 0.75, -0.25] }, { color: PAL.iron, mat: "metal" });
       k.sphere(0.16, 6, { p: [0.62 * s, 1.12, -0.25] }, { color: PAL.fire, mat: "glow" });
+      const cols = level >= 3 ? [-0.33, 0, 0.33] : [-0.2, 0.2];
+      // Blocul de tuburi: recul înapoi la fiecare lansare.
+      part("pod", [0, 0.85, 0.1], (pk, at) => {
+        for (const x of cols) {
+          for (const y of [0.68, 1.02]) {
+            pk.cyl(1.25, 0.3, 0.3, 8, { p: at(x * s, y, 0.2), r: [Math.PI / 2 - 0.15, 0, 0] }, { color: mix(PAL.iron, PAL.rust, 0.35), mat: "metal", wear: 0.3 });
+            pk.cyl(0.22, 0, 0.22, 6, { p: at(x * s, y + 0.1, 0.85), r: [Math.PI / 2 - 0.15, 0, 0] }, { color: hex("#9a2a22"), wear: 0.2 });
+          }
+        }
+      });
       break;
     }
     case "cannon": {
-      // Tun: țeavă groasă de fier pe afet de lemn cu roți.
+      // Tun: țeavă groasă de fier pe afet de lemn cu roți. Țeava e separată (alunecă înapoi la recul).
       k.box(0.9 * s, 0.35, 1.2, { p: [0, 0.45, -0.1] }, { color: PAL.oldWood, wear: 0.25 });
       for (const side of [1, -1]) k.cyl(0.14, 0.7, 0.7, 10, { p: [side * 0.52 * s, 0.38, 0.1], r: [0, 0, Math.PI / 2] }, { color: PAL.darkWood, wear: 0.2 });
-      k.cyl(1.6 * s, 0.42, 0.62, 10, { p: [0, 0.8, 0.35], r: [Math.PI / 2 - 0.12, 0, 0] }, { color: hex("#2a2f35"), mat: "metal", wear: 0.2 });
-      k.cyl(0.2, 0.56, 0.56, 10, { p: [0, 0.88, 1.1 * s], r: [Math.PI / 2 - 0.12, 0, 0] }, { color: hex("#2a2f35"), mat: "metal" });
-      const bands = level >= 2 ? [-0.2, 0.3, 0.75] : [0.3];
-      for (const z of bands) k.cyl(0.08, 0.66, 0.66, 10, { p: [0, 0.8 + z * 0.12, z], r: [Math.PI / 2 - 0.12, 0, 0] }, { color: PAL.rust, mat: "metal" });
-      k.sphere(0.65, 10, { p: [0, 0.75, -0.45] }, { color: hex("#2a2f35"), mat: "metal", wear: 0.2 });
+      part("barrel", [0, 0.8, 0.35], (pk, at) => {
+        pk.cyl(1.6 * s, 0.42, 0.62, 10, { p: at(0, 0.8, 0.35), r: [Math.PI / 2 - 0.12, 0, 0] }, { color: hex("#2a2f35"), mat: "metal", wear: 0.2 });
+        pk.cyl(0.2, 0.56, 0.56, 10, { p: at(0, 0.88, 1.1 * s), r: [Math.PI / 2 - 0.12, 0, 0] }, { color: hex("#2a2f35"), mat: "metal" });
+        const bands = level >= 2 ? [-0.2, 0.3, 0.75] : [0.3];
+        for (const z of bands) pk.cyl(0.08, 0.66, 0.66, 10, { p: at(0, 0.8 + z * 0.12, z), r: [Math.PI / 2 - 0.12, 0, 0] }, { color: PAL.rust, mat: "metal" });
+        pk.sphere(0.65, 10, { p: at(0, 0.75, -0.45) }, { color: hex("#2a2f35"), mat: "metal", wear: 0.2 });
+      });
       break;
     }
     case "tesla": {
-      // Bobină: coloană de fier cu inele de cupru și o sferă de energie sus.
+      // Bobină: coloană de fier cu inele de cupru și o sferă de energie sus (sfera pulsează la descărcare).
       const copper = hex("#a8653a");
       k.cyl(1.5 * s, 0.32, 0.5, 8, { p: [0, 0.9 * s, 0] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
       for (let i = 0; i < 4 + level; i++) k.cyl(0.08, 0.75 - i * 0.06, 0.75 - i * 0.06, 12, { p: [0, 0.4 + i * 0.28 * s, 0] }, { color: copper, mat: "metal", wear: 0.15 });
-      k.sphere(0.75, 12, { p: [0, 1.85 * s, 0] }, { color: hex("#9fdcff"), mat: "glow" });
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2;
         k.cyl(0.6, 0.02, 0.08, 4, { p: [Math.sin(a) * 0.45, 1.55 * s, Math.cos(a) * 0.45], r: [Math.cos(a) * 0.8, 0, -Math.sin(a) * 0.8] }, { color: copper, mat: "metal" });
       }
+      part("orb", [0, 1.85 * s, 0], (pk) => {
+        pk.sphere(0.75, 12, {}, { color: hex("#9fdcff"), mat: "glow" });
+      });
       break;
     }
     case "frost": {
       // Obelisc de gheață: cristale mari care strălucesc rece, pe un inel de piatră.
       k.cyl(0.3, 1.2, 1.3, 8, { p: [0, 0.35, 0] }, { color: PAL.stoneDark, wear: 0.2, frost: 0.8 });
-      k.cyl(1.9 * s, 0, 0.6, 6, { p: [0, 1.4 * s, 0] }, { color: mix(PAL.ice, PAL.snow, 0.2), mat: "glow" });
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + 0.3;
         const h = k.rand(0.7, 1.1) * s;
         k.cyl(h, 0, 0.3, 5, { p: [Math.sin(a) * 0.38, 0.5 + h / 2, Math.cos(a) * 0.38], r: [Math.cos(a) * 0.45, 0, -Math.sin(a) * 0.45] }, { color: mix(PAL.ice, PAL.snow, 0.5), wear: 0.05, smooth: true });
       }
+      // Cristalul mare: se rotește mai repede și pulsează când turnul trage.
+      part("crystal", [0, 1.4 * s, 0], (pk) => {
+        pk.cyl(1.9 * s, 0, 0.6, 6, {}, { color: mix(PAL.ice, PAL.snow, 0.2), mat: "glow" });
+      });
       break;
     }
   }
-  return k.build(`towerHead_${kind}${level}`);
+  return { fixed: k.build(`towerHead_${kind}${level}`), parts };
 }
 
 /** O flacără mică (focul de la baza turnului, minele, Molotov). Pivot la bază. */

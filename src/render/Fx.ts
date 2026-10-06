@@ -17,7 +17,7 @@ import { rng } from "./noise";
 import { PAL, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
 
-export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom" | "stone" | "dust" | "smoke" | "plasma" | "plank";
+export type BurstKind = "blood" | "snow" | "spark" | "ice" | "wood" | "bone" | "venom" | "stone" | "dust" | "smoke" | "plasma" | "plank" | "brass";
 
 /** Particulele „care plutesc”: praf și fum (fără gravitație, cresc și se rarefiază). */
 const FLOATY: BurstKind[] = ["dust", "smoke"];
@@ -62,6 +62,8 @@ const BURST_COLORS: Record<BurstKind, Color3> = {
   dust: mix(PAL.snowShadow, PAL.snow, 0.55),
   smoke: mix(PAL.iron, PAL.snowShadow, 0.5),
   plasma: Color3.FromHexString("#5cffc8"),
+  // Tuburile de cartuș aruncate de arme: alamă tocită.
+  brass: Color3.FromHexString("#c9a24a"),
 };
 
 /** Textură desenată pe canvas: pată de sânge neregulată, cu stropi în jur. */
@@ -139,7 +141,7 @@ export class Fx {
       if (kind === "blood" || kind === "venom" || kind === "snow" || kind === "dust" || kind === "smoke") {
         k.sphere(1, 6, {}, { color: BURST_COLORS[kind], mat: glow ? "glow" : "matte", wear: 0.15, smooth: true });
       } else {
-        k.box(1, 1, 1, {}, { color: BURST_COLORS[kind], mat: glow ? "glow" : "matte", wear: 0.15 });
+        k.box(1, 1, 1, {}, { color: BURST_COLORS[kind], mat: glow ? "glow" : kind === "brass" ? "metal" : "matte", wear: 0.15 });
       }
       const src = k.buildOne(`p_${kind}`);
       src.isVisible = false;
@@ -212,32 +214,82 @@ export class Fx {
 
   // ---------- Particule ----------
 
+  /** Ia o particulă liberă de felul cerut din „pool” (sau face una nouă; null = prea multe pe ecran). */
+  private take(kind: BurstKind): Particle | null {
+    let p = this.particles.find((x) => x.life <= 0 && x.kind === kind);
+    if (!p) {
+      if (this.particles.length > 500) return null;
+      const inst = this.particleSources.get(kind)!.createInstance(`fx_${kind}`);
+      inst.isPickable = false;
+      p = { inst, vel: new Vector3(), life: 0, maxLife: 1, spin: 0, size: 0, kind };
+      this.particles.push(p);
+    }
+    return p;
+  }
+
+  /** Pornește o particulă deja luată din pool, din `pos`, cu viteza deja pusă în p.vel. */
+  private launch(p: Particle, pos: Vector3, size: number): void {
+    const kind = p.kind;
+    p.inst.position.copyFrom(pos);
+    p.size = size * (0.5 + Math.random() * 0.9);
+    p.inst.scaling.setAll(p.size);
+    // Scândurile sunt lungi și subțiri, zboară mai mult și cad greu.
+    if (kind === "plank") p.inst.scaling.set(p.size * 5, p.size * 0.5, p.size * 1.4);
+    // Tubul de cartuș: un cilindru mic, alungit.
+    if (kind === "brass") p.inst.scaling.set(p.size * 0.6, p.size * 0.6, p.size * 1.6);
+    p.inst.setEnabled(true);
+    p.life = p.maxLife = kind === "plank" ? 1.6 + Math.random() * 0.6 : kind === "brass" ? 1.4 : 0.5 + Math.random() * 0.5;
+    p.spin = (Math.random() - 0.5) * (kind === "brass" ? 30 : 12);
+    if (FLOATY.includes(kind)) {
+      p.life = p.maxLife = 0.9 + Math.random() * 0.4;
+      p.spin = (Math.random() - 0.5) * 2;
+    }
+  }
+
   /** Un jet de particule. `dir` = direcția principală (ex. de la trăgător spre zombie). */
   burst(kind: BurstKind, pos: Vector3, dir: Vector3 | null, count: number, speed = 4, size = 0.1): void {
+    const tight = kind === "brass";
     for (let i = 0; i < count; i++) {
-      let p = this.particles.find((x) => x.life <= 0 && x.kind === kind);
-      if (!p) {
-        if (this.particles.length > 500) return;
-        const inst = this.particleSources.get(kind)!.createInstance(`fx_${kind}`);
-        inst.isPickable = false;
-        p = { inst, vel: new Vector3(), life: 0, maxLife: 1, spin: 0, size: 0, kind };
-        this.particles.push(p);
+      const p = this.take(kind);
+      if (!p) return;
+      const sx = Math.random() - 0.5;
+      const sy = Math.random() * 0.8 + 0.2;
+      const sz = Math.random() - 0.5;
+      const m = speed * (0.5 + Math.random() * 0.7);
+      if (dir) {
+        // Tuburile de cartuș zboară strâns în direcția dată (nu se împrăștie ca sângele).
+        const l = dir.length() || 1;
+        const k = tight ? 1 : 0.9;
+        const r = tight ? 0.3 : 0.9;
+        p.vel.set((dir.x / l) * k + sx * r, (dir.y / l) * k + sy * r, (dir.z / l) * k + sz * r).scaleInPlace(m);
+      } else {
+        p.vel.set(sx * 2 * m, sy * 2 * m, sz * 2 * m);
       }
-      const spread = new Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5);
-      const v = dir ? dir.normalizeToNew().scale(0.9).add(spread.scale(0.9)) : spread.scale(2);
-      p.vel.copyFrom(v.scale(speed * (0.5 + Math.random() * 0.7)));
-      p.inst.position.copyFrom(pos);
-      p.size = size * (0.5 + Math.random() * 0.9);
-      p.inst.scaling.setAll(p.size);
-      // Scândurile sunt lungi și subțiri, zboară mai mult și cad greu.
-      if (kind === "plank") p.inst.scaling.set(p.size * 5, p.size * 0.5, p.size * 1.4);
-      p.inst.setEnabled(true);
-      p.life = p.maxLife = kind === "plank" ? 1.6 + Math.random() * 0.6 : 0.5 + Math.random() * 0.5;
-      p.spin = (Math.random() - 0.5) * 12;
-      if (FLOATY.includes(kind)) {
-        p.life = p.maxLife = 0.9 + Math.random() * 0.4;
-        p.spin = (Math.random() - 0.5) * 2;
-      }
+      this.launch(p, pos, size);
+    }
+  }
+
+  /**
+   * Inel de particule care se lărgește perpendicular pe `axis` (fumul în formă de inel de la gura
+   * tunului, unda de aer a rachetei). `drift` = cât împinge inelul înainte, pe axă.
+   */
+  ringBurst(kind: BurstKind, pos: Vector3, axis: Vector3, count: number, speed = 2, size = 0.2, drift = 0.4): void {
+    const ax = axis.normalizeToNew();
+    // Doi vectori perpendiculari pe axă (u, v).
+    const u = Math.abs(ax.y) < 0.9 ? Vector3.Cross(ax, Vector3.UpReadOnly).normalize() : Vector3.Cross(ax, Vector3.RightReadOnly).normalize();
+    const v = Vector3.Cross(ax, u);
+    const a0 = Math.random() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      const p = this.take(kind);
+      if (!p) return;
+      const a = a0 + (i / count) * Math.PI * 2;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      p.vel.set(u.x * c + v.x * s, u.y * c + v.y * s, u.z * c + v.z * s).scaleInPlace(speed);
+      p.vel.addInPlaceFromFloats(ax.x * speed * drift, ax.y * speed * drift, ax.z * speed * drift);
+      this.launch(p, pos, size);
+      p.size = size;
+      p.inst.scaling.setAll(size);
     }
   }
 
@@ -499,7 +551,17 @@ export class Fx {
         p.vel.setAll(0);
         // Picăturile de sânge se întind pe zăpadă și rămân o clipă; restul dispare.
         if (p.kind === "blood") p.inst.scaling.set(p.size * 1.6, p.size * 0.2, p.size * 1.6);
-        else p.life = Math.min(p.life, 0.05);
+        else if (p.kind === "brass") {
+          // Tubul de cartuș sare o dată pe zăpadă, apoi rămâne o clipă culcat.
+          if (p.spin !== 0 && p.life > 0.3) {
+            p.vel.set((Math.random() - 0.5) * 1.2, 1.4, (Math.random() - 0.5) * 1.2);
+            p.inst.position.y = ground + 0.01;
+            p.spin = 0;
+          } else {
+            p.life = Math.min(p.life, 0.5);
+            p.inst.rotation.x = Math.PI / 2;
+          }
+        } else p.life = Math.min(p.life, 0.05);
       }
       if (p.life <= 0) p.inst.setEnabled(false);
       else if (p.life < 0.15 && p.kind !== "blood") p.inst.scaling.scaleInPlace(0.85);

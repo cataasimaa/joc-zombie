@@ -25,8 +25,10 @@ npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
 
-Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică): nume, mod de joc,
-dificultate Easy/Medium/Hard/Nightmare, sunet, muzică, 🏆 clasament; apoi alegerea eroului.
+Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică, fulgi): logo de
+gheață în stânga sus, în dreapta un panou de sticlă cu nume, mod de joc (carduri), dificultate
+Easy/Medium/Hard/Nightmare (verde → roșu) și butonul auriu JOACĂ; jos: 🏆 clasament, sunet, muzică,
+grafică, ❔ Cum se joacă; apoi alegerea eroului.
 Sunetul se schimbă doar din meniu (☰ / Esc = pauză; sunet oprit = o linie roșie peste ☰). Tap / clic
 scurt pe o construcție de-a ta (turn, zid, foc, fermă) o **selectează** (inel + contur auriu + bara de viață);
 **apăsare lungă** (~0,45 s) sau al doilea tap pe ea = meniul ei. Tap pe zăpadă = deselectezi.
@@ -335,8 +337,11 @@ sau texturi din acele jocuri.
   zboară cu adevărat (`state.shells`) și lovesc la sosire. Damage: arbaletă 8, rachete 20, tun 13,
   Tesla 14, gheață 4. Efecte sobre: arbaleta = săgeată + „toc” de lemn; racheta = dâră de fum,
   cerc mic de zăpadă și șuierat; tunul = singurul cu praf + pată de jar 2 s și bubuit înfundat;
-  Tesla = linie subțire alb-albastră și țiuit doar cât atinge; gheața = doar crusta pe zombi și
-  un trosnet. Turn sub 50% viață = fum; sub 25% = foc mic. Vânzarea unui turn noaptea dă jumătate.
+  Tesla = linie subțire alb-albastră și țiuit doar cât atinge; gheața = crusta pe zombi, un
+  trosnet, iar nova face un inel de gheață pe toată raza. Animații de tragere: coarda arbaletei
+  sare și se încarcă o săgeată nouă, rachetele dau recul + flacără și fum în spate, țeava tunului
+  se retrage și turnul se zguduie, globul Tesla se umflă și scânteiază înainte de fulger,
+  cristalul de gheață se rotește mai repede. Proiectilele pleacă din gura țevii. Turn sub 50% viață = fum; sub 25% = foc mic. Vânzarea unui turn noaptea dă jumătate.
   Turnurile au HP: zombii loviți de un turn îl atacă întâi (dacă e la < 12 m), apoi merg spre
   mină și sparg zidurile din drum. Turnurile se repară doar ziua. Nimeni nu trece prin ele.
   Construcțiile distruse se prăbușesc: scândurile se desprind, praful stă ~1 s, bara de viață
@@ -392,6 +397,10 @@ sau texturi din acele jocuri.
 - **Atacul se vede**: zombiul stă lângă tine, își ridică brațele / bâta (citit din `attackTimer`),
   apoi izbește; pe erou apar trei zgârieturi, sânge, la cei mari o undă și camera tremură. Eroul
   lovit se smucește, i se înmoaie genunchii și se clatină.
+- **Lupta se simte**: fiecare armă are reculul ei (`GUN_FEEL` în Renderer), flacără la gura țevii,
+  tuburi de alamă care sar pe zăpadă; zombii se încordează, izbesc și îngheață o clipă la impact
+  (brutele se aruncă mai departe); loviturile îi împing din direcția glonțului, iar la moarte
+  cad pe spate, departe de trăgător, și ridică zăpadă.
 - **Unelte mai fluide**: lovitura cu târnăcopul se întinde exact pe intervalul dintre lovituri
   (izbitură, ricoșeu, ridicare, încordare); bradul se leagănă amortizat, zăcământul tresare.
 

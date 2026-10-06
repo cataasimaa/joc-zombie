@@ -28,11 +28,13 @@ import {
   type Shell,
   type TowerKind,
   type Vec2,
+  type WeaponId,
   type ZombieType,
   bobberPos,
   effectiveTowerStats,
   isBoss,
   segmentEnds,
+  towerStats,
 } from "../core";
 import { Fx } from "./Fx";
 import { buildChainsaw, buildHandLantern, buildPickaxe, buildRod } from "./models/gathering";
@@ -40,6 +42,7 @@ import { Materials, ModelKit, type Quality } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
 import {
   type ShellModel,
+  type TowerPartName,
   type WallState,
   TOWER_COLORS,
   buildCoin,
@@ -51,6 +54,7 @@ import {
   buildTowerHead,
   buildWall,
   towerHeadY,
+  towerMuzzleLocal,
 } from "./models/structures";
 import { PAL, hex, mix } from "./palette";
 import { terrainHeight } from "./Terrain";
@@ -69,6 +73,36 @@ const ZOMBIE_SIZE: Partial<Record<ZombieType, number>> = {
 const zSize = (t: ZombieType): number => ZOMBIE_SIZE[t] ?? 1;
 /** Turnurile sunt desenate puțin mai mici decât modelul (mai ușor de așezat). */
 const TOWER_SCALE = 0.85;
+
+/**
+ * Cum „se simte” fiecare armă la tragere: cât de tare smucește corpul (kick = aplecare pe spate,
+ * push = împins înapoi, twist = răsucire), mărimea flăcării, tuburi de cartuș aruncate
+ * (0 = arc / lance, 2 = cartuș gros de alice) și tresărirea camerei (doar eroul tău, armele grele).
+ */
+interface GunFeel {
+  kick: number;
+  push: number;
+  twist: number;
+  flash: number;
+  casing: 0 | 1 | 2;
+  cam: number;
+  /** Cât de repede revine corpul (mai mic = recul mai lung, armă mai grea). */
+  recover: number;
+}
+const GUN_FEEL: Record<WeaponId, GunFeel> = {
+  rusty: { kick: 0.7, push: 0.06, twist: 0.05, flash: 0.32, casing: 1, cam: 0, recover: 10 },
+  pistol: { kick: 0.55, push: 0.04, twist: 0.07, flash: 0.26, casing: 1, cam: 0, recover: 12 },
+  rifle: { kick: 1.0, push: 0.09, twist: 0.04, flash: 0.38, casing: 1, cam: 0.1, recover: 8 },
+  assaultRifle: { kick: 0.55, push: 0.05, twist: 0.06, flash: 0.34, casing: 1, cam: 0.03, recover: 14 },
+  hunting: { kick: 1.5, push: 0.14, twist: 0.05, flash: 0.42, casing: 1, cam: 0.22, recover: 6 },
+  scattergun: { kick: 1.7, push: 0.18, twist: 0.08, flash: 0.45, casing: 2, cam: 0.28, recover: 6 },
+  pipeGun: { kick: 0.65, push: 0.05, twist: 0.08, flash: 0.36, casing: 1, cam: 0.03, recover: 13 },
+  boneBow: { kick: 0.35, push: 0.03, twist: 0.02, flash: 0, casing: 0, cam: 0, recover: 9 },
+  iceLance: { kick: 0.9, push: 0.08, twist: 0.03, flash: 0.45, casing: 0, cam: 0.12, recover: 8 },
+};
+const easeOut = (k: number): number => 1 - (1 - k) * (1 - k);
+const smooth = (k: number): number => k * k * (3 - 2 * k);
+const clamp01 = (k: number): number => (k < 0 ? 0 : k > 1 ? 1 : k);
 
 /** Bară de viață care plutește deasupra unui obiect. */
 class HpBar {
@@ -112,6 +146,11 @@ interface HeroView {
   stepSide: number;
   kneel: number;
   recoil: number;
+  /** Profilul reculului ultimei arme trase (vezi GUN_FEEL) și partea în care se răsucește. */
+  feel: GunFeel;
+  recoilSide: number;
+  /** „Hit-stop”: o clipă în care tresărirea eroului stă pe loc, chiar la impactul ghearei. */
+  hitStop: number;
   /** Uneltele din mână: târnăcopul (cu lovitura) și undița (cu vârful, pentru fir). */
   pickaxe: TransformNode;
   rod: TransformNode;
@@ -155,6 +194,12 @@ interface ZombieView {
   windup: number;
   /** Săpătorul sub zăpadă: cât a mers de la ultimul „val” de zăpadă. */
   burrowTrail: number;
+  /** Secunde de la ultima lovitură dată (izbitură rapidă → „hit-stop” → revenire). */
+  strikeT: number;
+  /** Direcția (pe sol) în care l-a împins ultimul glonț / proiectil și când. */
+  hitX: number;
+  hitZ: number;
+  hitAt: number;
   dispose(): void;
 }
 
@@ -162,10 +207,20 @@ interface TowerView {
   root: TransformNode;
   base: InstancedMesh[];
   head: TransformNode;
+  /** Piesele animate ale armei (pivoți), după nume — vezi buildTowerHead. */
+  parts: Partial<Record<TowerPartName, TransformNode>>;
   key: string;
   level: number;
   kind: TowerKind;
   kick: number;
+  /** Secunde de la ultimul foc / ultima abilitate; intervalul dintre focuri (pentru reîncărcare). */
+  fireT: number;
+  abilityT: number;
+  interval: number;
+  /** Ultimul foc a fost special (săgeata grea, racheta mare, ghiuleaua cu foc). */
+  special: boolean;
+  /** Unghiul cristalului de gheață (se rotește mai repede când trage). */
+  spin: number;
   bar: HpBar;
   /** Flăcări mici pe turnul aproape distrus (sub 25% viață). */
   fire: TransformNode | null;
@@ -177,6 +232,24 @@ interface ShellView {
   last: Vector3 | null;
   trail: number;
   dispose(): void;
+}
+
+/** Un zombie omorât care cade (în direcția ultimei lovituri), apoi se scufundă în zăpadă. */
+interface Dying {
+  view: ZombieView;
+  t: number;
+  burned: boolean;
+  /** Direcția în care e aruncat (pe sol) și unde stătea. */
+  dx: number;
+  dz: number;
+  x0: number;
+  z0: number;
+  /** Rotirea de la moarte și cea spre care se răsucește ca să cadă pe spate / pe burtă. */
+  yaw0: number;
+  yaw1: number;
+  /** +1 = cade pe burtă (lovit din spate), -1 = pe spate. */
+  pitch: number;
+  landed: boolean;
 }
 
 /** O construcție distrusă care se prăbușește (animație), apoi dispare. */
@@ -219,7 +292,7 @@ export class Renderer {
 
   private zombiePrefabs = {} as Record<ZombieType, { model: ZombieModel; body: Prefab; armL: Prefab; armR: Prefab; legL: Prefab; legR: Prefab }>;
   private towerBases: Prefab[] = [];
-  private towerHeads = new Map<string, Prefab>();
+  private towerHeads = new Map<string, { fixed: Prefab; parts: { name: TowerPartName; prefab: Prefab; pivot: [number, number, number] }[] }>();
   private shellPrefabs = {} as Record<ShellModel, Prefab>;
   private iceShell!: Prefab;
   private flame!: Prefab;
@@ -240,7 +313,7 @@ export class Renderer {
 
   private heroViews = new Map<EntityId, HeroView>();
   private zombieViews = new Map<EntityId, ZombieView>();
-  private dying: { view: ZombieView; t: number; burned: boolean }[] = [];
+  private dying: Dying[] = [];
   private towerViews = new Map<EntityId, TowerView>();
   private barricadeViews = new Map<EntityId, BarricadeView>();
   private mineViews = new Map<EntityId, { root: TransformNode; light: InstancedMesh | undefined; dispose(): void }>();
@@ -304,18 +377,20 @@ export class Renderer {
     this.ghostTower = new TransformNode("ghostTower", this.scene);
     this.ghostTower.scaling.setAll(TOWER_SCALE);
     this.ghostWall = new TransformNode("ghostWall", this.scene);
-    const ghostOf = (sources: Mesh[], parent: TransformNode, y = 0) => {
+    const ghostOf = (sources: Mesh[], parent: TransformNode, y = 0, x = 0, z = 0) => {
       for (const s of sources) {
         const c = s.clone(`ghost_${s.name}`, parent)!;
         c.isVisible = true;
         c.useVertexColors = false;
-        c.position.y = y;
+        c.position.set(x, y, z);
         c.isPickable = false;
         this.ghostParts.push(c);
       }
     };
     ghostOf(this.towerBases[0].sources, this.ghostTower);
-    ghostOf(this.towerHeads.get("crossbow1")!.sources, this.ghostTower, towerHeadY(1));
+    const ghostHead = this.towerHeads.get("crossbow1")!;
+    ghostOf(ghostHead.fixed.sources, this.ghostTower, towerHeadY(1));
+    for (const p of ghostHead.parts) ghostOf(p.prefab.sources, this.ghostTower, towerHeadY(1) + p.pivot[1], p.pivot[0], p.pivot[2]);
     ghostOf(this.walls.get("1intact")!.sources, this.ghostWall);
     this.footTower = MeshBuilder.CreateDisc("footTower", { radius: CONFIG.tower.radius + 0.2, tessellation: 40 }, this.scene);
     this.footTower.rotation.x = Math.PI / 2;
@@ -351,10 +426,17 @@ export class Renderer {
     for (let level = 1; level <= CONFIG.tower.maxLevel; level++) {
       this.towerBases.push(new Prefab(buildTowerBase(s, this.mats, level)));
       for (const kind of Object.keys(CONFIG.tower.kinds) as TowerKind[]) {
-        this.towerHeads.set(`${kind}${level}`, new Prefab(buildTowerHead(s, this.mats, kind, level)));
+        const head = buildTowerHead(s, this.mats, kind, level);
+        const entry = {
+          fixed: new Prefab(head.fixed),
+          parts: head.parts.map((p) => ({ name: p.name, prefab: new Prefab(p.meshes), pivot: p.pivot })),
+        };
+        caster(entry.fixed);
+        for (const p of entry.parts) caster(p.prefab);
+        this.towerHeads.set(`${kind}${level}`, entry);
       }
     }
-    [...this.towerBases, ...this.towerHeads.values()].forEach(caster);
+    this.towerBases.forEach(caster);
     for (const model of ["arrow", "heavy", "rocket", "ball", "fireball", "ice"] as ShellModel[]) {
       this.shellPrefabs[model] = new Prefab([buildShell(s, this.mats, model)]);
     }
@@ -607,17 +689,28 @@ export class Renderer {
         const hero = e.heroId !== undefined ? state.heroes.find((h) => h.id === e.heroId) : undefined;
         const view = hero && this.heroViews.get(hero.id);
         const from = hero && view ? this.muzzleOf(hero, view) : this.at(e.from, 1.3);
-        if (view) view.recoil = 1;
         const weapon = hero ? state.players[hero.playerId]?.weapon : undefined;
-        const end = this.at(e.to, 1.1);
         const cls = hero?.heroClass;
+        // Profilul armei: Tank-ul fără armă specială trage cu alice (ca flinta).
+        const feel = weapon && weapon !== "rusty" ? GUN_FEEL[weapon] : cls === "tank" ? GUN_FEEL.scattergun : cls === "sniper" ? GUN_FEEL.rifle : GUN_FEEL.rusty;
+        if (view) {
+          view.recoil = 1;
+          view.feel = feel;
+          view.recoilSide = Math.random() < 0.5 ? -1 : 1;
+        }
+        const end = this.at(e.to, 1.1);
+        const fwd = end.subtract(from);
+        fwd.y = 0;
+        if (fwd.lengthSquared() < 1e-4) fwd.set(Math.sin(hero?.facing ?? 0), 0, Math.cos(hero?.facing ?? 0));
+        fwd.normalize();
+        const shotgun = cls === "tank" || weapon === "scattergun";
         if (weapon === "iceLance") {
           this.fx.tracer(from, end, PAL.ice, 0.06, 0.18, true);
         } else if (cls === "sniper" || weapon === "hunting") {
           // Sniper: trasor lung și rece care rămâne o clipă în aer.
           this.fx.tracer(from, end, mix(PAL.ice, PAL.snow, 0.4), e.crit ? 0.07 : 0.045, 0.3, true);
           this.fx.bullet(from, end, PAL.snow, 0.06, 1.2, 160);
-        } else if (cls === "tank" || weapon === "scattergun") {
+        } else if (shotgun) {
           // Alice: scurte și închise la culoare; la izbitură, o undă de praf și zăpadă.
           this.fx.bullet(from, end, mix(PAL.fire, PAL.iron, 0.5), 0.04, 0.3, 70);
           if (Math.random() < 0.5) this.fx.impactWave(end, 0.7);
@@ -628,7 +721,42 @@ export class Renderer {
         }
         // Ratat: zăpada sare o dată, unde s-a oprit glonțul. (Lovit: zombiul tresare — vezi zombieHit.)
         if (!e.hit) this.fx.burst("snow", this.at(e.to, 0.1), new Vector3(0, 1, 0), 5, 2.4, 0.08);
-        this.fx.muzzle(from, weapon === "iceLance" ? PAL.ice : PAL.fire, cls === "tank" ? 0.45 : 0.3);
+        if (feel.flash > 0) {
+          // Flacăra de la gură: altă mărime la fiecare foc, plus o „limbă” scurtă înainte
+          // (la alice: un evantai de 3) și uneori două scântei.
+          const col = weapon === "iceLance" ? PAL.ice : PAL.fire;
+          const size = feel.flash * (0.8 + Math.random() * 0.4);
+          this.fx.muzzle(from, col, size, 0.045 + Math.random() * 0.02);
+          const tongue = mix(col, PAL.gold, 0.4);
+          const len = size * (1.4 + Math.random() * 0.8);
+          if (shotgun) {
+            for (const a of [-0.28, 0, 0.28]) {
+              const c = Math.cos(a);
+              const sn = Math.sin(a);
+              const d = new Vector3(fwd.x * c + fwd.z * sn, 0, -fwd.x * sn + fwd.z * c);
+              this.fx.tracer(from, from.add(d.scale(len)), tongue, size * 0.22, 0.05, true);
+            }
+          } else {
+            this.fx.tracer(from, from.add(fwd.scale(len)), tongue, size * 0.25, 0.04, true);
+          }
+          if (Math.random() < 0.4) this.fx.burst("spark", from, fwd, 2, 4, 0.03);
+          // Armele grele scot și un fir de fum.
+          if (feel.kick >= 1) this.fx.burst("smoke", from.add(fwd.scale(0.2)), fwd, shotgun ? 2 : 1, 0.8, 0.12);
+        }
+        // Tubul de cartuș: sare pe dreapta armei, în sus și puțin înapoi (alice: cartuș gros).
+        if (feel.casing > 0 && hero && view) {
+          const f = view.root.rotation.y;
+          const rx = Math.cos(f);
+          const rz = -Math.sin(f);
+          const at = from.subtract(fwd.scale(0.45));
+          at.y -= 0.05;
+          this.fx.burst("brass", at, new Vector3(rx - fwd.x * 0.3, 1.1, rz - fwd.z * 0.3), 1, 3.2, feel.casing === 2 ? 0.075 : 0.05);
+        }
+        // Armele grele împing puțin camera (doar pentru eroul tău): un recul scurt, care revine lin.
+        if (feel.cam > 0 && hero && hero.id === this.localHeroId && !this.menuCamera) {
+          this.camera.position.addInPlaceFromFloats(-fwd.x * feel.cam, feel.cam * 0.35, -fwd.z * feel.cam);
+          if (shotgun) this.cameraShake = Math.min(1, this.cameraShake + 0.12);
+        }
         break;
       }
       case "reloadStart": {
@@ -646,6 +774,15 @@ export class Renderer {
         if (view) {
           view.lastBlood = this.time;
           view.knock = 1;
+          // Direcția loviturii (de la trăgător / turn spre zombie): tresare și cade în partea aceea.
+          const hx = e.pos.x - e.from.x;
+          const hz = e.pos.z - e.from.z;
+          const hl = Math.hypot(hx, hz);
+          if (hl > 0.01) {
+            view.hitX = hx / hl;
+            view.hitZ = hz / hl;
+            view.hitAt = this.time;
+          }
         }
         const z = state.zombies.find((x) => x.id === e.id);
         const h = (view ? (HP_BAR_Y[view.type] ?? 1.5) * 0.65 : 1.1) + (z ? this.zombieY(z.type) : 0);
@@ -669,7 +806,29 @@ export class Renderer {
       }
       case "zombieAttack": {
         const v = this.zombieViews.get(e.id);
-        if (v) v.attack = 1;
+        if (!v) break;
+        v.attack = 1;
+        v.strikeT = 0;
+        // Punctul de contact: în fața zombiului, cât îi ajunge brațul / bâta.
+        const size = zSize(v.type);
+        const heavy = size >= 1.5;
+        const f = v.root.rotation.y;
+        const reach = 0.85 * Math.min(2.2, size);
+        const cx = e.pos.x + Math.sin(f) * reach;
+        const cz = e.pos.z + Math.cos(f) * reach;
+        if (e.wall) {
+          // În zid: așchii, zăpadă scuturată de pe pari și un pic de praf.
+          const at = this.at({ x: cx, z: cz }, 0.9);
+          this.fx.burst("wood", at, null, heavy ? 7 : 4, heavy ? 5 : 3.5, 0.07);
+          this.fx.burst("snow", at, null, heavy ? 8 : 4, 2.5, 0.08);
+          if (heavy) this.fx.dust(this.at({ x: cx, z: cz }, 0.2), 0.8, 0.35);
+        }
+        if (heavy) {
+          // Brutele și boșii: lovitura bate în pământ — undă de zăpadă și camera tremură (dacă ești aproape).
+          this.fx.burst("snow", this.at({ x: cx, z: cz }, 0.15), new Vector3(0, 1, 0), 10, 3.5, 0.1);
+          this.fx.ring(this.at({ x: cx, z: cz }, 0.12), 1.2 * size * 0.6, PAL.snow, 0.3);
+          this.shakeNear({ x: cx, z: cz }, 0.25);
+        }
         break;
       }
       case "heroHit": {
@@ -700,6 +859,11 @@ export class Renderer {
             const b = c.add(off).add(new Vector3(0, -0.45, 0)).subtract(side.scale(0.25));
             this.fx.tracer(a, b, mix(PAL.blood, PAL.snow, 0.35), big ? 0.1 : 0.065, 0.22, true);
           }
+          // Impactul: o sclipire scurtă și un pufăit de zăpadă exact la contact; eroul „îngheață” o clipă.
+          const hitAt = c.add(new Vector3(-dx * 0.3, 0, -dz * 0.3));
+          this.fx.muzzle(hitAt, mix(PAL.snow, PAL.blood, 0.25), big ? 0.75 : 0.45, 0.06);
+          this.fx.burst("snow", hitAt, new Vector3(dx, 0.3, dz), big ? 8 : 4, 3, 0.06);
+          hv.hitStop = big ? 0.1 : 0.06;
           if (big) {
             this.fx.impactWave(this.at(e.pos, 0.2), 1.4);
             this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.12);
@@ -963,6 +1127,9 @@ export class Renderer {
       stepSide: 1,
       kneel: hero.alive ? 0 : 1,
       recoil: 0,
+      feel: GUN_FEEL.rusty,
+      recoilSide: 1,
+      hitStop: 0,
       reload: 0,
       reloadTotal: 1,
       ...this.heroTools(root),
@@ -1018,7 +1185,8 @@ export class Renderer {
   /** Poziția gurii armei, în lume (pentru trasoare și flacără). */
   private muzzleOf(hero: Hero, view: HeroView): Vector3 {
     const [mx, my, mz] = view.model.muzzle;
-    const f = hero.facing;
+    // Rotirea modelului (nu cea din stare): flacăra și tubul de cartuș pleacă din arma care se vede.
+    const f = view.root.rotation.y;
     return new Vector3(
       hero.pos.x + mx * Math.cos(f) + mz * Math.sin(f),
       terrainHeight(hero.pos.x, hero.pos.z) + my - view.kneel * 0.5,
@@ -1146,20 +1314,25 @@ export class Renderer {
         this.fx.muzzle(bob, bite ? PAL.fire : hex("#d8483a"), 0.12, 0.04);
       }
 
-      // Recul la tragere, animație de reîncărcare, îngenunchere la moarte.
-      view.recoil = Math.max(0, view.recoil - dt * 12);
+      // Recul la tragere (după armă: smucitură înapoi, aplecare pe spate, răsucire), reîncărcare,
+      // îngenunchere la moarte. Reculul sare instant și revine ușor accelerat (rc²).
+      view.recoil = Math.max(0, view.recoil - dt * view.feel.recover);
+      const rc = view.recoil * view.recoil;
       view.reload = Math.max(0, view.reload - dt);
       const r = view.reloadTotal > 0 ? view.reload / view.reloadTotal : 0;
       const reloadPose = view.reload > 0 ? Math.sin(r * Math.PI) : 0;
       view.kneel += ((hero.alive ? 0 : 1) - view.kneel) * Math.min(1, dt * 6);
       const k = view.kneel;
       // Lovit: tresare puternic (se apleacă pe spate, se smucește într-o parte, e împins înapoi).
-      view.hurt = Math.max(0, view.hurt - dt * 3.2);
+      // În „hit-stop” (chiar la impactul ghearei) tresărirea stă o clipă pe loc, apoi continuă.
+      if (view.hitStop > 0) view.hitStop -= dt;
+      else view.hurt = Math.max(0, view.hurt - dt * 3.2);
       const hurt = Math.sin(Math.min(1, view.hurt) * Math.PI * 0.5) * view.hurt;
       view.body.position.y = bob + breathe - k * 0.5 - hurt * 0.08;
-      view.body.position.z = -view.recoil * 0.06 - hurt * 0.12;
-      view.body.rotation.x = amp * 0.12 - view.recoil * 0.08 + reloadPose * 0.35 + k * 0.45 - hurt * 0.55 + strikeLean;
-      view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp + hurt * 0.35 * view.hurtSide;
+      const fe = view.feel;
+      view.body.position.z = -rc * fe.push - hurt * 0.12;
+      view.body.rotation.x = amp * 0.12 - rc * 0.13 * fe.kick + reloadPose * 0.35 + k * 0.45 - hurt * 0.55 + strikeLean;
+      view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp + hurt * 0.35 * view.hurtSide + rc * fe.twist * 0.5 * view.recoilSide;
       view.root.position.x += view.hurtDir.x * hurt * 0.3;
       view.root.position.z += view.hurtDir.z * hurt * 0.3;
       // Durerea: genunchii se înmoaie, se îndoaie de mijloc, se clatină.
@@ -1169,7 +1342,7 @@ export class Renderer {
         legL.hip.rotation.x -= hurt * 0.35;
         view.body.rotation.y = Math.sin(this.time * 22) * hurt * 0.12;
       } else {
-        view.body.rotation.y = 0;
+        view.body.rotation.y = rc * fe.twist * view.recoilSide;
       }
       if (k > 0.01) {
         legL.hip.rotation.x = -k * 1.4;
@@ -1225,6 +1398,10 @@ export class Renderer {
       lastBlood: -1,
       windup: 0,
       burrowTrail: 0,
+      strikeT: 9,
+      hitX: 0,
+      hitZ: 0,
+      hitAt: -9,
       dispose: () => {
         root.dispose();
         view.bar?.dispose();
@@ -1322,30 +1499,53 @@ export class Renderer {
         return;
       }
 
-      // Lovit: un mic recul înapoi.
-      // Atacul are două timpi, ca să se vadă: (1) se pregătește — când stă lângă țintă și lovitura e
-      // aproape (attackTimer mic), își ridică brațele / bâta și se lasă pe spate; (2) lovește — la
-      // evenimentul de atac, brațele coboară brusc în față și corpul se aruncă înainte.
-      view.knock = Math.max(0, view.knock - dt * 6);
+      // Atacul are trei timpi, ca să se citească bine: (1) anticiparea — când stă lângă țintă și
+      // lovitura e aproape (attackTimer mic), se ghemuiește, se lasă pe spate și ridică brațele / bâta,
+      // tremurând la capăt; (2) izbitura — foarte rapidă (0,06–0,09 s), brațele cad în față și corpul
+      // se aruncă înainte (mult mai tare la brute și boși); (3) „hit-stop” — rămâne o clipă în poza
+      // de impact, apoi revine mai încet.
+      view.knock = Math.max(0, view.knock - dt * 5);
       view.attack = Math.max(0, view.attack - dt * 2.6);
       view.windup = Math.max(0, view.windup - dt * 0.9);
+      view.strikeT += dt;
+      const size = zSize(z.type);
+      const heavy = size >= 1.5;
       const standing = speed < 0.35;
       const interval = CONFIG.zombies[z.type].attackInterval;
-      const ready = standing && !frozen && z.attackTimer > 0 && z.attackTimer < Math.min(0.5, interval * 0.6) ? 1 - z.attackTimer / Math.min(0.5, interval * 0.6) : 0;
+      const windWin = Math.min(heavy ? 0.7 : 0.5, interval * 0.6);
+      const ready = standing && !frozen && z.attackTimer > 0 && z.attackTimer < windWin ? smooth(1 - z.attackTimer / windWin) : 0;
+      const SNAP = heavy ? 0.09 : 0.06;
+      const HOLD = heavy ? 0.1 : 0.06;
+      const REC = heavy ? 0.45 : 0.3;
+      const st = view.strikeT;
+      const hit = st < SNAP ? easeOut(st / SNAP) : st < SNAP + HOLD ? 1 : st < SNAP + HOLD + REC ? 1 - smooth((st - SNAP - HOLD) / REC) : 0;
+      const holding = st >= SNAP && st < SNAP + HOLD;
       // Yeti-ul: încordare lungă (se lasă pe spate, brațele sus), apoi năpustire aplecat în față.
       const charging = z.charge?.phase === "charge";
       const winding = z.charge?.phase === "wind" ? 1 : 0;
-      const raise = Math.max(ready, winding) * (1 - view.attack);
-      const strike = view.attack > 0.55 ? (1 - view.attack) / 0.45 : view.attack / 0.55;
-      const lunge = Math.sin(view.attack * Math.PI) * 0.35 * Math.min(1.6, zSize(z.type));
-      const back = view.knock * 0.28 - lunge + raise * 0.12;
+      const raise = Math.max(ready, winding) * (1 - hit);
+      const strike = hit;
+      const lunge = hit * 0.35 * Math.min(1.6, size) * (heavy ? 1.6 : 1);
+      // Tremurul de la capătul anticipării și din hit-stop.
+      const tremble = (ready > 0.75 ? (ready - 0.75) * 4 : 0) * 0.025 + (holding ? 0.03 : 0);
+      const back = -lunge + raise * 0.14;
       const hover = z.type === "witch" ? 0.35 + Math.sin(this.time * 2 + z.id) * 0.15 : 0;
-      view.root.position.set(z.pos.x - Math.sin(z.facing) * back, y + hover, z.pos.z - Math.cos(z.facing) * back);
       let diff = z.facing - view.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       view.root.rotation.y += diff * Math.min(1, dt * 8);
-      view.root.rotation.x = view.knock * -0.3 + lunge * 0.5 - raise * 0.22 + (charging ? 0.45 : 0);
-      view.root.rotation.z = Math.sin(w * 0.5) * 0.08;
+      // Lovit de glonț / proiectil: e împins în direcția loviturii și se înclină în partea aceea
+      // (pe spate dacă e lovit din față, pe o parte dacă e lovit din lateral). Cei mari tresar mai puțin.
+      const ry = view.root.rotation.y;
+      const kn = view.knock * view.knock * (heavy ? 0.55 : 1);
+      const kf = view.hitX * Math.sin(ry) + view.hitZ * Math.cos(ry);
+      const ks = view.hitX * Math.cos(ry) - view.hitZ * Math.sin(ry);
+      view.root.position.set(
+        z.pos.x - Math.sin(z.facing) * back + view.hitX * kn * 0.3 + Math.sin(this.time * 70) * tremble,
+        y + hover - raise * 0.06 * Math.min(2, size),
+        z.pos.z - Math.cos(z.facing) * back + view.hitZ * kn * 0.3,
+      );
+      view.root.rotation.x = kn * 0.45 * kf + lunge * 0.5 - raise * 0.3 + (charging ? 0.45 : 0);
+      view.root.rotation.z = Math.sin(w * 0.5) * 0.08 - kn * 0.45 * ks;
       // Umflatul respiră și se umflă tot mai tare când e lângă țintă.
       if (z.type === "bloater") {
         const puff = 1 + Math.sin(this.time * 5 + z.id) * 0.04 + ready * 0.12;
@@ -1366,11 +1566,11 @@ export class Renderer {
       } else if (runner) {
         // Galop în patru labe: labele din față și cele din spate în contratimp; la atac sare cu ghearele.
         const g = Math.sin(w * 1.3) * 0.75 * Math.max(0.25, amp);
-        view.armL.rotation.x = g - view.attack * 1.1 + raise * 0.5;
-        view.armR.rotation.x = -g * 0.8 - view.attack * 1.1 + raise * 0.5;
-        view.legL.rotation.x = -g;
-        view.legR.rotation.x = g * 0.8;
-        view.root.rotation.x = Math.sin(w * 2.6) * 0.05 - view.attack * 0.25 - raise * 0.15;
+        view.armL.rotation.x = g - hit * 1.3 + raise * 0.7 - kn * 0.4;
+        view.armR.rotation.x = -g * 0.8 - hit * 1.3 + raise * 0.7 - kn * 0.4;
+        view.legL.rotation.x = -g + raise * 0.3;
+        view.legR.rotation.x = g * 0.8 + raise * 0.3;
+        view.root.rotation.x = Math.sin(w * 2.6) * 0.05 - hit * 0.3 - raise * 0.2 + kn * 0.35 * kf;
       } else if (z.type === "broodmother") {
         // Păianjenul: picioarele se mișcă pe rând, ca niște clești; la atac le ridică pe cele din față.
         const g = Math.sin(w * 2.2) * 0.35 * Math.max(0.3, amp);
@@ -1392,12 +1592,19 @@ export class Renderer {
         view.legL.rotation.x = Math.sin(w) * 0.6 * amp * heavy;
         view.legR.rotation.x = -Math.sin(w) * 0.6 * amp * heavy;
         const base = z.type === "screamer" ? -0.5 : z.type === "shaman" ? -0.4 : -1.0;
-        const up = -1.6 * raise;
-        const down = 1.0 * strike * (view.attack > 0 ? 1 : 0);
-        view.armL.rotation.x = base + up + down + Math.sin(w + 1) * 0.3 * (1 - raise);
-        view.armR.rotation.x = base + up * 1.1 + down * 1.2 + Math.sin(w + 2.2) * 0.3 * (1 - raise);
-        view.armL.rotation.z = -0.1 - raise * 0.25;
-        view.armR.rotation.z = 0.1 + raise * 0.25;
+        const up = -1.9 * raise;
+        const down = 1.3 * strike;
+        // Lovit: brațele zboară o clipă înapoi.
+        const flail = -kn * 0.6;
+        view.armL.rotation.x = base + up + down + flail + Math.sin(w + 1) * 0.3 * (1 - raise) * (1 - strike);
+        view.armR.rotation.x = base + up * 1.1 + down * 1.2 + flail + Math.sin(w + 2.2) * 0.3 * (1 - raise) * (1 - strike);
+        view.armL.rotation.z = -0.1 - raise * 0.3 + strike * 0.15;
+        view.armR.rotation.z = 0.1 + raise * 0.3 - strike * 0.15;
+        // Anticiparea: un pas larg (piciorul din față înainte), ca să „încarce” lovitura.
+        if (raise > 0.01 || strike > 0.01) {
+          view.legL.rotation.x += -0.35 * raise + 0.45 * strike;
+          view.legR.rotation.x += 0.25 * raise - 0.2 * strike;
+        }
         if (z.type === "screamer") {
           // Urlătoarea: brațele larg deschise, capul pe spate când urlă.
           view.armL.rotation.z = -0.6 - view.attack * 0.6;
@@ -1431,7 +1638,20 @@ export class Renderer {
       view.root.setEnabled(true);
       view.bar?.dispose();
       view.bar = null;
-      this.dying.push({ view, t: 0, burned: this.killed.get(id)! });
+      const burned = this.killed.get(id)!;
+      const yaw0 = view.root.rotation.y;
+      // Lovit de curând: e aruncat în direcția glonțului; altfel (ars, mină) se prăbușește pe spate.
+      const fresh = !burned && this.time - view.hitAt < 0.6;
+      const dx = fresh ? view.hitX : -Math.sin(yaw0);
+      const dz = fresh ? view.hitZ : -Math.cos(yaw0);
+      // Cade pe spate dacă lovitura vine din față, pe burtă dacă vine din spate; corpul se răsucește
+      // spre direcția loviturii (cel mult un sfert de tură), ca un trup aruncat.
+      const forward = dx * Math.sin(yaw0) + dz * Math.cos(yaw0) > 0;
+      const yaw1 = forward ? Math.atan2(dx, dz) : Math.atan2(-dx, -dz);
+      this.dying.push({
+        view, t: 0, burned, dx, dz, x0: view.root.position.x, z0: view.root.position.z,
+        yaw0, yaw1, pitch: forward ? 1 : -1, landed: false,
+      });
       return true;
     });
   }
@@ -1439,16 +1659,49 @@ export class Renderer {
   private updateDying(dt: number): void {
     for (let i = this.dying.length - 1; i >= 0; i--) {
       const d = this.dying[i];
+      const v = d.view;
       d.t += dt;
-      const fall = Math.min(1, d.t / 0.45);
-      const flying = CONFIG.zombies[d.view.type].flying;
-      d.view.root.rotation.x = -fall * 1.45;
-      d.view.armL.rotation.x = -fall * 2;
-      d.view.armR.rotation.x = -fall * 1.6;
-      if (flying) d.view.root.position.y = Math.max(terrainHeight(d.view.root.position.x, d.view.root.position.z), d.view.root.position.y - dt * 8);
-      if (d.t > 1.2) d.view.root.position.y -= dt * 0.9;
+      const size = zSize(v.type);
+      const flying = CONFIG.zombies[v.type].flying;
+      // Cade accelerat (ca sub greutatea lui), lovește zăpada, sare puțin și se așază.
+      // Cei mari cad mai încet și mai greu; arșii se prăbușesc moale.
+      const T = d.burned ? 0.6 : size >= 1.5 ? 0.62 : 0.42;
+      const k = Math.min(1, d.t / T);
+      let fall = k * k;
+      if (d.t > T && d.t < T + 0.22) fall = 1 - Math.sin(((d.t - T) / 0.22) * Math.PI) * 0.09;
+      // Se răsucește în primele clipe spre direcția loviturii.
+      let dy = d.yaw1 - d.yaw0;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      v.root.rotation.y = d.yaw0 + dy * easeOut(Math.min(1, d.t / 0.25));
+      v.root.rotation.x = d.pitch * fall * 1.45;
+      v.root.rotation.z = 0;
+      // Alunecă puțin în direcția loviturii (mai puțin la cei grei).
+      const slide = easeOut(Math.min(1, d.t / 0.5)) * (d.burned ? 0.1 : 0.55 / Math.sqrt(size));
+      v.root.position.x = d.x0 + d.dx * slide;
+      v.root.position.z = d.z0 + d.dz * slide;
+      // Brațele zboară în sus / în urmă, picioarele se desfac.
+      v.armL.rotation.x = -fall * 2 * (d.pitch < 0 ? 1 : 0.6);
+      v.armR.rotation.x = -fall * 1.6 * (d.pitch < 0 ? 1 : 0.7);
+      v.armL.rotation.z = -fall * 0.5;
+      v.armR.rotation.z = fall * 0.4;
+      v.legL.rotation.x = fall * 0.35;
+      v.legR.rotation.x = -fall * 0.25;
+      if (flying) v.root.position.y = Math.max(terrainHeight(v.root.position.x, v.root.position.z), v.root.position.y - dt * 8);
+      // Atinge zăpada: un pufăit (la cei mari praf și camera tremură).
+      if (!d.landed && d.t >= T && !flying) {
+        d.landed = true;
+        const gx = v.root.position.x + Math.sin(v.root.rotation.y) * d.pitch * 0.9 * size;
+        const gz = v.root.position.z + Math.cos(v.root.rotation.y) * d.pitch * 0.9 * size;
+        const at = new Vector3(gx, terrainHeight(gx, gz) + 0.15, gz);
+        this.fx.burst("snow", at, new Vector3(0, 1, 0), Math.round(5 * Math.min(3, size)), 2.2 + size * 0.5, 0.08 + size * 0.02);
+        if (size >= 1.5) {
+          this.fx.dust(at, 0.6 * size, 0.4);
+          this.shakeNear({ x: gx, z: gz }, size >= 2 ? 0.5 : 0.2);
+        }
+      }
+      if (d.t > 1.2) v.root.position.y -= dt * 0.9;
       if (d.t > 2.5) {
-        d.view.dispose();
+        v.dispose();
         this.dying.splice(i, 1);
       }
     }
@@ -1464,7 +1717,8 @@ export class Renderer {
       head.parent = root;
       const bar = new HpBar(this.scene, this.m.hpBg, this.m.hpWall, 1.8);
       return {
-        root, base: [], head, key: "", level: 0, kind: t.kind, kick: 0, bar, fire: null,
+        root, base: [], head, parts: {}, key: "", level: 0, kind: t.kind, kick: 0, bar, fire: null,
+        fireT: 9, abilityT: 9, interval: 1, special: false, spin: 0,
         dispose: () => {
           root.dispose();
           bar.dispose();
@@ -1473,27 +1727,29 @@ export class Renderer {
     }, (view, t) => {
       const y = terrainHeight(t.pos.x, t.pos.z);
       view.root.position.set(t.pos.x, y, t.pos.z);
-      // Arma de pe pivot se rotește lin spre țintă și „sare” puțin la fiecare foc.
-      let diff = t.facing - view.head.rotation.y;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      view.head.rotation.y += diff * Math.min(1, dt * 10);
-      view.kick = Math.max(0, view.kick - dt * 6);
-      view.head.rotation.x = t.kind === "tesla" || t.kind === "frost" ? 0 : -view.kick * 0.25;
       const key = `${t.kind}${t.level}`;
       if (view.key !== key) {
-        // Tip sau nivel nou: altă bază și altă armă.
+        // Tip sau nivel nou: altă bază și altă armă (partea fixă + piesele animate, fiecare cu pivotul ei).
         for (const m of view.base) m.dispose();
-        for (const c of view.head.getChildMeshes()) c.dispose();
+        for (const c of view.head.getChildren()) c.dispose();
         view.base = this.towerBases[t.level - 1].instance("towerBase", view.root);
-        this.towerHeads.get(key)!.instance("towerHeadMesh", view.head);
+        const head = this.towerHeads.get(key)!;
+        head.fixed.instance("towerHeadMesh", view.head);
+        view.parts = {};
+        for (const p of head.parts) {
+          const node = new TransformNode(`towerPart_${p.name}`, this.scene);
+          node.parent = view.head;
+          node.position.set(...p.pivot);
+          p.prefab.instance("towerPartMesh", node);
+          view.parts[p.name] = node;
+        }
         view.head.position.y = towerHeadY(t.level);
         view.key = key;
         view.level = t.level;
         view.kind = t.kind;
+        view.interval = towerStats(t.kind, t.level).fireInterval;
       }
-      // Gheața plutește și se rotește încet; bobina Tesla vibrează.
-      if (t.kind === "frost") view.head.rotation.y = this.time * 0.6;
-      if (t.kind === "tesla") view.head.position.x = Math.sin(this.time * 40) * 0.01;
+      this.animateTower(view, t, dt);
       // Înghețat de vrăjitoare: crustă de gheață peste tot turnul.
       const frozenT = (t.frozenTimer ?? 0) > 0;
       const ice = this.towerIce.get(t.id);
@@ -1534,6 +1790,119 @@ export class Renderer {
     }, (id, view) => this.startCollapse(id, view.root, view.bar, 3.6));
   }
 
+  /**
+   * Animația armei de pe turn (citită doar din timpul de la ultimul foc și din `fireTimer`):
+   * arbaleta — coarda pleacă, brațele se destind și vibrează, apoi o săgeată nouă alunecă pe grindă;
+   * rachetele — blocul de tuburi sare înapoi; tunul — țeava alunecă înapoi pe axa ei și revine încet,
+   * tot turnul se zguduie; Tesla — sfera se încarcă (crește, scântei) chiar înainte de descărcare;
+   * gheața — cristalul se învârte mai repede și pulsează.
+   */
+  private animateTower(view: TowerView, t: { facing: number; fireTimer: number; frozenTimer?: number }, dt: number): void {
+    const frozen = (t.frozenTimer ?? 0) > 0;
+    view.fireT += dt;
+    view.abilityT += dt;
+    view.kick = Math.max(0, view.kick - dt * 6);
+    const ft = view.fireT;
+    const P = view.parts;
+    const s = 1 + (view.level - 1) * 0.12;
+    // Arma de pe pivot se rotește lin spre țintă.
+    if (view.kind !== "frost") {
+      let diff = t.facing - view.head.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      view.head.rotation.y += diff * Math.min(1, dt * 10);
+    }
+    view.head.rotation.x = 0;
+    view.head.position.x = 0;
+    view.head.position.z = 0;
+    switch (view.kind) {
+      case "crossbow": {
+        // (1) Coarda pleacă (0,04 s): brațele sar înainte și tremură amortizat; (2) după o clipă,
+        // coarda e trasă înapoi încet; (3) o săgeată nouă alunecă pe grindă din spate.
+        const reload = Math.max(0.3, Math.min(1.1, view.interval * 0.8));
+        const snap = clamp01(ft / 0.04);
+        const cock = smooth(clamp01((ft - 0.14) / (reload - 0.14)));
+        const wob = ft < 0.6 ? Math.sin(ft * 48) * Math.exp(-ft * 8) * (view.special ? 0.24 : 0.16) : 0;
+        const flex = -(view.special ? 0.32 : 0.24) * snap * (1 - cock) + wob * (1 - cock);
+        if (P.armR) P.armR.rotation.y = flex;
+        if (P.armL) P.armL.rotation.y = -flex;
+        if (P.string) {
+          P.string.position.z = 0.38 * s + 0.42 * s * snap * (1 - cock);
+          P.string.scaling.x = 1 - 0.07 * snap * (1 - cock);
+        }
+        if (P.bolt) {
+          const load = clamp01((ft - 0.2) / (reload - 0.2));
+          P.bolt.setEnabled(ft > reload || load > 0.05);
+          P.bolt.position.z = 0.55 * s - (1 - easeOut(load)) * 0.7 * s;
+        }
+        // Grinda tresare puțin în sus la eliberare.
+        view.head.rotation.x = -view.kick * view.kick * 0.1;
+        break;
+      }
+      case "rocket": {
+        // Recul scurt al blocului de tuburi, revine cu un mic arc.
+        const r = ft < 0.04 ? ft / 0.04 : Math.exp(-(ft - 0.04) * 7) * Math.cos((ft - 0.04) * 10);
+        const k = view.special ? 1.4 : 1;
+        if (P.pod) {
+          P.pod.position.z = 0.1 - r * 0.3 * k;
+          P.pod.rotation.x = -r * 0.16 * k;
+        }
+        view.head.rotation.x = -view.kick * 0.06;
+        break;
+      }
+      case "cannon": {
+        // Țeava alunecă înapoi de-a lungul axei ei (0,03 s), apoi e împinsă încet la loc.
+        const back = ft < 0.03 ? ft / 0.03 : (1 - clamp01((ft - 0.03) / 0.75)) ** 2;
+        const k = view.special ? 1.2 : 1;
+        if (P.barrel) {
+          // Axa țevii: înainte și puțin în sus (0, 0.12, 0.993).
+          P.barrel.position.y = 0.8 - 0.12 * 0.5 * s * back * k;
+          P.barrel.position.z = 0.35 - 0.993 * 0.5 * s * back * k;
+        }
+        // Gura se ridică o clipă, iar tot turnul se zguduie (zidăria „bate” sub lovitură).
+        view.head.rotation.x = -back * 0.12 * k;
+        const shake = ft < 0.3 ? (1 - ft / 0.3) ** 2 : 0;
+        if (shake > 0) {
+          view.root.position.x += Math.sin(this.time * 95) * 0.045 * shake;
+          view.root.position.z += Math.cos(this.time * 83) * 0.035 * shake;
+          view.root.position.y -= 0.03 * shake;
+        }
+        break;
+      }
+      case "tesla": {
+        // Se încarcă: în ultimele 0,4 s dinaintea descărcării (doar cât e în luptă).
+        const engaged = !frozen && ft < view.interval * 1.6 + 0.3;
+        const charge = engaged && t.fireTimer > 0 && t.fireTimer < 0.4 ? 1 - t.fireTimer / 0.4 : 0;
+        const flash = Math.max(ft < 0.22 ? 1 - ft / 0.22 : 0, view.abilityT < 0.5 ? 1 - view.abilityT / 0.5 : 0);
+        const hum = Math.sin(this.time * 34) * 0.04 * charge;
+        if (P.orb) P.orb.scaling.setAll(1 + charge * charge * 0.3 + flash * 0.4 + hum);
+        // Bobina vibrează mai tare când e încărcată.
+        view.head.position.x = Math.sin(this.time * 40) * (0.01 + 0.03 * charge);
+        if (P.orb && charge > 0.25 && Math.random() < dt * 22 * charge) {
+          // Scântei mici și arcuri scurte care sar de pe sferă.
+          const o = P.orb.getAbsolutePosition();
+          const a = Math.random() * Math.PI * 2;
+          const end = new Vector3(o.x + Math.cos(a) * 0.75, o.y + (Math.random() - 0.3) * 0.6, o.z + Math.sin(a) * 0.75);
+          this.fx.lightning(o, end, mix(TOWER_COLORS.tesla, PAL.snow, 0.5), 0.014, 0.05, false, 0.18);
+          if (Math.random() < 0.5) this.fx.burst("ice", end, null, 1, 1.5, 0.035);
+        }
+        break;
+      }
+      case "frost": {
+        // Cristalul: plutește; se învârte și pulsează mai tare când trage / la nova.
+        const boost = Math.max(ft < 0.7 ? 1 - ft / 0.7 : 0, view.abilityT < 1.4 ? 1 - view.abilityT / 1.4 : 0);
+        if (!frozen) view.spin += dt * (0.6 + boost * 7);
+        view.head.rotation.y = view.spin;
+        if (P.crystal) {
+          const pulse = 1 + boost * 0.22 + Math.sin(this.time * 2.2) * 0.03;
+          P.crystal.scaling.set(pulse, 1 + boost * 0.12, pulse);
+          P.crystal.position.y = 1.4 * s + Math.sin(this.time * 1.6) * 0.05 + boost * 0.12;
+          P.crystal.rotation.y = view.spin * 1.5;
+        }
+        break;
+      }
+    }
+  }
+
   /** Construcție distrusă: n-o ștergem brusc, ci o lăsăm să se prăbușească. */
   private startCollapse(id: EntityId, root: TransformNode, bar: HpBar, barY: number): boolean {
     if (!this.destroyed.has(id)) return false;
@@ -1572,15 +1941,30 @@ export class Renderer {
 
   // ---------- Turnuri: tragere, abilități, proiectile ----------
 
-  /** Punctul din care pleacă proiectilul (gura armei). */
-  private towerMuzzle(state: GameState, towerId: EntityId): Vector3 | null {
-    const t = state.towers.find((x) => x.id === towerId);
-    const view = t && this.towerViews.get(t.id);
-    if (!t || !view) return null;
-    const up = t.kind === "tesla" ? 2.0 + t.level * 0.2 : t.kind === "frost" ? 2.4 : 0.8;
-    const fwd = t.kind === "tesla" || t.kind === "frost" ? 0 : t.kind === "cannon" ? 1.5 : 1.2;
-    const f = view.head.rotation.y;
-    return this.at(t.pos, (towerHeadY(t.level) + up) * TOWER_SCALE).add(new Vector3(Math.sin(f), 0, Math.cos(f)).scale(fwd * TOWER_SCALE));
+  /**
+   * Punctul din care pleacă proiectilul (gura armei), în lume: gura e dată în coordonatele capului
+   * (per tip și nivel) și trece prin transformarea capului (rotire spre țintă, recul, scara turnului).
+   */
+  private towerMuzzle(state: GameState, towerId: EntityId, local?: [number, number, number]): Vector3 | null {
+    const view = this.towerViews.get(towerId);
+    if (!view || !view.key) {
+      const t = state.towers.find((x) => x.id === towerId);
+      return t ? this.at(t.pos, 2) : null;
+    }
+    const [x, y, z] = local ?? towerMuzzleLocal(view.kind, view.level);
+    view.head.computeWorldMatrix(true);
+    return Vector3.TransformCoordinates(new Vector3(x, y, z), view.head.getWorldMatrix());
+  }
+
+  /** Direcția (orizontală) în care privește arma turnului. */
+  private towerForward(view: TowerView | undefined, from: Vector3, to: Vector3): Vector3 {
+    if (view && view.kind !== "frost" && view.kind !== "tesla") {
+      const f = view.head.rotation.y;
+      return new Vector3(Math.sin(f), 0, Math.cos(f));
+    }
+    const d = to.subtract(from);
+    d.y = 0;
+    return d.lengthSquared() > 1e-4 ? d.normalize() : new Vector3(0, 0, 1);
   }
 
   private targetPoint(state: GameState, to: Vec2): Vector3 {
@@ -1590,45 +1974,102 @@ export class Renderer {
 
   private onTowerFired(state: GameState, towerId: EntityId, kind: TowerKind, to: Vec2, special: Shell["special"]): void {
     const view = this.towerViews.get(towerId);
-    if (view) view.kick = 1;
+    if (view) {
+      view.kick = 1;
+      view.fireT = 0;
+      view.special = special !== "none" && special !== "mini";
+    }
     const from = this.towerMuzzle(state, towerId);
     if (!from) return;
+    const end = this.at(to, 1.1);
+    const fwd = this.towerForward(view, from, end);
+    const up = new Vector3(0, 1, 0);
     switch (kind) {
       case "tesla": {
-        // O linie subțire alb-albăstruie care pâlpâie doar cât atinge ținta (fără bile de lumină).
-        const end = this.targetPoint(state, to);
-        this.fx.lightning(from, end, mix(TOWER_COLORS.tesla, PAL.snow, 0.5), 0.025, 0.07, false, 0.25);
-        this.fx.lightning(from, end, PAL.snow, 0.015, 0.05, false, 0.35);
+        // O linie subțire alb-albăstruie care pâlpâie doar cât atinge ținta (fără bile de lumină),
+        // plus o sclipire scurtă pe sferă și câteva scântei la țintă.
+        const hit = this.targetPoint(state, to);
+        this.fx.lightning(from, hit, mix(TOWER_COLORS.tesla, PAL.snow, 0.5), 0.025, 0.07, false, 0.25);
+        this.fx.lightning(from, hit, PAL.snow, 0.015, 0.05, false, 0.35);
+        this.fx.muzzle(from, mix(TOWER_COLORS.tesla, PAL.snow, 0.4), 1.0, 0.07);
+        this.fx.burst("ice", hit, null, 3, 2.5, 0.04);
         break;
       }
-      case "cannon":
-        // Tunul e singurul cu fum la gură.
-        this.fx.muzzle(from, PAL.fire, 0.7, 0.08);
-        this.fx.burst("smoke", from, null, 6, 2, 0.35);
+      case "cannon": {
+        // Tunul: flacără mare la gură, un inel de fum care se lărgește, fum gros înainte,
+        // scântei, iar la baza turnului zăpada sare (unda loviturii).
+        const fire = special === "fire";
+        this.fx.muzzle(from, fire ? mix(PAL.fire, PAL.gold, 0.3) : PAL.fire, fire ? 0.9 : 0.75, 0.08);
+        this.fx.muzzle(from.add(fwd.scale(0.55)), mix(PAL.fire, PAL.gold, 0.5), 0.45, 0.05);
+        this.fx.ringBurst("smoke", from.add(fwd.scale(0.2)), fwd, 9, 2.4, 0.2, 0.5);
+        this.fx.burst("smoke", from.add(fwd.scale(0.4)), fwd, 5, 3, 0.3);
+        this.fx.burst("spark", from, fwd, fire ? 9 : 5, 7, 0.05);
+        const t = state.towers.find((x) => x.id === towerId);
+        if (t) {
+          this.fx.ring(this.at(t.pos, 0.12), 2.1, PAL.snow, 0.3);
+          this.fx.burst("snow", this.at(t.pos, 0.2), up, 8, 2.5, 0.1);
+          this.shakeNear(t.pos, 0.12);
+        }
         break;
-      case "rocket":
-        this.fx.burst("smoke", from, null, special === "big" ? 6 : 3, 1.2, 0.25);
+      }
+      case "rocket": {
+        // Lansarea: flacără la gură, jet de foc și fum în spate (back-blast), unda de aer.
+        const big = special === "big";
+        const rear = this.towerMuzzle(state, towerId, [0, 0.88, -0.55]);
+        this.fx.muzzle(from, mix(PAL.fire, PAL.gold, 0.35), big ? 0.8 : 0.5, 0.06);
+        this.fx.burst("smoke", from, fwd, big ? 4 : 2, 1.5, 0.22);
+        if (rear) {
+          const backDir = fwd.scale(-1).add(new Vector3(0, 0.15, 0));
+          this.fx.burst("smoke", rear, backDir, big ? 6 : 3, 3.2, big ? 0.26 : 0.18);
+          this.fx.burst("spark", rear, backDir, big ? 7 : 4, 5, 0.05);
+          this.fx.muzzle(rear, PAL.fire, big ? 0.6 : 0.38, 0.05);
+          this.fx.ringBurst("snow", rear.add(new Vector3(0, -0.4, 0)), up, big ? 10 : 6, 2.2, 0.06, 0);
+        }
         break;
+      }
       case "frost":
-        // Gheața nu „trage” nimic vizibil: doar crusta apare pe zombi.
+        // Gheața nu „trage” nimic: cristalul doar sclipește și scutură câțiva fulgi de gheață.
+        this.fx.muzzle(from, mix(PAL.ice, PAL.snow, 0.3), 0.55, 0.12);
+        this.fx.burst("ice", from, up, 4, 2, 0.04);
         break;
-      default:
-        // Arbaleta: niciun fulger, doar săgeata care se vede zburând.
+      default: {
+        // Arbaleta: „toc” de lemn — coarda scutură zăpada de pe brațe, iar o dâră palidă arată
+        // drumul săgeții la plecare.
+        const str = this.towerMuzzle(state, towerId, [0, 0.55, 0.5]);
+        if (str) this.fx.burst("snow", str, up, special === "heavy" ? 6 : 3, 1.6, 0.05);
+        this.fx.tracer(from, from.add(fwd.scale(special === "heavy" ? 1.6 : 1.1)), PAL.snow, 0.03, 0.06, true);
+        if (special === "heavy") this.fx.burst("spark", from, fwd, 4, 4, 0.04);
         break;
+      }
     }
   }
 
   private onTowerAbility(state: GameState, towerId: EntityId, kind: TowerKind, pos: Vec2, to: Vec2): void {
     const view = this.towerViews.get(towerId);
-    if (view) view.kick = 1;
+    if (view) {
+      view.kick = 1;
+      view.abilityT = 0;
+    }
     if (kind === "tesla") {
       // Laserul: aceeași linie subțire, dar prin toată linia și pâlpâind de câteva ori.
       const from = this.towerMuzzle(state, towerId) ?? this.at(pos, 2.5);
       const end = this.at(to, 1.2);
       this.fx.tracer(from, end, mix(TOWER_COLORS.tesla, PAL.snow, 0.6), 0.06, 0.3, true);
       for (let i = 0; i < 3; i++) this.fx.lightning(from, end, PAL.snow, 0.02, 0.1 + i * 0.08, false, 0.3);
+      this.fx.muzzle(from, PAL.snow, 1.4, 0.12);
+    } else if (kind === "frost") {
+      // Nova: un inel de ger care fuge pe zăpadă până la marginea razei, cristalul sclipește puternic.
+      const t = state.towers.find((x) => x.id === towerId);
+      const range = t ? effectiveTowerStats(state, t).range : 5;
+      const top = this.towerMuzzle(state, towerId);
+      this.fx.ring(this.at(pos, 0.15), range, PAL.ice, 0.7);
+      this.fx.ring(this.at(pos, 0.25), range * 0.55, mix(PAL.ice, PAL.snow, 0.5), 0.45);
+      if (top) {
+        this.fx.muzzle(top, mix(PAL.ice, PAL.snow, 0.4), 1.3, 0.2);
+        this.fx.burst("ice", top, null, 14, 4, 0.06);
+      }
+      this.fx.ringBurst("ice", this.at(pos, 0.3), new Vector3(0, 1, 0), 16, 6, 0.06, 0.1);
     }
-    // Gheața: nova nu are nor sau inel — crusta apare direct pe zombii înghețați.
   }
 
   private onShellHit(kind: TowerKind, special: Shell["special"], pos: Vec2, splash: number): void {
@@ -1672,24 +2113,45 @@ export class Renderer {
       if (s.kind === "frost") mesh.setEnabled(false);
       return { mesh, last: null, trail: 0, dispose: () => mesh.dispose() };
     }, (view, s) => {
-      // Arc de zbor: ghiulelele urcă sus, săgețile aproape drept.
+      // Arc de zbor: ghiulelele urcă sus, săgețile aproape drept. Pleacă din gura armei
+      // (nu din centrul turnului): decalajul față de centru se stinge pe parcursul zborului.
       const done = Math.hypot(s.pos.x - s.from.x, s.pos.z - s.from.z);
       const left = Math.hypot(s.target.x - s.pos.x, s.target.z - s.pos.z);
       const p = done / Math.max(0.01, done + left);
       const t = state.towers.find((x) => x.id === s.towerId);
-      const startY = t ? (towerHeadY(t.level) + 1) * TOWER_SCALE : 1.6;
+      const ml = t ? towerMuzzleLocal(t.kind, t.level) : null;
+      const startY = t && ml ? (towerHeadY(t.level) + ml[1]) * TOWER_SCALE : 1.6;
       const target = s.targetId !== null ? state.zombies.find((z) => z.id === s.targetId) : undefined;
       const endY = 1.0 + (target ? this.zombieY(target.type) : 0);
       const arc = s.kind === "cannon" ? 3 : s.kind === "rocket" ? (s.special === "mini" ? 0.6 : 1.4) : 0.4;
       const y = startY * (1 - p) + endY * p + Math.sin(p * Math.PI) * arc;
       const pos = this.at(s.pos, y);
+      if (ml && s.special !== "mini") {
+        const dx = s.target.x - s.from.x;
+        const dz = s.target.z - s.from.z;
+        const dl = Math.hypot(dx, dz) || 1;
+        const off = ml[2] * TOWER_SCALE * (1 - p);
+        pos.x += (dx / dl) * off;
+        pos.z += (dz / dl) * off;
+      }
       if (view.last && Vector3.DistanceSquared(view.last, pos) > 1e-4) view.mesh.lookAt(pos.add(pos.subtract(view.last)));
+      // Dâre ieftine: fum + flacără la rachete, scântei la ghiuleaua cu foc, fum subțire la ghiulea,
+      // o linie palidă scurtă în urma săgeții (doar ce era deja pe ecran, fără lumini noi).
+      view.trail++;
+      const last = view.last;
+      if (s.kind === "rocket") {
+        this.fx.burst("smoke", pos, null, 1, 0.25, s.special === "mini" ? 0.18 : 0.3);
+        if (view.trail % 2 === 0 && last) this.fx.burst("spark", pos, last.subtract(pos), 1, 2, 0.05);
+      } else if (s.kind === "cannon") {
+        if (s.special === "fire") {
+          if (view.trail % 2 === 0) this.fx.burst("spark", pos, null, 1, 0.8, 0.07);
+          if (view.trail % 4 === 0) this.fx.burst("smoke", pos, null, 1, 0.2, 0.22);
+        } else if (view.trail % 4 === 0) this.fx.burst("smoke", pos, null, 1, 0.15, 0.14);
+      } else if (s.kind === "crossbow" && last) {
+        this.fx.tracer(last, pos, s.special === "heavy" ? mix(PAL.fire, PAL.bone, 0.5) : PAL.snow, s.special === "heavy" ? 0.05 : 0.025, 0.09, true);
+      }
       view.last = pos.clone();
       view.mesh.position.copyFrom(pos);
-      // Dâre: fum la rachete, scântei la ghiulelele cu foc, gheață la cristale.
-      view.trail++;
-      // Doar racheta lasă o dâră de fum; restul zboară curat.
-      if (s.kind === "rocket") this.fx.burst("smoke", pos, null, 1, 0.25, s.special === "mini" ? 0.18 : 0.3);
     });
   }
 
