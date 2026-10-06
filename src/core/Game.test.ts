@@ -45,15 +45,15 @@ describe("zi și noapte", () => {
     expect(nightDuration(10)).toBeGreaterThan(nightDuration(5));
   });
 
-  it("nopțile aduc tipuri noi de zombi și boss la 5 și 10", () => {
+  it("nopțile aduc tipuri noi de zombi; boșii campaniei la nopțile 3 și 6", () => {
     expect(waveComposition(2, 1).length).toBeGreaterThan(waveComposition(1, 1).length);
     expect(waveComposition(1, 1)).not.toContain("runner");
     expect(waveComposition(2, 1)).toContain("runner");
     expect(waveComposition(3, 1)).toContain("spitter");
     expect(waveComposition(4, 1)).toContain("flyer");
     expect(waveComposition(4, 1)).toContain("brute");
-    expect(waveComposition(5, 1).at(-1)).toBe("boss");
-    expect(waveComposition(10, 1).at(-1)).toBe("boss");
+    expect(waveComposition(3, 1).at(-1)).toBe("broodmother");
+    expect(waveComposition(6, 1).at(-1)).toBe("boss");
     expect(waveComposition(1, 4).length).toBeGreaterThan(waveComposition(1, 1).length);
   });
 

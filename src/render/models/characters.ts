@@ -659,7 +659,7 @@ function buildBrute(scene: Scene, mats: Materials, seed: number): ZombieModel {
  * 5) Lich-ul de gheață (boss): schelet uriaș cu craniu cu coarne, cușcă toracică goală,
  * mantie zdrențuită din care atârnă țurțuri, gheare lungi și o coasă din os, cu țepi.
  */
-function buildBoss(scene: Scene, mats: Materials, seed: number): ZombieModel {
+function buildBoss(scene: Scene, mats: Materials, seed: number, king = false): ZombieModel {
   const k = new ModelKit(scene, mats, seed);
   const bone = mix(PAL.bone, hex("#b9c4cc"), 0.5);
   const boneDark = mix(bone, PAL.iron, 0.4);
@@ -699,6 +699,18 @@ function buildBoss(scene: Scene, mats: Materials, seed: number): ZombieModel {
   for (const side of [1, -1]) {
     k.cyl(0.45, 0.12, 0.2, 6, { p: [side * 0.3, 4.3, 0.15], r: [-0.2, 0, side * -0.6] }, { color: bone, wear: 0.15, smooth: true });
     k.cyl(0.55, 0, 0.12, 6, { p: [side * 0.48, 4.62, 0.12], r: [-0.4, 0, side * 0.25] }, { color: ICE_CRUST, wear: 0.05, smooth: true });
+  }
+  if (king) {
+    // Regele Iernii: coroană înaltă de țurțuri care arde rece, inimă de gheață în cușca toracică,
+    // mantie lungă până în zăpadă.
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      const h = i % 2 ? 0.55 : 0.95;
+      k.cyl(h, 0, 0.13, 4, { p: [Math.sin(a) * 0.42, 4.45 + h / 2, 0.25 + Math.cos(a) * 0.38] }, { color: PAL.ice, mat: "glow" });
+    }
+    k.cyl(0.12, 0.92, 0.92, 12, { p: [0, 4.4, 0.25] }, { color: PAL.gold, mat: "metal", wear: 0.2 });
+    k.ico(0.42, { p: [0, 2.75, 0.25], s: [1, 1.3, 1] }, { color: hex("#9fe6ff"), mat: "glow" });
+    rags(k, 18, [-1.1, 1.1], 3.3, [-0.8, -0.3], [2.4, 3.2], 0.34, hex("#2f3c52"));
   }
   const body = k.build(`boss${seed}`);
   const arm = (s: number, scythe: boolean) => limb(scene, mats, seed + s, (a) => {
@@ -1044,6 +1056,8 @@ export function buildZombie(scene: Scene, mats: Materials, type: ZombieType): Zo
       return buildWitch(scene, mats, 840);
     case "colossus":
       return buildColossus(scene, mats, 860);
+    case "frostKing":
+      return buildBoss(scene, mats, 880, true);
     default:
       return buildWalker(scene, mats, 100);
   }

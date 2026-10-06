@@ -1,7 +1,7 @@
 // Starea completă a jocului: doar date simple (fără clase, fără Babylon).
 // Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
-import type { AnimalKind, ArmorMaterial, ArmorSlot, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, SkillId, TowerKind, Weather, ZombieType } from "./config";
+import type { AnimalKind, ArmorMaterial, ArmorSlot, Difficulty, RunStage, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, SkillId, TowerKind, Weather, ZombieType } from "./config";
 import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
@@ -336,6 +336,18 @@ export interface GameState {
   wave: number;
   totalWaves: number;
   wavesCompleted: number;
+  /** Etapa rundei: campania de 30 de minute, asaltul boșilor sau valul fără sfârșit. */
+  stage: RunStage;
+  /** Secunde rămase din campanie (ceasul mare de sus). */
+  runTimer: number;
+  /** Asaltul boșilor: al câtelea boss vine, secunde până apare și boss-ul de acum (id). */
+  rushIndex: number;
+  rushTimer: number;
+  rushBossId: EntityId | null;
+  /** Valul fără sfârșit: cât reziști (secunde), câte valuri au venit, secunde până la următorul. */
+  endlessTime: number;
+  endlessWave: number;
+  endlessTimer: number;
   /** Secunde rămase din zi sau din noapte. */
   phaseTimer: number;
   /** Durata totală a fazei curente (pentru UI și pentru cerul zi/noapte). */
@@ -460,5 +472,10 @@ export type GameEvent =
   | { type: "stomp"; id: EntityId; pos: Vec2; radius: number }
   | { type: "throw"; id: EntityId; kind: Projectile["kind"]; from: Vec2; to: Vec2 }
   | { type: "bossEnraged"; id: EntityId; pos: Vec2 }
+  | { type: "bossRushStarted" }
+  | { type: "bossIncoming"; bossType: ZombieType; index: number; total: number }
+  | { type: "bossDefeated"; bossType: ZombieType; index: number; total: number }
+  | { type: "endlessStarted" }
+  | { type: "endlessWave"; wave: number; boss: ZombieType | null }
   | { type: "gameOver" }
   | { type: "victory" };

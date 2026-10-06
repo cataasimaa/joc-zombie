@@ -289,6 +289,7 @@ button {
 }
 
 .toast.long {
+  top: 40%;
   font-size: clamp(16px, 3.4vw, 24px);
   white-space: normal;
   width: min(80vw, 640px);
@@ -2691,5 +2692,44 @@ i.coin {
   .level-menu {
     top: 92px;
     max-height: calc(100% - 100px);
+  }
+}
+
+/* ---------- Ceasul mare al rundei (30 de minute → asaltul boșilor → valul fără sfârșit) ---------- */
+.run-timer {
+  padding: 2px 14px;
+  border-radius: 12px;
+  background: rgba(8, 20, 28, 0.72);
+  border: 1px solid rgba(255, 211, 106, 0.55);
+  color: #ffe6a8;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-timer.final {
+  color: #ff8a7a;
+  border-color: rgba(255, 110, 90, 0.8);
+  animation: barGlow 0.8s infinite;
+}
+
+.run-timer.rush {
+  color: #ffb3b3;
+  border-color: rgba(200, 60, 70, 0.85);
+  font-size: 14px;
+}
+
+.run-timer.endless {
+  color: #b9f1ff;
+  border-color: rgba(127, 227, 255, 0.85);
+  font-size: 20px;
+}
+
+@media (max-height: 430px) {
+  .run-timer {
+    font-size: 14px;
+    padding: 1px 10px;
   }
 }

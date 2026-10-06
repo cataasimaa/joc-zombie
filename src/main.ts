@@ -752,8 +752,11 @@ function handleRunEvents(state: GameState, events: ReturnType<GameSimulation["dr
       const p = state.players[LOCAL_PLAYER];
       recordRun({
         name: p.name, mode: state.mode, difficulty: state.difficulty, heroClass: localHero(state).heroClass,
-        nights: e.type === "victory" ? state.totalWaves : Math.max(0, state.wave - 1), kills: p.kills,
-        victory: e.type === "victory", at: Date.now(),
+        nights: Math.max(0, state.wave - 1), kills: p.kills, victory: false, at: Date.now(),
+        stage: state.stage,
+        time: CONFIG.run.campaignTime - state.runTimer,
+        bosses: state.rushIndex,
+        endless: state.endlessTime,
       });
       sfx.setMenu(false);
     }

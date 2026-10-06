@@ -7,8 +7,12 @@ export type ZombieType =
   /** Noi: urlătoarea (înfurie zombii), umflatul (explodează), săpătorul (vine pe sub zăpadă), șamanul (vindecă). */
   | "screamer" | "bloater" | "burrower" | "shaman"
   /** Boșii: lich-ul, matca, yeti-ul turbat, vrăjitoarea viscolului, colosul. */
-  | "boss" | "broodmother" | "yeti" | "witch" | "colossus";
-export const BOSS_TYPES: ZombieType[] = ["boss", "broodmother", "yeti", "witch", "colossus"];
+  | "boss" | "broodmother" | "yeti" | "witch" | "colossus"
+  /** Boss-ul final, cel mai greu: Regele Iernii (vine ultimul în asaltul boșilor). */
+  | "frostKing";
+export const BOSS_TYPES: ZombieType[] = ["boss", "broodmother", "yeti", "witch", "colossus", "frostKing"];
+/** Etapele rundei: campania de 30 de minute (zi/noapte), asaltul boșilor, apoi valul fără sfârșit. */
+export type RunStage = "campaign" | "bossRush" | "endless";
 export const isBoss = (t: ZombieType): boolean => BOSS_TYPES.includes(t);
 /** Ce poate învăța eroul la fiecare nivel: tăiat, minerit, pescuit, tras. */
 export type SkillId = "chop" | "mine" | "fish" | "shoot";
@@ -132,7 +136,7 @@ export interface ZombieStats {
 export const ZOMBIE_NAMES: Record<ZombieType, string> = {
   walker: "Strigoi", runner: "Târâtor", spitter: "Scuipător", flyer: "Zburător", brute: "Trol",
   screamer: "Urlătoarea", bloater: "Umflatul", burrower: "Săpătorul", shaman: "Șamanul",
-  boss: "Lich-ul", broodmother: "Matca", yeti: "Yeti-ul turbat", witch: "Vrăjitoarea viscolului", colossus: "Colosul de gheață",
+  boss: "Lich-ul", broodmother: "Matca", yeti: "Yeti-ul turbat", witch: "Vrăjitoarea viscolului", colossus: "Colosul de gheață", frostKing: "Regele Iernii",
 };
 
 export const CONFIG = {
@@ -298,6 +302,7 @@ export const CONFIG = {
     yeti: { hp: 1500, speed: 2.2, radius: 1.3, damage: 55, attackInterval: 1.2, coinChance: 1, coins: 50, xp: 110, rangedRange: 0, flying: false },
     witch: { hp: 1250, speed: 2.0, radius: 1.0, damage: 30, attackInterval: 1.4, coinChance: 1, coins: 50, xp: 120, rangedRange: 11, flying: false },
     colossus: { hp: 3200, speed: 1.0, radius: 2.0, damage: 90, attackInterval: 2.0, coinChance: 1, coins: 80, xp: 160, rangedRange: 0, flying: false },
+    frostKing: { hp: 6500, speed: 1.35, radius: 1.9, damage: 95, attackInterval: 1.6, coinChance: 1, coins: 150, xp: 400, rangedRange: 0, flying: false },
   } satisfies Record<ZombieType, ZombieStats>,
 
   /** Abilitățile zombilor noi și ale boșilor (secunde, metri, damage). */
@@ -348,6 +353,17 @@ export const CONFIG = {
     boulderDamage: 70,
     enrageAt: 0.5,
     enrageSpeed: 1.6,
+    /**
+     * Regele Iernii: le face pe toate — ridică morții (strigoi în jur), aruncă salve de țurțuri,
+     * bate din picior; la jumătate de viață se înfurie și cheamă de două ori mai mulți.
+     */
+    kingSummonEvery: 13,
+    kingSummon: 5,
+    kingVolleyEvery: 4.5,
+    kingVolley: 3,
+    kingVolleyDamage: 24,
+    kingVolleyRange: 16,
+    kingStompEvery: 7,
   },
 
   zombieCommon: {
@@ -601,15 +617,41 @@ export const CONFIG = {
     hpPerLevel: 0.1,
   },
 
+  /**
+   * Runda: (1) **campania** — 30 de minute de zile și nopți, cu un ceas mare sus; (2) **asaltul
+   * boșilor** — fără limită de timp, boșii vin unul după altul (pauză scurtă între ei), ultimul e
+   * Regele Iernii; (3) **valul fără sfârșit** — valuri tot mai grele, la infinit; contează cât reziști
+   * (clasament, ca la Survival în Warframe).
+   */
+  run: {
+    campaignTime: 30 * 60,
+    rushBosses: ["yeti", "witch", "colossus", "frostKing"] as ZombieType[],
+    /** Cât stă până apare boss-ul (la începutul asaltului și după pauză). */
+    rushBossDelay: 4,
+    /** Escorta fiecărui boss și zombii care tot vin cât trăiește (la câteva secunde). */
+    rushEscort: 6,
+    rushTrickleEvery: 8,
+    rushTrickle: 3,
+    /** Pauza (zi scurtă) dintre doi boși: repari, iei gloanțe. */
+    rushRespite: 25,
+    /** Valul fără sfârșit: un val nou la fiecare `endlessEvery` secunde, tot mai mare și mai puternic. */
+    endlessEvery: 35,
+    endlessBase: 16,
+    endlessPerWave: 5,
+    /** Un boss la întâmplare la fiecare atâtea valuri. */
+    endlessBossEvery: 5,
+  },
+
   waves: {
-    count: 10,
-    /** Prima zi (secunde) — un pic mai scurtă, ca să intri repede în acțiune. */
-    firstDay: 45,
+    /** Câte nopți încap (cam) în cele 30 de minute ale campaniei — doar pentru afișare / teste. */
+    count: 8,
+    /** Prima zi (secunde) — scurtă, ca să intri repede în acțiune. */
+    firstDay: 30,
     /** Ziua: timp de construit. */
-    day: 60,
-    /** Noaptea: atacă zombii. Devine tot mai lungă cu fiecare noapte. */
-    nightBase: 120,
-    nightPerWave: 15,
+    day: 45,
+    /** Noaptea: atacă zombii. Devine puțin mai lungă cu fiecare noapte. */
+    nightBase: 150,
+    nightPerWave: 5,
     /** Zombii apar în primele 75% din noapte. */
     spawnWindow: 0.75,
     /** Fiecare jucător în plus adaugă +50% zombi. */
@@ -633,9 +675,9 @@ export const CONFIG = {
     burrowerShare: 0.05,
     shamansFromWave: 6,
     shamanShare: 0.03,
-    /** Nopțile care au un boss, și ce boss vine (fiecare face altceva). */
-    bossWaves: [3, 5, 7, 9, 10],
-    bosses: { 3: ["broodmother"], 5: ["boss"], 7: ["yeti"], 9: ["witch"], 10: ["colossus", "boss"] } as Record<number, ZombieType[]>,
+    /** Boșii din campanie (ceilalți vin în asaltul de după cele 30 de minute). */
+    bossWaves: [3, 6],
+    bosses: { 3: ["broodmother"], 6: ["boss"] } as Record<number, ZombieType[]>,
   },
 
   shop: {

@@ -60,7 +60,7 @@ export function woodIncomeFor(wave: number, difficulty: Difficulty = "easy"): nu
 }
 
 export function startNight(state: GameState, events: GameEvent[]): void {
-  if (state.phase !== "day") return;
+  if (state.phase !== "day" || state.stage !== "campaign") return;
   state.wave++;
   state.phase = "night";
   state.phaseDuration = state.phaseTimer = nightDuration(state.wave);
@@ -74,7 +74,8 @@ export function startNight(state: GameState, events: GameEvent[]): void {
   events.push({ type: "nightStarted", wave: state.wave, boss: boss !== null, bossType: boss });
 }
 
-function startDay(state: GameState, events: GameEvent[]): void {
+/** Zorii: lemn, gloanțe, iar zombii rămași iau foc. (Și pauza dintre boși din asalt.) */
+function dawnSupply(state: GameState, events: GameEvent[]): void {
   state.wavesCompleted++;
   const wood = woodIncomeFor(state.wave, state.difficulty);
   for (const p of Object.values(state.players)) p.wood += wood;
@@ -91,11 +92,10 @@ function startDay(state: GameState, events: GameEvent[]): void {
     z.charge = null;
   }
   events.push({ type: "dawn", wave: state.wave, wood });
-  if (state.wave >= state.totalWaves) {
-    state.phase = "victory";
-    events.push({ type: "victory" });
-    return;
-  }
+}
+
+function startDay(state: GameState, events: GameEvent[]): void {
+  dawnSupply(state, events);
   state.phase = "day";
   state.phaseDuration = state.phaseTimer = CONFIG.waves.day;
   changeWeather(state, events);
@@ -123,29 +123,143 @@ function changeWeather(state: GameState, events: GameEvent[]): void {
 
 export function updateWaves(state: GameState, dt: number, events: GameEvent[]): void {
   state.phaseTimer -= dt;
+  if (state.stage === "bossRush") return updateBossRush(state, dt, events);
+  if (state.stage === "endless") return updateEndless(state, dt, events);
+
+  // Campania: ceasul mare de 30 de minute. Când ajunge la zero, începe asaltul boșilor.
+  state.runTimer = Math.max(0, state.runTimer - dt);
+  if (state.runTimer <= 0) return startBossRush(state, events);
 
   if (state.phase === "day") {
     if (state.phaseTimer <= 0) startNight(state, events);
     return;
   }
   if (state.phase !== "night") return;
-
-  if (state.spawnQueue.length > 0) {
-    state.spawnTimer -= dt;
-    if (state.spawnTimer <= 0) {
-      state.spawnTimer = state.spawnInterval;
-      // O hoardă: primul zombie alege locul, ceilalți apar în jurul lui.
-      const size = Math.min(hordeSize(state.wave), state.spawnQueue.length);
-      const leader = spawnZombie(state, state.spawnQueue.shift()!);
-      for (let i = 1; i < size; i++) {
-        const z = spawnZombie(state, state.spawnQueue.shift()!, leader.pos);
-        z.pos.x += (nextRandom(state) - 0.5) * 4;
-        z.pos.z += (nextRandom(state) - 0.5) * 4;
-      }
-    }
-  }
+  spawnFromQueue(state, dt);
 
   // Zorii vin când se termină noaptea, sau mai devreme dacă ai omorât tot ce a venit.
   const allDead = state.spawnQueue.length === 0 && state.zombies.every((z) => z.burning);
   if (state.phaseTimer <= 0 || allDead) startDay(state, events);
+}
+
+/** Zombii din coadă apar în hoarde: primul alege locul, ceilalți apar în jurul lui. */
+function spawnFromQueue(state: GameState, dt: number): void {
+  if (state.spawnQueue.length === 0) return;
+  state.spawnTimer -= dt;
+  if (state.spawnTimer > 0) return;
+  state.spawnTimer = state.spawnInterval;
+  const size = Math.min(hordeSize(state.wave), state.spawnQueue.length);
+  const leader = spawnZombie(state, state.spawnQueue.shift()!);
+  for (let i = 1; i < size; i++) {
+    const z = spawnZombie(state, state.spawnQueue.shift()!, leader.pos);
+    z.pos.x += (nextRandom(state) - 0.5) * 4;
+    z.pos.z += (nextRandom(state) - 0.5) * 4;
+  }
+}
+
+// ---------- Asaltul boșilor (după cele 30 de minute, fără limită de timp) ----------
+
+const R = CONFIG.run;
+
+function startBossRush(state: GameState, events: GameEvent[]): void {
+  state.stage = "bossRush";
+  state.phase = "night";
+  state.phaseTimer = state.phaseDuration = 0;
+  state.spawnQueue = [];
+  state.rushIndex = 0;
+  state.rushTimer = R.rushBossDelay;
+  state.rushBossId = null;
+  // Noaptea nu se mai termină: zombii de acum rămân (nu mai ard).
+  for (const z of state.zombies) z.burning = false;
+  events.push({ type: "bossRushStarted" });
+}
+
+/** Zombii obișnuiți care tot vin cât trăiește boss-ul (escorta lui). */
+function rushMinion(state: GameState): ZombieType {
+  const pool: ZombieType[] = ["walker", "walker", "runner", "spitter", "brute", "bloater", "screamer"];
+  return pool[Math.floor(nextRandom(state) * pool.length)];
+}
+
+function updateBossRush(state: GameState, dt: number, events: GameEvent[]): void {
+  const total = R.rushBosses.length;
+  // Pauza dintre boși (o zi scurtă): repari, iei gloanțe; apoi vine următorul.
+  if (state.phase === "day") {
+    if (state.phaseTimer > 0) return;
+    state.phase = "night";
+    state.phaseTimer = state.phaseDuration = 0;
+    state.rushTimer = R.rushBossDelay;
+    changeWeather(state, events);
+    return;
+  }
+  spawnFromQueue(state, dt);
+  if (state.rushBossId === null) {
+    state.rushTimer -= dt;
+    if (state.rushTimer > 0) return;
+    const type = R.rushBosses[state.rushIndex];
+    const boss = spawnZombie(state, type);
+    state.rushBossId = boss.id;
+    state.spawnQueue = Array.from({ length: R.rushEscort }, () => rushMinion(state));
+    state.spawnInterval = 1.5;
+    state.spawnTimer = 1;
+    state.rushTimer = R.rushTrickleEvery;
+    events.push({ type: "bossIncoming", bossType: type, index: state.rushIndex + 1, total });
+    return;
+  }
+  const boss = state.zombies.find((z) => z.id === state.rushBossId);
+  if (boss) {
+    // Cât trăiește boss-ul, mai vin câțiva zombi la fiecare câteva secunde.
+    state.rushTimer -= dt;
+    if (state.rushTimer <= 0) {
+      state.rushTimer = R.rushTrickleEvery;
+      for (let i = 0; i < R.rushTrickle; i++) state.spawnQueue.push(rushMinion(state));
+    }
+    return;
+  }
+  // Boss-ul a murit: următorul (după o pauză), sau valul fără sfârșit după ultimul.
+  const type = R.rushBosses[state.rushIndex];
+  state.rushIndex++;
+  state.rushBossId = null;
+  events.push({ type: "bossDefeated", bossType: type, index: state.rushIndex, total });
+  if (state.rushIndex >= total) return startEndless(state, events);
+  dawnSupply(state, events);
+  state.phase = "day";
+  state.phaseTimer = state.phaseDuration = R.rushRespite;
+}
+
+// ---------- Valul fără sfârșit: contează cât reziști ----------
+
+function startEndless(state: GameState, events: GameEvent[]): void {
+  state.stage = "endless";
+  state.phase = "night";
+  state.phaseTimer = state.phaseDuration = 0;
+  state.spawnQueue = [];
+  state.endlessTime = 0;
+  state.endlessWave = 0;
+  state.endlessTimer = 3;
+  events.push({ type: "endlessStarted" });
+}
+
+function updateEndless(state: GameState, dt: number, events: GameEvent[]): void {
+  state.endlessTime += dt;
+  spawnFromQueue(state, dt);
+  state.endlessTimer -= dt;
+  if (state.endlessTimer > 0) return;
+  state.endlessTimer = R.endlessEvery;
+  state.endlessWave++;
+  // Fiecare val nou: mai mulți zombi și mai puternici (HP-ul crește cu numărul nopții).
+  state.wave++;
+  const players = Object.keys(state.players).length;
+  const count = Math.round((R.endlessBase + state.endlessWave * R.endlessPerWave) * (1 + (players - 1) * CONFIG.waves.extraPerPlayer));
+  const mix = waveComposition(state.wave, players, state.difficulty, state.mode).filter((t) => !isBoss(t));
+  const queue: ZombieType[] = [];
+  for (let i = 0; i < count; i++) queue.push(mix[Math.floor(nextRandom(state) * mix.length)] ?? "walker");
+  let boss: ZombieType | null = null;
+  if (state.endlessWave % R.endlessBossEvery === 0) {
+    boss = R.rushBosses[Math.floor(nextRandom(state) * R.rushBosses.length)];
+    queue.push(boss);
+  }
+  state.spawnQueue.push(...queue);
+  state.spawnInterval = (R.endlessEvery * 0.7) / Math.max(1, Math.ceil(state.spawnQueue.length / hordeSize(state.wave)));
+  state.spawnTimer = 0;
+  events.push({ type: "endlessWave", wave: state.endlessWave, boss });
 }

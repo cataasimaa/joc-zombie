@@ -250,12 +250,10 @@ describe("zombi noi", () => {
 });
 
 describe("boși noi", () => {
-  it("fiecare noapte de boss are boss-ul ei", () => {
+  it("boșii campaniei vin la nopțile lor; ceilalți în asaltul de după 30 de minute", () => {
     expect(waveComposition(3, 1)).toContain("broodmother");
-    expect(waveComposition(5, 1)).toContain("boss");
-    expect(waveComposition(7, 1)).toContain("yeti");
-    expect(waveComposition(9, 1)).toContain("witch");
-    expect(waveComposition(10, 1)).toContain("colossus");
+    expect(waveComposition(6, 1)).toContain("boss");
+    expect(CONFIG.run.rushBosses).toEqual(["yeti", "witch", "colossus", "frostKing"]);
   });
 
   it("matca naște pui, iar la moarte îi scapă pe toți; lasă cufăr", () => {
@@ -327,6 +325,83 @@ describe("boși noi", () => {
       expect(sim.state.zombies.includes(z)).toBe(false);
       expect(sim.state.chests.length).toBe(1);
     }
+  });
+});
+
+describe("runda de 30 de minute", () => {
+  /** Toți eroii nemuritori, ca să vedem etapele (testăm logica rundei, nu lupta). */
+  const immortal = (sim: GameSimulation) => {
+    for (const h of sim.state.heroes) {
+      h.hp = h.maxHp;
+      h.alive = true;
+    }
+    sim.state.shelter.hp = sim.state.shelter.maxHp;
+  };
+
+  it("campania: ceasul de 30 de minute merge, zi / noapte alternează, nu mai e victorie după N nopți", () => {
+    const sim = newGame();
+    const s = sim.state;
+    expect(s.stage).toBe("campaign");
+    expect(s.runTimer).toBe(30 * 60);
+    run(sim, CONFIG.waves.firstDay + 1);
+    expect(s.phase).toBe("night");
+    expect(s.runTimer).toBeCloseTo(30 * 60 - CONFIG.waves.firstDay - 1, 0);
+  });
+
+  it("după 30 de minute vine asaltul boșilor, unul după altul, apoi valul fără sfârșit", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.runTimer = 0.05;
+    sim.drainEvents();
+    run(sim, 0.2);
+    expect(s.stage).toBe("bossRush");
+    expect(sim.drainEvents().some((e) => e.type === "bossRushStarted")).toBe(true);
+    const order: string[] = [];
+    for (let i = 0; i < CONFIG.run.rushBosses.length; i++) {
+      // Așteptăm boss-ul (fără limită de timp: nu se termină singur).
+      for (let k = 0; k < 400 && s.rushBossId === null; k++) {
+        immortal(sim);
+        sim.step(DT);
+        if (s.phase === "day") s.phaseTimer = Math.min(s.phaseTimer, 0.01);
+      }
+      const boss = s.zombies.find((z) => z.id === s.rushBossId)!;
+      order.push(boss.type);
+      // Stă cât vrea: nu pleacă și nu arde (fără limită de timp).
+      run(sim, 2);
+      expect(s.zombies.includes(boss)).toBe(true);
+      boss.hp = 0.5;
+      s.heroes[0].pos = { x: boss.pos.x, z: boss.pos.z - 4 };
+      boss.pos = { x: boss.pos.x, z: boss.pos.z };
+      // Îl omorâm (lovitură directă din test).
+      s.zombies.splice(s.zombies.indexOf(boss), 1);
+      immortal(sim);
+      sim.step(DT);
+    }
+    expect(order).toEqual(CONFIG.run.rushBosses);
+    expect(s.stage).toBe("endless");
+    // Valul fără sfârșit: valuri tot mai mari, contorul crește.
+    for (let k = 0; k < 30 * 80; k++) {
+      immortal(sim);
+      sim.step(DT);
+    }
+    expect(s.endlessTime).toBeGreaterThan(75);
+    expect(s.endlessWave).toBeGreaterThanOrEqual(2);
+    expect(s.phase).not.toBe("victory");
+  });
+
+  it("Regele Iernii ridică morții și aruncă salve de țurțuri", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const h = s.heroes[0];
+    h.pos = { x: 20, z: -20 };
+    const k = dummy(sim, "frostKing", 20, -32);
+    k.abilityTimer = 0;
+    k.ability2Timer = 0;
+    sim.drainEvents();
+    sim.step(DT);
+    const ev = sim.drainEvents();
+    expect(ev.some((e) => e.type === "broodSpawn")).toBe(true);
+    expect(ev.filter((e) => e.type === "throw").length).toBe(CONFIG.zombieAbilities.kingVolley);
   });
 });
 

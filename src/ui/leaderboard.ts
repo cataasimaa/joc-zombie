@@ -1,5 +1,6 @@
 // Clasamentul: rezultatele rundelor, salvate pe dispozitiv (localStorage), pe fiecare mod și
-// dificultate. Arătăm cele mai bune 5 (cele mai multe nopți, apoi cei mai mulți zombi) și ultimele 5.
+// dificultate. Arătăm cele mai bune 5 și ultimele 5. Cel mai bun = a ajuns cel mai departe: valul
+// fără sfârșit (cât a rezistat acolo) > asaltul boșilor (câți boși a învins) > campania (cât timp).
 
 import type { Difficulty, GameMode, HeroClass } from "../core";
 
@@ -11,6 +12,12 @@ export interface RunResult {
   nights: number;
   kills: number;
   victory: boolean;
+  /** Etapa la care s-a terminat runda și timpii (secunde). Lipsesc la rundele vechi (10 nopți). */
+  stage?: "campaign" | "bossRush" | "endless";
+  /** Cât a rezistat în campanie (max 30 min), câți boși a învins în asalt, cât în valul fără sfârșit. */
+  time?: number;
+  bosses?: number;
+  endless?: number;
   /** Data (ms), doar pentru afișare. */
   at: number;
 }
@@ -38,7 +45,23 @@ export function recordRun(run: RunResult): void {
   }
 }
 
-export const score = (r: RunResult): number => (r.victory ? 1000 : 0) + r.nights * 100 + r.kills;
+export function score(r: RunResult): number {
+  if (r.stage === "endless") return 3e7 + (r.endless ?? 0) * 1000 + r.kills;
+  if (r.stage === "bossRush") return 2e7 + (r.bosses ?? 0) * 1e5 + r.kills;
+  if (r.stage === "campaign") return 1e7 + (r.time ?? 0) * 100 + r.kills;
+  // Rundele vechi (10 nopți): sub cele noi.
+  return (r.victory ? 1000 : 0) + r.nights * 100 + r.kills;
+}
+
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+
+/** Ce arătăm în clasament: ∞ timpul din valul final, ☠ boșii învinși sau ⏳ timpul din campanie. */
+export function runLabel(r: RunResult): string {
+  if (r.stage === "endless") return `∞ ${mmss(r.endless ?? 0)}`;
+  if (r.stage === "bossRush") return `☠ ${r.bosses ?? 0} boși`;
+  if (r.stage === "campaign") return `⏳ ${mmss(r.time ?? 0)}`;
+  return r.victory ? "🏆" : `🌙 ${r.nights}`;
+}
 
 export function bestRuns(mode: GameMode, difficulty: Difficulty, n = 5): RunResult[] {
   return load()

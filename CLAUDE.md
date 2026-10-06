@@ -20,7 +20,7 @@ ce face fiecare pas / schimbare importantă.
 npm install
 npm run dev        # server de dezvoltare (accesibil și de pe telefon în aceeași rețea Wi-Fi)
 npm test           # testele logicii (src/core)
-npm run test:smoke # test lung (~1,5 min): un joc întreg de 10 nopți cu toți zombii și boșii
+npm run test:smoke # test lung (~2 min): o rundă întreagă (campanie grăbită, asaltul boșilor, valul fără sfârșit)
 npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
@@ -208,9 +208,23 @@ sau texturi din acele jocuri.
 
 ## Decizii de implementare
 
-- **Zi și noapte**: ziua (60 s; prima 45 s) construiești, noaptea atacă zombii. Noaptea durează
-  120 s + 15 s pe fiecare noapte (noaptea 10 ≈ 4,3 min). Zombii vin în **hoarde** (3 + noapte/2),
-  răspândite în primele 75% din noapte. În zori, zombii rămași ard. 10 nopți = victorie.
+- **Runda** (`CONFIG.run`, `systems/waves.ts`, `state.stage`), după ideea lui Andrei (Survival din Warframe):
+  1. **Campania — 30 de minute**: ceasul mare de sus („⏳ 29:12”) numără invers; între timp zi și
+     noapte ca înainte: ziua 45 s (prima 30 s) construiești, noaptea 150 s + 5 s pe noapte (~8 nopți
+     încap). Zombii vin în **hoarde** (3 + noapte/2) în primele 75% din noapte; în zori ard.
+     Boșii campaniei: Matca (noaptea 3), Lich-ul (noaptea 6). Sub un minut, ceasul clipește roșu.
+  2. **Asaltul boșilor — fără limită de timp**: la 0:00 se face noapte și boșii vin unul după altul
+     (Yeti → Vrăjitoarea → Colosul → **Regele Iernii**, cel mai greu), fiecare cu escortă și zombi
+     care tot vin cât trăiește. Între boși: 25 s de pauză (zi scurtă: lemn, gloanțe, reparat).
+     Sus: „☠ BOȘI ÎNVINȘI 2/4”.
+  3. **Valul fără sfârșit**: după ultimul boss, un val nou la 35 s, tot mai mare și mai puternic,
+     cu un boss la întâmplare la fiecare 5 valuri. Sus: „∞ 4:37” — cât reziști. Nu mai există
+     victorie: jocul se termină doar când cazi (sau cade mina).
+  **Clasamentul** pune întâi rundele ajunse în valul final (după timpul de acolo), apoi pe cele din
+  asalt (după boșii învinși), apoi campania (după cât timp au rezistat).
+- **Regele Iernii** (`frostKing`, 6500 HP): lich uriaș cu coroană de țurțuri și inimă de gheață;
+  bate din picior când ești aproape, altfel ridică morții (5 strigoi, 10 înfuriat), aruncă salve
+  de 3 țurțuri la 4,5 s, la jumătate de viață se înfurie.
 - **Meniu**: nume (apare în HUD), mod, dificultate, sunet și muzică (salvate în localStorage). Pauză cu ☰ / Esc.
 - **Moduri**: *Apără mina* (mina cade = pierzi) și *Supraviețuire* (zombii te vânează pe tine oriunde,
   flow field spre eroi; mina e decor; hoarde ×0,8, HP ×0,85). Zi / noapte în ambele moduri.
@@ -251,7 +265,8 @@ sau texturi din acele jocuri.
 - **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe
   ecran; turnurile bat la 70% din rază, Tesla nu; urmele zombilor se văd),
   ger (frigul ×2,2), lapoviță (focul arde ×2), vânt (mergi mai greu). Nu se mai afișează (se vede în joc).
-- **Clasament**: la final de rundă se salvează nume, mod, dificultate, nopți, kill-uri.
+- **Clasament**: la final de rundă se salvează nume, mod, dificultate, etapa, timpul din campanie,
+  boșii învinși, timpul din valul fără sfârșit, nopți, kill-uri.
 - **Dificultate** (`CONFIG.difficulty`, HP / număr / damage zombi, lemn, damage turnuri): Easy ×0,9 /
   ×0,9 / ×1, 100% lemn, turnuri ×1; Medium ×1,1 / ×1,08 / ×1,08, turnuri ×0,85; Hard ×1,12 / ×1,1 /
   ×1,1, 90% lemn, turnuri ×0,8; Nightmare ×1,22 / ×1,15 / ×1,2, 85% lemn, turnuri ×0,65.
@@ -346,12 +361,12 @@ sau texturi din acele jocuri.
   ×1,5 viteză 4 s), **Umflatul** (2+, explodează lângă țintă sau la moarte: gaz, 34 damage în 3 m,
   sparge și ziduri), **Săpătorul** (5+, merge pe sub zăpadă — nu poate fi lovit, trece pe sub
   ziduri — și țâșnește lângă țintă), **Șamanul** (6+, stă în spate și vindecă zombii cu 20%).
-- **Boși** (nopțile 3, 5, 7, 9, 10; toți lasă cufăr): **Matca** (3: păianjen cu ouă, naște câte 2
-  pui la 6 s și 6 la moarte; max 120 zombi pe hartă), **Lich-ul** (5), **Yeti-ul turbat** (7: se
-  încordează 0,9 s, apoi se năpustește în linie dreaptă, sparge zidul / turnul și te aruncă),
-  **Vrăjitoarea viscolului** (9: se teleportează, aruncă țurțuri, îngheață turnurile 4 s),
-  **Colosul de gheață** (10, cu lich-ul: undă de șoc în 5 m, bolovani în turnuri, la jumătate de
-  viață se înfurie). Bara de sus arată numele boss-ului.
+- **Boși** (toți lasă cufăr): **Matca** (campania, noaptea 3: păianjen cu ouă, naște câte 2 pui la
+  6 s și 6 la moarte; max 120 zombi pe hartă), **Lich-ul** (noaptea 6), apoi în asalt: **Yeti-ul
+  turbat** (se încordează 0,9 s, apoi se năpustește în linie dreaptă, sparge zidul / turnul și te
+  aruncă), **Vrăjitoarea viscolului** (se teleportează, aruncă țurțuri, îngheață turnurile 4 s),
+  **Colosul de gheață** (undă de șoc în 5 m, bolovani în turnuri, la jumătate de viață se înfurie)
+  și **Regele Iernii**. Bara de sus arată numele boss-ului.
 - **Atacul se vede**: zombiul stă lângă tine, își ridică brațele / bâta (citit din `attackTimer`),
   apoi izbește; pe erou apar trei zgârieturi, sânge, la cei mari o undă și camera tremură. Eroul
   lovit se smucește, i se înmoaie genunchii și se clatină.

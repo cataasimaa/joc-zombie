@@ -47,7 +47,7 @@ export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | nul
     frozenTimer: 0,
     freezeImmune: 0,
     abilityTimer: firstAbility(state, type),
-    ability2Timer: type === "witch" ? A.towerFreezeEvery : type === "colossus" ? A.boulderEvery : 0,
+    ability2Timer: type === "witch" ? A.towerFreezeEvery : type === "colossus" ? A.boulderEvery : type === "frostKing" ? A.kingVolleyEvery : 0,
     charge: null,
     burrowed: type === "burrower",
     rageTimer: 0,
@@ -63,6 +63,7 @@ const A = CONFIG.zombieAbilities;
 function firstAbility(state: GameState, type: ZombieType): number {
   const every: Partial<Record<ZombieType, number>> = {
     screamer: A.screamEvery, shaman: A.healEvery, broodmother: A.broodEvery, yeti: A.chargeEvery, witch: A.blinkEvery, colossus: A.stompEvery,
+    frostKing: A.kingStompEvery,
   };
   return (every[type] ?? 0) * (0.5 + nextRandom(state) * 0.5);
 }
@@ -301,6 +302,47 @@ function useAbilities(state: GameState, z: Zombie, dt: number, events: GameEvent
         z.pos = to;
         resolveCollisions(state, z.pos, CONFIG.zombies.witch.radius, { barricades: "all", towers: true });
         events.push({ type: "witchBlink", id: z.id, from, to: { ...z.pos } });
+      }
+      return;
+    }
+    case "frostKing": {
+      // Regele Iernii: bate din picior / ridică morții pe rând, aruncă salve de țurțuri; la jumătate se înfurie.
+      if (!z.enraged && z.hp <= z.maxHp * A.enrageAt) {
+        z.enraged = true;
+        events.push({ type: "bossEnraged", id: z.id, pos: { ...z.pos } });
+      }
+      if (z.abilityTimer <= 0) {
+        z.abilityTimer = A.kingStompEvery;
+        const r = A.stompRadius;
+        const heroes = state.heroes.filter((h) => h.alive && dist(h.pos, z.pos) <= r);
+        if (heroes.length > 0) {
+          const dmg = A.stompDamage * difficultyDamage;
+          for (const h of heroes) damageHero(h, dmg, events, z.pos, false, z.id);
+          for (const t of state.towers) if (dist(t.pos, z.pos) <= r) damageTower(state, t, dmg, events);
+          for (const b of state.barricades) if (!b.broken && distToBarricade(z.pos, b) <= r) damageBarricade(state, b, dmg * 2, events);
+          events.push({ type: "stomp", id: z.id, pos: { ...z.pos }, radius: r });
+        } else {
+          // Nimeni aproape: ridică morții — strigoi în jurul lui (de două ori mai mulți înfuriat).
+          const n = Math.min(A.kingSummon * (z.enraged ? 2 : 1), Math.max(0, A.broodCap - state.zombies.length));
+          for (let i = 0; i < n; i++) {
+            const a = (i / Math.max(1, n)) * Math.PI * 2;
+            spawnZombie(state, nextRandom(state) < 0.3 ? "runner" : "walker", { x: z.pos.x + Math.cos(a) * 2.5, z: z.pos.z + Math.sin(a) * 2.5 });
+          }
+          z.abilityTimer = A.kingSummonEvery;
+          if (n > 0) events.push({ type: "broodSpawn", id: z.id, pos: { ...z.pos }, count: n });
+        }
+      }
+      if (z.ability2Timer <= 0) {
+        const hero = nearestLivingHero(state, z.pos, A.kingVolleyRange);
+        if (hero) {
+          z.ability2Timer = A.kingVolleyEvery * (z.enraged ? 0.65 : 1);
+          const d = dist(hero.pos, z.pos) || 1;
+          const base = Math.atan2(hero.pos.x - z.pos.x, hero.pos.z - z.pos.z);
+          for (let i = 0; i < A.kingVolley; i++) {
+            const a = base + (i - (A.kingVolley - 1) / 2) * 0.22;
+            throwAt(state, z, { x: z.pos.x + Math.sin(a) * d, z: z.pos.z + Math.cos(a) * d }, A.kingVolleyDamage * difficultyDamage, "ice", events);
+          }
+        }
       }
       return;
     }

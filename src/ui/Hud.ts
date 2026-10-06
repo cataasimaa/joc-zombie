@@ -43,7 +43,7 @@ import {
   isBoss,
   rank,
 } from "../core";
-import { type RunResult, bestRuns, lastRuns } from "./leaderboard";
+import { type RunResult, bestRuns, lastRuns, runLabel } from "./leaderboard";
 
 export interface HudCallbacks {
   /** Meniul principal: Start cu numele și dificultatea alese. */
@@ -127,6 +127,7 @@ const BOSS_TRICKS: Partial<Record<string, string>> = {
   yeti: "se încordează, apoi se năpustește prin ziduri",
   witch: "se teleportează și îngheață turnurile",
   colossus: "undă de șoc, bolovani, se înfurie la jumătate",
+  frostKing: "ultimul și cel mai greu: ridică morții, salve de țurțuri, undă de șoc",
 };
 
 /** Ce primești la fiecare nivel al eroului (pentru meniul de nivel). */
@@ -216,6 +217,7 @@ export class Hud {
     heroName: $("hero-name"),
     heroText: $("hero-text"),
     heroLevel: $("hero-level"),
+    runTimer: $("run-timer"),
     heroBar: $("hero-bar"),
     xpBar: $("xp-bar"),
     xpText: $("xp-text"),
@@ -402,7 +404,7 @@ export class Hud {
     }
     const row = (r: RunResult) =>
       `<li><span class="b-name">${escapeHtml(r.name)} <small>${HERO_DEFS[r.heroClass].icon}</small></span>` +
-      `<span class="b-val">${r.victory ? "🏆" : `🌙 ${r.nights}`} · 🧟 ${r.kills}</span></li>`;
+      `<span class="b-val">${runLabel(r)} · 🧟 ${r.kills}</span></li>`;
     const { mode, difficulty } = this.boardTab;
     const best = bestRuns(mode, difficulty);
     const last = lastRuns(mode, difficulty);
@@ -537,18 +539,32 @@ export class Hud {
     const night = state.phase === "night";
     this.el.hud.classList.toggle("is-night", night);
     // Ceasul: doar ziua / noaptea și timpul rămas (câți zombi vin rămâne un mister).
-    if (state.phase === "day") {
-      this.text(this.el.waveText, `Ziua ${state.wave + 1}`);
+    const R = CONFIG.run;
+    const rushTotal = R.rushBosses.length;
+    const bossNow = state.rushIndex + (state.rushBossId !== null ? 1 : 0);
+    let clockP = state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0;
+    if (state.stage === "campaign") {
+      this.text(this.el.waveText, state.phase === "day" ? `Ziua ${state.wave + 1}` : `Noaptea ${state.wave}`);
       this.text(this.el.timerText, fmtTime(state.phaseTimer));
-    } else if (night) {
-      this.text(this.el.waveText, `Noaptea ${state.wave}/${state.totalWaves}`);
-      this.text(this.el.timerText, fmtTime(state.phaseTimer));
+      this.text(this.el.runTimer, `⏳ ${fmtTime(state.runTimer)}`);
+    } else if (state.stage === "bossRush") {
+      this.text(this.el.waveText, state.phase === "day" ? "Pauză" : `Boss ${Math.max(1, bossNow)}/${rushTotal}`);
+      this.text(this.el.timerText, state.phase === "day" ? fmtTime(state.phaseTimer) : "fără limită");
+      this.text(this.el.runTimer, `☠ BOȘI ÎNVINȘI ${state.rushIndex}/${rushTotal}`);
+    } else {
+      this.text(this.el.waveText, `Valul ${state.endlessWave}`);
+      this.text(this.el.timerText, `următorul: ${Math.ceil(state.endlessTimer)} s`);
+      this.text(this.el.runTimer, `∞ ${fmtTime(state.endlessTime)}`);
+      clockP = 1 - state.endlessTimer / R.endlessEvery;
     }
+    this.el.runTimer.classList.toggle("final", state.stage === "campaign" && state.runTimer < 60);
+    this.el.runTimer.classList.toggle("rush", state.stage === "bossRush");
+    this.el.runTimer.classList.toggle("endless", state.stage === "endless");
     const clock = $("clock");
-    clock.style.setProperty("--p", String(state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0));
+    clock.style.setProperty("--p", String(Math.max(0, Math.min(1, clockP))));
     clock.classList.toggle("night", night);
-    this.text($("clock-icon"), night ? "🌙" : "☀️");
-    this.el.startWave.classList.toggle("hidden", state.phase !== "day");
+    this.text($("clock-icon"), state.stage === "endless" ? "♾️" : state.stage === "bossRush" && night ? "☠️" : night ? "🌙" : "☀️");
+    this.el.startWave.classList.toggle("hidden", state.phase !== "day" || state.stage !== "campaign");
 
     const boss = state.zombies.find((z) => isBoss(z.type) && !z.burning) ?? state.zombies.find((z) => isBoss(z.type));
     this.el.bossPanel.classList.toggle("hidden", !boss);
@@ -622,6 +638,22 @@ export class Hud {
       case "thirsty":
         if (e.heroId === heroId) this.hint("💧 Îți e sete! Bea din canistră, la fântână, la baltă sau topește zăpadă lângă un foc");
         break;
+      case "bossRushStarted":
+        this.toast("⏳ Au trecut cele 30 de minute! ☠ ASALTUL BOȘILOR — fără limită de timp", 5);
+        break;
+      case "bossIncoming":
+        this.toast(`☠ Boss ${e.index}/${e.total}: ${ZOMBIE_NAMES[e.bossType]} — ${BOSS_TRICKS[e.bossType] ?? ""}`, 5);
+        break;
+      case "bossDefeated":
+        this.toast(e.index >= e.total ? `💀 ${ZOMBIE_NAMES[e.bossType]} a căzut! Toți boșii sunt învinși…` : `💀 ${ZOMBIE_NAMES[e.bossType]} a căzut! (${e.index}/${e.total})`, 4);
+        break;
+      case "endlessStarted":
+        this.toast("∞ VALUL FĂRĂ SFÂRȘIT — rezistă cât poți! (contează timpul)", 5);
+        break;
+      case "endlessWave":
+        if (e.boss) this.toast(`∞ Valul ${e.wave} · vine ${ZOMBIE_NAMES[e.boss]}!`, 3);
+        else this.hint(`∞ Valul ${e.wave} — tot mai mulți`);
+        break;
       case "levelUp":
         if (e.heroId === heroId) this.toast(`⭐ Nivelul ${e.level}! Apasă pe nivel (stânga sus) și alege ce crești`, 3.5);
         break;
@@ -681,7 +713,8 @@ export class Hud {
         if (state.players[playerId] && !state.towers.some((t) => t.id === e.id)) this.hint("💥 Un turn a fost dărâmat!");
         break;
       case "dawn":
-        if (e.wave < state.totalWaves) this.toast(`☀ Zorii! Zombii ard · +${e.wood} 🪵`);
+        if (state.stage === "campaign") this.toast(`☀ Zorii! Zombii ard · +${e.wood} 🪵`);
+        else this.toast(`☀ Pauză: repară, ia gloanțe · +${e.wood} 🪵`);
         break;
       case "heroHit":
         if (e.id === heroId) this.damageFlash = Math.min(1, this.damageFlash + 0.5);
@@ -694,8 +727,16 @@ export class Hud {
         break;
       // Ecranul final vine după câteva secunde: întâi vezi mina căzând (sau zorii victoriei).
       case "gameOver":
-        if (state.mode === "survival") this.showEnd("Ai murit", `Iarna te-a înghițit. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`, 1800);
-        else this.showEnd("Mina a căzut", `Zombii au ajuns la plasmă. Ai rezistat ${state.wave} nopți din ${state.totalWaves} · 🧟 ${state.players[playerId].kills}`, 3000);
+        {
+          const kills = state.players[playerId].kills;
+          const how = state.mode === "survival" ? "Iarna te-a înghițit." : "Zombii au ajuns la plasmă.";
+          const R = CONFIG.run;
+          const result =
+            state.stage === "endless" ? `∞ Ai rezistat ${fmtTime(state.endlessTime)} în valul fără sfârșit (valul ${state.endlessWave}) · toți boșii învinși` :
+            state.stage === "bossRush" ? `☠ Ai învins ${state.rushIndex} din ${R.rushBosses.length} boși din asalt` :
+            `⏳ Ai rezistat ${fmtTime(R.campaignTime - state.runTimer)} din 30:00 · noaptea ${state.wave}`;
+          this.showEnd(state.mode === "survival" ? "Ai murit" : "Mina a căzut", `${how} ${result} · 🧟 ${kills}`, state.mode === "survival" ? 1800 : 3000);
+        }
         break;
       case "victory":
         this.showEnd("Ați supraviețuit iernii", `Toate cele ${state.totalWaves} nopți au trecut · 🧟 ${state.players[playerId].kills}`, 2000);

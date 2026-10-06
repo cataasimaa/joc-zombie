@@ -58,13 +58,13 @@ import { SurvivalView } from "./SurvivalView";
 import { Prefab, World } from "./World";
 
 const CAMERA_OFFSET = new Vector3(0, 20, -15);
-const ZOMBIE_SCALE: Partial<Record<ZombieType, number>> = { runner: 0.88 };
+const ZOMBIE_SCALE: Partial<Record<ZombieType, number>> = { runner: 0.88, frostKing: 1.55 };
 const HP_BAR_Y: Partial<Record<ZombieType, number>> = {
-  brute: 3.0, boss: 5.3, bloater: 2.6, broodmother: 3.8, yeti: 4.4, witch: 4.6, colossus: 5.8,
+  brute: 3.0, boss: 5.3, bloater: 2.6, broodmother: 3.8, yeti: 4.4, witch: 4.6, colossus: 5.8, frostKing: 8.4,
 };
 /** Cât de „mare” e fiecare creatură (sânge, crustă de gheață, flăcări, urme, bara de viață). */
 const ZOMBIE_SIZE: Partial<Record<ZombieType, number>> = {
-  brute: 1.5, boss: 2.2, bloater: 1.3, burrower: 1.1, broodmother: 2.3, yeti: 2, witch: 1.6, colossus: 2.8,
+  brute: 1.5, boss: 2.2, bloater: 1.3, burrower: 1.1, broodmother: 2.3, yeti: 2, witch: 1.6, colossus: 2.8, frostKing: 3.3,
 };
 const zSize = (t: ZombieType): number => ZOMBIE_SIZE[t] ?? 1;
 /** Turnurile sunt desenate puțin mai mici decât modelul (mai ușor de așezat). */

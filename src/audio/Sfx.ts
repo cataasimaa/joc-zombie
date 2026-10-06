@@ -486,6 +486,25 @@ export class Sfx {
           this.noiseHit({ type: "lowpass", freq: 400, dur: 0.1, vol: 0.4 });
         }
         break;
+      case "bossRushStarted":
+      case "endlessStarted":
+        // Cornul de război: două note lungi, joase, și o tobă mare.
+        this.tone(110, 108, 1.4, "sawtooth", 0.12, 0, 900);
+        this.tone(165, 163, 1.2, "sawtooth", 0.08, 0.5, 1100);
+        this.thunk(55, 0.8, 0.1);
+        this.music?.accent();
+        break;
+      case "bossIncoming":
+        this.tone(98, 96, 1.0, "sawtooth", 0.1, 0, 800);
+        this.thunk(60, 0.6);
+        this.music?.accent();
+        break;
+      case "bossDefeated":
+        [392, 494, 587, 784].forEach((fr, i) => this.bell(fr, 0.18, i * 0.12));
+        break;
+      case "endlessWave":
+        this.thunk(70, 0.4);
+        break;
       case "noPetrol":
         if (mine(e.heroId)) {
           // Demarorul trage în gol: „trrr-pfff”.
