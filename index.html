@@ -10,6 +10,10 @@
     <meta name="theme-color" content="#c7d9ed" />
     <link rel="icon" href="data:," />
     <title>Iarna Morților</title>
+    <!-- Fontul siglei (dacă nu se încarcă, sigla folosește un font serif de rezervă) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet" />
   </head>
   <body>
     <canvas id="game"></canvas>
@@ -139,26 +143,71 @@
       <div id="joystick-zone"></div>
     </div>
 
-    <!-- Meniul principal -->
+    <!-- Meniul principal: sigla în stânga sus (peste scena 3D), panoul de joc în dreapta,
+         butoanele mici (clasament, sunet, muzică, grafică, ajutor) în stânga jos. -->
     <div id="main-menu" class="overlay menu">
-      <h1 class="game-title">Iarna Morților</h1>
-      <p class="subtitle">Zombii vor plasma din mină. Nu-i lăsa să intre.</p>
-      <div class="menu-card">
-        <label class="menu-label" for="player-name">Numele tău</label>
-        <input id="player-name" class="name-input" maxlength="16" placeholder="Supraviețuitor" autocomplete="off" />
-        <div class="menu-label">Mod de joc</div>
+      <!-- Fulgi de zăpadă doar din CSS (puțini, nu prind clicuri) -->
+      <div class="mm-snow" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+
+      <header class="mm-brand">
+        <div class="mm-kicker"><span></span>Supraviețuire co-op · 2–4 jucători<span></span></div>
+        <h1 class="mm-logo" aria-label="Iarna Morților">
+          <span class="mm-logo-top">Iarna</span>
+          <span class="mm-logo-main" data-text="Morților">Morților</span>
+        </h1>
+        <!-- Țurțuri sub siglă (SVG simplu) -->
+        <svg class="mm-icicles" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 0h300v2l-8 5-5-4-7 13-6-14-9 6-6-5-5 9-6-9-10 4-6-3-4 11-6-12-8 5-7-4-6 8-5-8-9 3-7-3-4 14-6-15-8 5-6-4-5 7-7-7-9 4-6-3-5 10-6-11-8 4-7-3-6 12-5-12-9 5-6-4-5 8-6-8-8 3-7-3-4 9-6-9-9 4-6-3-5 13-6-14-8 5-7-4-6 8-5-8-8 4-7-4-5 10-6-10-8 4z" />
+        </svg>
+        <p class="mm-tagline">Supraviețuiește 30 de minute. <b>Apoi vin boșii.</b></p>
+      </header>
+
+      <section class="mm-panel">
+        <label class="mm-field" for="player-name">
+          <span class="mm-field-ico" aria-hidden="true">👤</span>
+          <span class="mm-field-body">
+            <small>Numele tău</small>
+            <input id="player-name" class="name-input" maxlength="16" placeholder="Supraviețuitor" autocomplete="off" />
+          </span>
+        </label>
+
+        <div class="mm-label">Mod de joc</div>
         <div id="mode" class="modes"></div>
-        <div class="menu-label">Dificultate</div>
+
+        <div class="mm-label">Dificultate <span id="diff-desc" class="mm-diff-desc"></span></div>
         <div id="difficulty" class="difficulty"></div>
-        <div class="menu-row">
-          <button id="menu-sound" class="toggle-btn"></button>
-          <button id="menu-music" class="toggle-btn"></button>
-          <button id="menu-quality" class="toggle-btn"></button>
+
+        <button id="menu-start" class="mm-play">
+          <span class="mm-play-ico" aria-hidden="true">▶</span>
+          <span class="mm-play-text">Joacă</span>
+        </button>
+      </section>
+
+      <footer class="mm-dock">
+        <div class="mm-icons">
+          <button id="menu-board" class="mm-icon-btn board-btn" title="Clasament"><span class="mm-i">🏆</span><small>Clasament</small></button>
+          <button id="menu-sound" class="mm-icon-btn" title="Sunet"></button>
+          <button id="menu-music" class="mm-icon-btn" title="Muzică"></button>
+          <button id="menu-quality" class="mm-icon-btn" title="Calitatea graficii"></button>
+          <button id="menu-howto" class="mm-icon-btn" title="Cum se joacă" aria-expanded="false"><span class="mm-i">❔</span><small>Cum se joacă</small></button>
         </div>
-        <div class="menu-row">
-          <button id="menu-start" class="primary-btn">▶ Start</button>
-          <button id="menu-board" class="secondary-btn board-btn">🏆 Clasament</button>
+        <div class="mm-version">v0.1 beta · Iarna Morților</div>
+      </footer>
+
+      <!-- „Cum se joacă”: structura rundei, pe scurt -->
+      <div id="menu-howto-panel" class="mm-howto hidden">
+        <div class="mm-howto-head">
+          <b>Cum se joacă</b>
+          <button id="menu-howto-close" class="mm-howto-close" title="Închide">✖</button>
         </div>
+        <ol class="mm-steps">
+          <li><span class="mm-step-ico">⏳</span><div><b>Campania · 30 min</b><small>Ziua construiești ziduri și turnuri, noaptea vin hoardele.</small></div></li>
+          <li><span class="mm-step-ico">☠</span><div><b>Asaltul boșilor</b><small>Yeti, Vrăjitoarea, Colosul și Regele Iernii, unul după altul.</small></div></li>
+          <li><span class="mm-step-ico">∞</span><div><b>Valul fără sfârșit</b><small>Valuri tot mai mari. Contează cât reziști.</small></div></li>
+        </ol>
+        <p class="mm-howto-tip">WASD mișcare · clic = tragi · B construiești · C magazin</p>
       </div>
     </div>
 

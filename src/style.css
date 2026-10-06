@@ -1279,12 +1279,6 @@ button {
   background: radial-gradient(ellipse at 50% 30%, rgba(40, 70, 100, 0.55), rgba(6, 10, 18, 0.92));
 }
 
-.game-title {
-  font-size: 44px !important;
-  letter-spacing: 2px;
-  text-shadow: 0 0 18px rgba(126, 200, 255, 0.7), 0 3px 6px rgba(0, 0, 0, 0.8);
-}
-
 .menu-card {
   display: flex;
   flex-direction: column;
@@ -1402,9 +1396,6 @@ button {
 @media (max-height: 450px) {
   .hero-panel {
     width: 180px;
-  }
-  .game-title {
-    font-size: 32px !important;
   }
   .menu-card {
     gap: 6px;
@@ -1792,17 +1783,6 @@ i.coin {
   color: var(--muted);
 }
 
-/* Meniul principal: transparent, ca să se vadă scena 3D din spate. */
-.overlay.menu {
-  background: radial-gradient(ellipse at 50% 20%, rgba(20, 40, 70, 0.15), rgba(4, 8, 16, 0.75) 80%);
-}
-
-.game-title {
-  font-family: Georgia, "Times New Roman", serif;
-  color: #dff2ff;
-  text-shadow: 0 0 20px rgba(126, 200, 255, 0.9), 0 0 40px rgba(126, 200, 255, 0.5), 0 3px 0 #1a2a40, 0 6px 14px rgba(0, 0, 0, 0.9) !important;
-}
-
 @media (max-height: 450px) {
   .fire-stick {
     width: 92px;
@@ -1839,20 +1819,6 @@ i.coin {
   #build-palette,
   #place-bar {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 54px);
-  }
-}
-
-/* Meniul stă în dreapta, ca să se vadă scena (lich-ul și zombii) în stânga. */
-@media (min-width: 700px) {
-  #main-menu.overlay.menu {
-    align-items: flex-end;
-    padding-right: max(4vw, env(safe-area-inset-right));
-    background: linear-gradient(90deg, rgba(4, 8, 16, 0) 0%, rgba(4, 8, 16, 0.25) 40%, rgba(4, 8, 16, 0.85) 100%);
-  }
-  #main-menu .game-title,
-  #main-menu .subtitle {
-    width: min(460px, 92vw);
-    text-align: center;
   }
 }
 
@@ -2731,5 +2697,972 @@ i.coin {
   .run-timer {
     font-size: 14px;
     padding: 1px 10px;
+  }
+}
+
+/* =====================================================================
+   Meniul principal (stil joc de mobil): sigla în stânga sus peste scena 3D,
+   panoul de joc (nume, mod, dificultate, JOACĂ) în dreapta, butoane mici
+   în stânga jos. Toate regulile sunt sub #main-menu, ca să nu atingă HUD-ul.
+   ===================================================================== */
+
+#main-menu {
+  --mm-ice: #7ec8ff;
+  --mm-snow: #e7eef2;
+  --mm-gold: #ffd36a;
+  --mm-glass: rgba(14, 22, 34, 0.74);
+  --mm-line: rgba(126, 200, 255, 0.26);
+  --mm-logo: clamp(30px, min(6.3vw, 14vh), 92px);
+  --mm-panel-w: clamp(290px, 38vw, 400px);
+}
+
+#main-menu.overlay.menu {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--mm-panel-w);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  column-gap: clamp(16px, 4vw, 64px);
+  align-items: start;
+  justify-items: stretch;
+  text-align: left;
+  overflow: hidden;
+  padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  /* Stânga: puțin întuneric sus (sub siglă), mijlocul liber (scena), dreapta mai închisă (panoul). */
+  background:
+    radial-gradient(ellipse 60% 55% at 0% 0%, rgba(4, 10, 20, 0.55), rgba(4, 10, 20, 0) 70%),
+    radial-gradient(ellipse 50% 40% at 0% 100%, rgba(4, 10, 20, 0.5), rgba(4, 10, 20, 0) 70%),
+    linear-gradient(90deg, rgba(4, 8, 16, 0) 30%, rgba(4, 8, 16, 0.3) 55%, rgba(4, 8, 16, 0.8) 100%);
+}
+
+#main-menu > .mm-brand,
+#main-menu > .mm-panel,
+#main-menu > .mm-dock {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Sigla ---------- */
+
+#main-menu .mm-brand {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  max-width: 100%;
+  animation: mmInLeft 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+#main-menu .mm-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--mm-gold);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+
+#main-menu .mm-kicker span {
+  width: 18px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--mm-gold));
+}
+
+#main-menu .mm-kicker span:last-child {
+  background: linear-gradient(90deg, var(--mm-gold), transparent);
+}
+
+#main-menu .mm-logo {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-family: Cinzel, "Trajan Pro", "Palatino Linotype", Georgia, serif;
+  line-height: 0.92;
+  text-transform: uppercase;
+  font-size: var(--mm-logo);
+}
+
+#main-menu .mm-logo-top {
+  font-size: 0.4em;
+  font-weight: 700;
+  letter-spacing: 0.62em;
+  margin-left: 0.08em;
+  color: #cfe9ff;
+  text-shadow: 0 0 12px rgba(126, 200, 255, 0.7), 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+/* „MORȚILOR”: text cu gradient de gheață + o strălucire care trece peste el din când în când. */
+#main-menu .mm-logo-main {
+  position: relative;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #e3f4ff;
+  background:
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.95) 50%, transparent 58%) 160% 0 / 250% 100% no-repeat,
+    linear-gradient(180deg, #ffffff 0%, #eaf7ff 38%, #a6dbff 62%, #5d9ad0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 14px rgba(126, 200, 255, 0.55)) drop-shadow(0 3px 0 #132339)
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.75));
+  animation: mmShimmer 6s ease-in-out 1.2s infinite;
+}
+
+#main-menu .mm-icicles {
+  display: block;
+  width: 96%;
+  height: calc(var(--mm-logo) * 0.2);
+  margin: 1px 0 0 2%;
+  fill: rgba(206, 236, 255, 0.85);
+  filter: drop-shadow(0 0 4px rgba(126, 200, 255, 0.6));
+}
+
+#main-menu .mm-tagline {
+  margin: 6px 0 0;
+  font-size: clamp(12px, 1.5vw, 17px);
+  font-weight: 600;
+  color: #dbe8f3;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+
+#main-menu .mm-tagline b {
+  color: var(--mm-gold);
+}
+
+/* ---------- Panoul din dreapta (sticlă înghețată) ---------- */
+
+#main-menu .mm-panel {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(28, 44, 64, 0.78), var(--mm-glass));
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  backdrop-filter: blur(10px) saturate(1.15);
+  border: 1px solid var(--mm-line);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: mmInRight 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
+}
+
+/* Muchia de sus a panoului: o linie de gheață care se stinge spre margini. */
+#main-menu .mm-panel::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--mm-ice), transparent);
+  opacity: 0.8;
+}
+
+#main-menu .mm-label {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9fb4c8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#main-menu .mm-diff-desc {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: #d5e2ee;
+}
+
+/* Numele: iconiță + etichetă mică + câmp */
+#main-menu .mm-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--mm-line);
+  cursor: text;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#main-menu .mm-field:focus-within {
+  border-color: var(--mm-ice);
+  box-shadow: 0 0 0 3px rgba(126, 200, 255, 0.18);
+}
+
+#main-menu .mm-field-ico {
+  font-size: 18px;
+  filter: grayscale(0.3);
+}
+
+#main-menu .mm-field-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+#main-menu .mm-field-body small {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8ea6bb;
+}
+
+#main-menu .name-input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  outline: none;
+  font-size: 16px; /* 16 px: iPhone nu mai face zoom pe câmp */
+  font-weight: 800;
+  color: #fff;
+}
+
+#main-menu .name-input::placeholder {
+  color: rgba(231, 238, 242, 0.4);
+}
+
+/* Modurile de joc: două carduri cu iconiță și o descriere scurtă */
+#main-menu .modes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+}
+
+#main-menu .mode-btn {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(126, 200, 255, 0.14);
+  background: rgba(36, 52, 74, 0.55);
+  color: #fff;
+  text-align: left;
+  transition: transform 0.12s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+#main-menu .mode-btn:hover {
+  border-color: rgba(126, 200, 255, 0.45);
+}
+
+#main-menu .mode-btn:active {
+  transform: scale(0.97);
+}
+
+/* Iconița modului: mare și estompată în dreapta cardului (ca o ilustrație), textul stă peste ea. */
+#main-menu .mode-btn {
+  overflow: hidden;
+}
+
+#main-menu .mode-ico {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-8deg);
+  font-size: 44px;
+  line-height: 1;
+  opacity: 0.16;
+  filter: grayscale(0.6);
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+#main-menu .mode-body {
+  position: relative;
+  padding-right: 12px; /* loc pentru bifa din colț */
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+#main-menu .mode-body b {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#main-menu .mode-body small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: #a9bccd;
+}
+
+#main-menu .mode-btn.selected {
+  border-color: var(--mm-ice);
+  background: linear-gradient(135deg, rgba(64, 110, 156, 0.75), rgba(28, 44, 66, 0.75));
+  box-shadow: 0 0 16px rgba(126, 200, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+#main-menu .mode-btn.selected .mode-ico {
+  opacity: 0.4;
+  filter: drop-shadow(0 0 8px rgba(126, 200, 255, 0.8));
+}
+
+#main-menu .mode-btn.selected .mode-body small {
+  color: #dbeaf6;
+}
+
+/* Bifa din colț pe modul ales */
+#main-menu .mode-btn.selected::after {
+  content: "✓";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 900;
+  color: #0c2238;
+  background: var(--mm-ice);
+  box-shadow: 0 0 8px rgba(126, 200, 255, 0.8);
+}
+
+/* Dificultatea: control segmentat, verde (Easy) → roșu (Nightmare) */
+#main-menu .difficulty {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(126, 200, 255, 0.14);
+}
+
+#main-menu .diff-btn {
+  --c: #3bb36b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px 5px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--c);
+  font-size: 12.5px;
+  box-shadow: none;
+  transition: background 0.2s, color 0.2s, transform 0.12s;
+}
+
+#main-menu .diff-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#main-menu .diff-btn:active {
+  transform: scale(0.95);
+}
+
+#main-menu .diff-btn b {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+#main-menu .diff-pips {
+  display: flex;
+  gap: 2px;
+}
+
+#main-menu .diff-pips i {
+  width: 7px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+#main-menu .diff-pips i.on {
+  background: var(--c);
+}
+
+#main-menu .diff-easy { --c: #5fd08e; }
+#main-menu .diff-medium { --c: #f2c14e; }
+#main-menu .diff-hard { --c: #f07a45; }
+#main-menu .diff-nightmare { --c: #ff4f6d; }
+
+#main-menu .diff-btn.selected {
+  color: #fff;
+  border-color: transparent;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+#main-menu .diff-btn.selected .diff-pips i.on {
+  background: #fff;
+}
+
+#main-menu .diff-easy.selected {
+  background: linear-gradient(180deg, #45bf78, #22784a);
+  box-shadow: 0 0 14px rgba(69, 191, 120, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+#main-menu .diff-medium.selected {
+  background: linear-gradient(180deg, #e3ae2e, #9a6c10);
+  box-shadow: 0 0 14px rgba(227, 174, 46, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+#main-menu .diff-hard.selected {
+  background: linear-gradient(180deg, #e96a36, #9c3415);
+  box-shadow: 0 0 14px rgba(233, 106, 54, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+#main-menu .diff-nightmare.selected {
+  background: linear-gradient(180deg, #c4163f, #5c0820);
+  box-shadow: 0 0 18px rgba(255, 40, 80, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- Butonul mare JOACĂ ---------- */
+
+#main-menu .mm-play {
+  position: relative;
+  overflow: hidden;
+  margin-top: 6px;
+  margin-bottom: 5px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffe397 0%, #ffbf4f 42%, #f08a2c 100%);
+  color: #2a1206;
+  font-family: Cinzel, "Trajan Pro", Georgia, serif;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow: 0 5px 0 #8f4312, 0 8px 22px rgba(255, 150, 50, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: mmPlayPulse 2.4s ease-in-out infinite;
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.2s;
+}
+
+#main-menu .mm-play:hover {
+  filter: brightness(1.07);
+}
+
+#main-menu .mm-play:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #8f4312, 0 4px 12px rgba(255, 150, 50, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+#main-menu .mm-play-ico {
+  font-family: system-ui, sans-serif;
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(42, 18, 6, 0.85);
+  color: #ffd36a;
+  padding-left: 3px;
+  letter-spacing: 0;
+}
+
+#main-menu .mm-play-text {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Luciul care trece peste buton */
+#main-menu .mm-play::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: skewX(-20deg);
+  animation: mmSheen 3.6s ease-in-out 1.5s infinite;
+  pointer-events: none;
+}
+
+/* ---------- Stânga jos: butoane-iconiță + versiunea ---------- */
+
+#main-menu .mm-dock {
+  grid-column: 1;
+  grid-row: 3;
+  align-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  animation: mmFadeUp 0.7s ease-out 0.3s both;
+}
+
+#main-menu .mm-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+#main-menu .mm-icon-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 56px;
+  height: 50px;
+  padding: 0 8px;
+  border-radius: 12px;
+  border: 1px solid var(--mm-line);
+  background: rgba(14, 22, 34, 0.68);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #e7eef2;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s, border-color 0.2s, background 0.2s;
+}
+
+#main-menu .mm-icon-btn:hover {
+  border-color: rgba(126, 200, 255, 0.6);
+  background: rgba(30, 46, 66, 0.8);
+}
+
+#main-menu .mm-icon-btn:active {
+  transform: scale(0.94);
+}
+
+#main-menu .mm-icon-btn.on {
+  border-color: var(--mm-ice);
+  box-shadow: 0 0 12px rgba(126, 200, 255, 0.4);
+}
+
+#main-menu .mm-icon-btn .mm-i {
+  position: relative;
+  font-size: 19px;
+  line-height: 1;
+}
+
+#main-menu .mm-icon-btn small {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #b8c8d6;
+  white-space: nowrap;
+}
+
+/* Clasamentul: accent auriu */
+#main-menu #menu-board {
+  border-color: rgba(255, 211, 106, 0.45);
+}
+
+#main-menu #menu-board small {
+  color: var(--mm-gold);
+}
+
+/* Sunet / muzică oprite: iconiță stinsă + linie roșie peste ea */
+#main-menu .mm-icon-btn.off .mm-i {
+  opacity: 0.45;
+}
+
+#main-menu .mm-icon-btn.off .mm-i::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: #ff6b5a;
+  transform: rotate(-40deg);
+}
+
+#main-menu .mm-icon-btn.off small {
+  color: #ff9d90;
+}
+
+#main-menu .mm-version {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(231, 238, 242, 0.5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- Panoul „Cum se joacă” ---------- */
+
+#main-menu .mm-howto {
+  position: absolute;
+  z-index: 3;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 76px);
+  width: min(330px, calc(100% - var(--mm-panel-w) - 80px));
+  min-width: 250px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(12, 20, 32, 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--mm-line);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
+  animation: mmPop 0.22s ease-out both;
+}
+
+#main-menu .mm-howto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--mm-gold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#main-menu .mm-howto-close {
+  border: none;
+  background: transparent;
+  color: #9fb4c8;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+
+#main-menu .mm-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#main-menu .mm-steps li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+#main-menu .mm-step-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 900;
+  color: #dff2ff;
+  background: rgba(126, 200, 255, 0.14);
+  border: 1px solid rgba(126, 200, 255, 0.35);
+}
+
+#main-menu .mm-steps b {
+  display: block;
+  font-size: 12.5px;
+}
+
+#main-menu .mm-steps small {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: #a9bccd;
+}
+
+#main-menu .mm-howto-tip {
+  margin: 7px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  color: #8ea6bb;
+}
+
+/* ---------- Fulgii de zăpadă (doar CSS, puțini) ---------- */
+
+#main-menu .mm-snow {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#main-menu .mm-snow i {
+  position: absolute;
+  top: -12px;
+  left: var(--x);
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.75;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+  animation: mmSnow var(--d) linear var(--w) infinite;
+}
+
+#main-menu .mm-snow i:nth-child(1) { --x: 4%; --s: 4px; --d: 11s; --w: -2s; }
+#main-menu .mm-snow i:nth-child(2) { --x: 12%; --s: 6px; --d: 14s; --w: -7s; }
+#main-menu .mm-snow i:nth-child(3) { --x: 21%; --s: 3px; --d: 9s; --w: -4s; }
+#main-menu .mm-snow i:nth-child(4) { --x: 29%; --s: 5px; --d: 13s; --w: -10s; }
+#main-menu .mm-snow i:nth-child(5) { --x: 37%; --s: 3px; --d: 10s; --w: -1s; }
+#main-menu .mm-snow i:nth-child(6) { --x: 45%; --s: 7px; --d: 16s; --w: -12s; }
+#main-menu .mm-snow i:nth-child(7) { --x: 53%; --s: 4px; --d: 12s; --w: -6s; }
+#main-menu .mm-snow i:nth-child(8) { --x: 61%; --s: 3px; --d: 9.5s; --w: -8s; }
+#main-menu .mm-snow i:nth-child(9) { --x: 69%; --s: 5px; --d: 15s; --w: -3s; }
+#main-menu .mm-snow i:nth-child(10) { --x: 76%; --s: 4px; --d: 11.5s; --w: -9s; }
+#main-menu .mm-snow i:nth-child(11) { --x: 83%; --s: 6px; --d: 14.5s; --w: -5s; }
+#main-menu .mm-snow i:nth-child(12) { --x: 90%; --s: 3px; --d: 10.5s; --w: -11s; }
+#main-menu .mm-snow i:nth-child(13) { --x: 96%; --s: 5px; --d: 13.5s; --w: -2.5s; }
+#main-menu .mm-snow i:nth-child(14) { --x: 49%; --s: 2px; --d: 8.5s; --w: -6.5s; }
+
+@keyframes mmSnow {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(22px, 52vh, 0); }
+  100% { transform: translate3d(-10px, 106vh, 0); }
+}
+
+@keyframes mmInLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes mmInRight {
+  from { opacity: 0; transform: translateX(36px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes mmFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes mmPop {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes mmShimmer {
+  0%, 70% { background-position: 160% 0, 0 0; }
+  100% { background-position: -60% 0, 0 0; }
+}
+
+@keyframes mmPlayPulse {
+  0%, 100% { box-shadow: 0 5px 0 #8f4312, 0 8px 22px rgba(255, 150, 50, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
+  50% { box-shadow: 0 5px 0 #8f4312, 0 8px 34px rgba(255, 170, 60, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
+}
+
+@keyframes mmSheen {
+  0%, 65% { left: -40%; }
+  100% { left: 130%; }
+}
+
+/* Telefon în landscape (ecran scund): totul puțin mai strâns. */
+@media (max-height: 430px) {
+  #main-menu .mm-panel {
+    gap: 5px;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+  #main-menu .mm-field {
+    padding: 4px 10px;
+  }
+  #main-menu .mm-field-ico {
+    font-size: 16px;
+  }
+  #main-menu .mode-btn {
+    padding: 5px 8px;
+  }
+  #main-menu .mode-body b {
+    font-size: 13px;
+  }
+  #main-menu .mode-body small {
+    font-size: 10px;
+  }
+  #main-menu .diff-btn {
+    padding: 5px 2px 4px;
+    font-size: 12px;
+  }
+  #main-menu .mm-play {
+    height: 46px;
+    font-size: 21px;
+    margin-top: 4px;
+  }
+  #main-menu .mm-play-ico {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+  #main-menu .mm-icon-btn {
+    min-width: 50px;
+    height: 44px;
+    padding: 0 6px;
+  }
+  #main-menu .mm-icon-btn .mm-i {
+    font-size: 17px;
+  }
+  #main-menu .mm-icon-btn small {
+    font-size: 9px;
+  }
+  #main-menu .mm-howto {
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px);
+  }
+}
+
+/* Ecran îngust (telefon în portret / fereastră mică): totul pe o coloană, centrat. */
+@media (max-width: 560px) {
+  #main-menu.overlay.menu {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    row-gap: 14px;
+    justify-items: center;
+    align-content: center;
+    overflow-y: auto;
+    background: radial-gradient(ellipse at 50% 30%, rgba(20, 40, 70, 0.2), rgba(4, 8, 16, 0.85) 80%);
+  }
+  #main-menu {
+    --mm-logo: clamp(30px, 11vw, 56px);
+  }
+  #main-menu .mm-brand {
+    justify-self: center;
+    align-items: center;
+  }
+  #main-menu .mm-logo {
+    align-items: center;
+  }
+  #main-menu .mm-panel {
+    grid-column: 1;
+    grid-row: 2;
+    width: min(400px, 100%);
+  }
+  #main-menu .mm-dock {
+    grid-column: 1;
+    grid-row: 3;
+    align-items: center;
+  }
+  #main-menu .mm-icons {
+    justify-content: center;
+  }
+  #main-menu .mm-howto {
+    left: 50%;
+    width: min(330px, calc(100% - 32px));
+    transform: translateX(-50%);
+    animation: none;
+  }
+}
+
+/* Telefon mic în landscape (ex. 667 px): butoanele de jos și eticheta de sus mai mici. */
+@media (max-width: 760px) and (min-width: 561px) {
+  #main-menu {
+    --mm-panel-w: 304px;
+  }
+  #main-menu.overlay.menu {
+    column-gap: 18px;
+  }
+  #main-menu .mode-body b {
+    font-size: 12.5px;
+    letter-spacing: -0.01em;
+  }
+  #main-menu .mm-tagline {
+    font-size: 11.5px;
+  }
+  #main-menu .mm-kicker {
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+  }
+  #main-menu .mm-kicker span {
+    width: 10px;
+  }
+  #main-menu .mm-icons {
+    gap: 5px;
+    flex-wrap: nowrap;
+  }
+  #main-menu .mm-icon-btn {
+    min-width: 44px;
+    padding: 0 5px;
+  }
+  #main-menu .mm-icon-btn small {
+    font-size: 8.5px;
+  }
+  #main-menu .mode-btn {
+    gap: 6px;
+    padding: 5px 6px;
+  }
+}
+
+/* Ecran mare (desktop): panoul și butonul JOACĂ cresc puțin. */
+@media (min-width: 1000px) and (min-height: 620px) {
+  #main-menu {
+    --mm-panel-w: clamp(400px, 34vw, 460px);
+  }
+  #main-menu .mm-panel {
+    gap: 9px;
+    padding: 18px;
+    border-radius: 20px;
+  }
+  #main-menu .mm-label {
+    font-size: 11.5px;
+  }
+  #main-menu .mode-btn {
+    padding: 10px 11px;
+  }
+  #main-menu .mode-ico {
+    font-size: 54px;
+  }
+  #main-menu .mode-body b {
+    font-size: 15.5px;
+  }
+  #main-menu .mode-body small {
+    font-size: 11.5px;
+  }
+  #main-menu .diff-btn {
+    padding: 9px 2px 7px;
+    font-size: 14px;
+  }
+  #main-menu .mm-play {
+    height: 64px;
+    font-size: 29px;
+    margin-top: 8px;
+  }
+  #main-menu .mm-play-ico {
+    width: 38px;
+    height: 38px;
+    font-size: 22px;
+  }
+  #main-menu .mm-kicker {
+    font-size: 12px;
+  }
+  #main-menu .mm-icon-btn {
+    min-width: 64px;
+    height: 56px;
+  }
+  #main-menu .mm-icon-btn .mm-i {
+    font-size: 22px;
+  }
+  #main-menu .mm-icon-btn small {
+    font-size: 10.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #main-menu *,
+  #main-menu *::after {
+    animation: none !important;
   }
 }

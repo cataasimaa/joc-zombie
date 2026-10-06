@@ -193,6 +193,11 @@ const DIFFICULTY_TEXT: Record<Difficulty, string> = {
   hard: "Hoarde mari, mai puțin lemn",
   nightmare: "Doar pentru nebuni",
 };
+/** Descrierea scurtă (un rând) a modurilor pe cardurile din meniul principal; textul lung e în tooltip. */
+const MODE_SHORT: Record<GameMode, string> = {
+  defend: "Ține zombii departe de mină",
+  survival: "Foame, frig, foc și vânătoare",
+};
 const SPIN_TIME = 3000;
 const REEL_STOPS = [1500, 2250, 3000];
 
@@ -318,6 +323,9 @@ export class Hud {
     $("pause-sound").addEventListener("click", sound);
     $("menu-music").addEventListener("click", music);
     $("menu-quality").addEventListener("click", () => this.setQualityLabel(cb.onCycleQuality()));
+    // „Cum se joacă”: panoul mic cu structura rundei (se deschide / închide din ❔).
+    $("menu-howto").addEventListener("click", () => this.toggleHowTo());
+    $("menu-howto-close").addEventListener("click", () => this.toggleHowTo(false));
     $("pause-music").addEventListener("click", music);
     $("menu-btn").addEventListener("click", () => this.setPaused(true));
     $("pause-resume").addEventListener("click", () => this.setPaused(false));
@@ -354,13 +362,20 @@ export class Hud {
     for (const [id, d] of Object.entries(CONFIG.difficulty) as [Difficulty, (typeof CONFIG.difficulty)[Difficulty]][]) {
       const b = document.createElement("button");
       b.className = `diff-btn diff-${id}${id === this.difficulty ? " selected" : ""}`;
-      b.innerHTML = `<b>${d.name}</b><small>${DIFFICULTY_TEXT[id]}</small>`;
+      b.title = DIFFICULTY_TEXT[id];
+      // Bulinele arată cât de greu e (1 = Easy … 4 = Nightmare).
+      const level = Object.keys(CONFIG.difficulty).indexOf(id) + 1;
+      const pips = [1, 2, 3, 4].map((i) => `<i class="${i <= level ? "on" : ""}"></i>`).join("");
+      b.innerHTML = `<b>${d.name}</b><span class="diff-pips">${pips}</span>`;
       b.addEventListener("click", () => {
         this.difficulty = id;
         this.renderDifficulty();
       });
       this.el.difficulty.appendChild(b);
     }
+    // Sub titlu: o singură linie cu ce înseamnă dificultatea aleasă.
+    const desc = document.getElementById("diff-desc");
+    if (desc) desc.textContent = `· ${DIFFICULTY_TEXT[this.difficulty]}`;
   }
 
   private renderModes(): void {
@@ -368,7 +383,10 @@ export class Hud {
     for (const [id, m] of Object.entries(CONFIG.modes) as [GameMode, (typeof CONFIG.modes)[GameMode]][]) {
       const b = document.createElement("button");
       b.className = `mode-btn${id === this.mode ? " selected" : ""}`;
-      b.innerHTML = `<b>${m.icon} ${m.name}</b><small>${m.text}</small>`;
+      b.innerHTML =
+        `<span class="mode-ico">${m.icon}</span>` +
+        `<span class="mode-body"><b>${m.name}</b><small>${MODE_SHORT[id] ?? m.text}</small></span>`;
+      b.title = m.text;
       b.addEventListener("click", () => {
         this.mode = id;
         this.renderModes();
@@ -415,19 +433,39 @@ export class Hud {
   /** Anunț mare pe mijlocul ecranului (Double Kill, Rampage...). */
 
   setQualityLabel(label: string): void {
-    $("menu-quality").textContent = `🖥 Grafică: ${label}`;
+    // Buton-iconiță în meniul principal: iconița sus, calitatea dedesubt.
+    $("menu-quality").innerHTML = `<span class="mm-i">🖥</span><small>Grafică ${label}</small>`;
+  }
+
+  /** Panoul „Cum se joacă” din meniul principal (fără argument = comută). */
+  private toggleHowTo(open?: boolean): void {
+    const panel = $("menu-howto-panel");
+    const show = open ?? panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !show);
+    $("menu-howto").classList.toggle("on", show);
+    $("menu-howto").setAttribute("aria-expanded", String(show));
   }
 
   /** Etichetele butoanelor de sunet și muzică (null = nu se schimbă). */
   setAudioLabels(sound: boolean | null, music: boolean | null): void {
-    if (sound !== null) for (const id of ["menu-sound", "pause-sound"]) $(id).textContent = sound ? "🔊 Sunet: pornit" : "🔇 Sunet: oprit";
+    if (sound !== null) {
+      $("pause-sound").textContent = sound ? "🔊 Sunet: pornit" : "🔇 Sunet: oprit";
+      // În meniul principal: buton-iconiță (stins = clasa „off”).
+      $("menu-sound").innerHTML = `<span class="mm-i">${sound ? "🔊" : "🔇"}</span><small>Sunet</small>`;
+      $("menu-sound").classList.toggle("off", !sound);
+    }
     // În joc nu e buton de sunet: doar o linie peste ☰ arată că sunetul e oprit (se schimbă din meniu).
     if (sound !== null) $("menu-btn").classList.toggle("muted", !sound);
-    if (music !== null) for (const id of ["menu-music", "pause-music"]) $(id).textContent = music ? "🎵 Muzică: pornită" : "🎵 Muzică: oprită";
+    if (music !== null) {
+      $("pause-music").textContent = music ? "🎵 Muzică: pornită" : "🎵 Muzică: oprită";
+      $("menu-music").innerHTML = `<span class="mm-i">🎵</span><small>Muzică</small>`;
+      $("menu-music").classList.toggle("off", !music);
+    }
   }
 
   showMainMenu(): void {
     this.el.mainMenu.classList.remove("hidden");
+    this.toggleHowTo(false);
     $("board").classList.add("hidden");
     this.el.heroSelect.classList.add("hidden");
     this.el.hud.classList.add("hidden");
