@@ -51,6 +51,11 @@ export class Prefab {
 const SKY_DAY = hex("#c9d6e0");
 const SKY_DUSK = hex("#6b6f86");
 const SKY_NIGHT = hex("#0c1422");
+/** Felinarul eroului: raza (m) și intensitatea noaptea. */
+const LANTERN_RANGE = 14;
+const LANTERN_NIGHT = 4.2;
+/** Raza (m) petei calde de pe zăpadă. */
+const LANTERN_POOL = 9;
 /** Capacul minei: deschis (rotit pe spate) și momentul în care se trântește la cădere. */
 const HATCH_OPEN = 2.85;
 const HATCH_AT = 1.3;
@@ -61,6 +66,8 @@ export class World {
   readonly shelter: TransformNode;
   /** Felinarul eroului local (se aprinde noaptea). */
   readonly lantern: PointLight;
+  /** Pata caldă de lumină de pe zăpadă din jurul felinarului (se vede clar și în ceață). */
+  private lanternPool: Mesh;
   /** Lanterna eroului e aprinsă (se stinge / aprinde din bara rapidă). */
   lanternOn = true;
   private hemi: HemisphericLight;
@@ -155,8 +162,12 @@ export class World {
     this.pipeline = pp;
     this.camera = camera;
 
-    scene.fogMode = 2; // Scene.FOGMODE_EXP2
-    scene.fogDensity = 0.014;
+    // Ceață LINIARĂ, măsurată de la cameră: până la erou (≈25 m de cameră) aerul e limpede, apoi
+    // se îndesește spre marginea de sus a ecranului. Ceața exponențială de dinainte acoperea și
+    // eroul (pe Nightmare, cu lapoviță, ~90% din imagine era culoarea cerului de noapte = negru).
+    scene.fogMode = 3; // Scene.FOGMODE_LINEAR
+    scene.fogStart = 28;
+    scene.fogEnd = 140;
 
     // Lumini: cer (ambient albăstrui), soare/lună (cu umbre), focul adăpostului, felinarul eroului.
     this.hemi = new HemisphericLight("sky", new Vector3(0.2, 1, -0.3), scene);
@@ -203,15 +214,52 @@ export class World {
     this.plasmaLight.range = 11;
 
     this.lantern = new PointLight("lantern", Vector3.Zero(), scene);
-    this.lantern.diffuse = mix(PAL.fire, PAL.window, 0.5);
+    // Felinarul: lumină caldă, puternică, cu rază mare (atenuare liniară: 1 − d/rază, vezi
+    // `usePhysicalLightFalloff = false` în ModelKit) → un cerc de ~9 m luminat în jurul eroului.
+    this.lantern.diffuse = mix(PAL.fire, PAL.window, 0.4);
     this.lantern.specular = Color3.Black();
-    this.lantern.range = 9;
+    this.lantern.range = LANTERN_RANGE;
     this.lantern.intensity = 0;
+    this.lanternPool = this.createLanternPool();
 
     this.fogMat = new StandardMaterial("fogMat", scene);
     this.createEdgeFog();
     this.snow = this.createSnowfall();
     this.rain = this.createRain();
+  }
+
+  /**
+   * Cercul cald de sub felinar: un disc cu gradient radial, amestec aditiv, fără lumini și fără
+   * ceață. Lumina punctuală luminează eroul, zombii și construcțiile; discul face ca cercul de
+   * ~9 m de pe zăpadă să se citească imediat (ca în Ark / Don't Starve).
+   */
+  private createLanternPool(): Mesh {
+    const tex = new DynamicTexture("lanternPoolTex", { width: 128, height: 128 }, this.scene, false);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, "rgba(255,190,120,1)");
+    g.addColorStop(0.35, "rgba(255,160,90,0.65)");
+    g.addColorStop(0.7, "rgba(255,130,60,0.22)");
+    g.addColorStop(1, "rgba(255,120,50,0)");
+    ctx.clearRect(0, 0, 128, 128);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    tex.update();
+    tex.hasAlpha = true;
+    tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+    const m = new StandardMaterial("lanternPoolMat", this.scene);
+    m.diffuseTexture = tex;
+    m.opacityTexture = tex;
+    m.emissiveColor = Color3.White();
+    m.disableLighting = true;
+    m.fogEnabled = false;
+    m.alphaMode = 1; // Engine.ALPHA_ADD
+    m.zOffset = -4; // stă peste zăpadă și pe pantele mici
+    const disc = MeshBuilder.CreateGround("lanternPool", { width: LANTERN_POOL * 2, height: LANTERN_POOL * 2, subdivisions: 8 }, this.scene);
+    disc.material = m;
+    disc.isPickable = false;
+    disc.setEnabled(false);
+    return disc;
   }
 
   /** Lapovița: picături lungi, reci, care cad repede. */
@@ -591,7 +639,12 @@ export class World {
     const wm = this.weatherMix;
     // Pe Hard / Nightmare ceața se strânge noaptea în jurul minei (încet, nu brusc).
     this.fogClose += (this.fogCloseIn * night - this.fogClose) * Math.min(1, dt * 0.3);
-    this.scene.fogDensity = (0.011 + night * 0.012) * wm.fog * (1 + this.fogClose * 1.2);
+    // Începutul ceții = puțin dincolo de erou (camera se poate apropia / depărta); cât de repede se
+    // îndesește depinde de noapte, vreme și de cât s-a strâns (Hard / Nightmare). Pe Nightmare
+    // marginea de sus a ecranului se pierde în întuneric, dar eroul și ce e în jurul lui se văd.
+    const camDist = Vector3.Distance(cameraPos, focus);
+    this.scene.fogStart = camDist + 3 - this.fogClose * 4;
+    this.scene.fogEnd = this.scene.fogStart + Math.max(16, ((110 - night * 75) / wm.fog) * (1 - this.fogClose * 0.45));
     this.snow.emitRate = 230 * wm.snow;
     this.rain.emitRate = 900 * wm.rain;
     const side = 1.2 + wm.wind * 5;
@@ -628,11 +681,23 @@ export class World {
       c.scaling.set(k, 0.95 + Math.sin(t * 2.2 + i) * 0.07, k);
     });
     if (this.mineDead >= 0) this.updateMineFall(dt);
-    this.lantern.intensity = this.lanternOn ? night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05) : 0;
+    // Ziua aproape nu se vede (night ≈ 0); noaptea luminează puternic (pâlpâie foarte puțin).
+    const lanternFlicker = 0.96 + Math.sin(t * 9) * 0.03 + Math.sin(t * 23) * 0.01;
+    this.lantern.intensity = this.lanternOn ? (0.15 + night * LANTERN_NIGHT) * lanternFlicker : 0;
+    // Pata de pe zăpadă: doar când se întunecă (ziua n-ar avea sens), urmează felinarul.
+    const pool = this.lanternOn ? Math.max(0, night - 0.15) / 0.85 : 0;
+    this.lanternPool.setEnabled(pool > 0.01);
+    if (pool > 0.01) {
+      const lp = this.lantern.position;
+      this.lanternPool.position.set(lp.x, terrainHeight(lp.x, lp.z) + 0.12, lp.z);
+      (this.lanternPool.material as StandardMaterial).alpha = 0.42 * pool * lanternFlicker;
+    }
     if (this.traderLamp) this.traderLamp.intensity = 0.2 + night * 1.2 * (0.93 + Math.sin(t * 7 + 1) * 0.07);
     // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.
     this.pipeline.bloomWeight = 0.25 + night * 0.45;
     this.pipeline.bloomThreshold = 0.85 - night * 0.25;
+    // Pe Hard / Nightmare noaptea marginile ecranului se închid (vignetă), centrul rămâne lizibil.
+    this.pipeline.imageProcessing.vignetteWeight = 1.8 + this.fogClose * 2.2;
     // Fumul e mai închis noaptea.
     for (const ps of this.smoke) {
       const v = 0.55 - night * 0.35;
@@ -644,7 +709,7 @@ export class World {
     this.fogMat.alpha = 0.75 - night * 0.15;
     for (const p of this.fogPlanes) {
       const { phase, base } = p.metadata as { phase: number; base: Vector3 };
-      const pull = 1 - this.fogClose * 0.5;
+      const pull = 1 - this.fogClose * 0.3;
       p.position.x = base.x * pull + Math.sin(t * 0.15 + phase) * 2;
       p.position.z = base.z * pull + Math.cos(t * 0.12 + phase) * 2;
     }

@@ -48,6 +48,7 @@ import { Keyboard } from "./input/Keyboard";
 import { VirtualJoystick } from "./input/VirtualJoystick";
 import type { Quality } from "./render/ModelKit";
 import { Renderer } from "./render/Renderer";
+import { Interpolator } from "./render/Interpolation";
 import { Hud, type MenuOption, type PickKind } from "./ui/Hud";
 import { recordRun } from "./ui/leaderboard";
 
@@ -81,6 +82,7 @@ let playerName = "";
 let difficulty: Difficulty = "easy";
 let mode: GameMode = "defend";
 let accumulator = 0;
+const interp = new Interpolator();
 let lastMove = { x: 0, z: 0 };
 let lastAim = "";
 
@@ -98,6 +100,7 @@ function startGame(heroClass: HeroClass): void {
   sfx.setMenu(false);
   paused = false;
   accumulator = 0;
+  interp.reset();
   lastMove = { x: 0, z: 0 };
   lastAim = "";
   hud.startGame(heroClass);
@@ -799,13 +802,15 @@ renderer.engine.runRenderLoop(() => {
     // 2. Simularea avansează în pași FICȘI (aceleași rezultate pe orice telefon). În pauză stă pe loc.
     if (!paused) accumulator += dt;
     while (accumulator >= STEP) {
+      interp.beforeStep(state);
       sim.step(STEP);
       accumulator -= STEP;
     }
 
-    // 3. Randare, HUD și sunet citesc starea și evenimentele.
+    // 3. Randare, HUD și sunet citesc starea și evenimentele. Randarea primește o copie cu
+    //    pozițiile interpolate între ultimii doi pași (mers lin pe ecrane de 60 / 120 Hz).
     const events = sim.drainEvents();
-    renderer.sync(state, events, LOCAL_PLAYER, dt);
+    renderer.sync(interp.view(state, accumulator / STEP), events, LOCAL_PLAYER, dt, state);
     hud.update(state, LOCAL_PLAYER, events, dt);
     handleRunEvents(state, events);
     // Eticheta minei: chiar deasupra ei (doar în Apără mina; în Supraviețuire e decor).

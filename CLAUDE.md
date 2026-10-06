@@ -114,6 +114,8 @@ src/
     World.ts       Decorul + lumini + zi/noapte + umbre + ceață + ninsoare; Prefab (instanțe)
     Fx.ts          Particule (sânge, scântei, așchii, venin, piatră, praf, fum, plasmă), pete de
                    sânge, urme de pași, trasoare, fulgere, explozii, inele
+    Interpolation.ts  Mers lin: logica pășește de 30 ori/s, ecranul de 60–120 ori/s; desenăm pozițiile
+                   amestecate între ultimii doi pași (copie a stării, `GameState` nu se atinge)
     Renderer.ts    Entitățile animate (mers cu genunchi, recul, reîncărcare, ardere, cădere,
                    înghețare), proiectilele turnurilor în arc, prăbușirea construcțiilor,
                    camera, fantomele de construcție (cu „amprenta” pe sol)
@@ -372,6 +374,9 @@ sau texturi din acele jocuri.
   mină și sparg zidurile din drum. Turnurile se repară doar ziua. Nimeni nu trece prin ele.
   Construcțiile distruse se prăbușesc: scândurile se desprind, praful stă ~1 s, bara de viață
   rămâne la zero până cade. Turnurile au cu 40% mai puțină viață decât înainte.
+- **Noaptea se vede**: ceață liniară care începe dincolo de erou (centrul ecranului e mereu lizibil);
+  Hard / Nightmare = ceață mai deasă spre margini + vignetă mai întunecată, nu ecran negru.
+  **Felinarul**: lumină caldă puternică (14 m) + un cerc cald pe zăpadă (~9 m), doar noaptea.
 - **Decor**: zăpadă călcată, gri-albăstruie, în jurul minei; neatinsă și luminoasă spre margini (unde e
   ceața); brazii au zăpadă doar pe crengile de sus.
 - **Mina cade**: crapă, plasma pâlpâie și se stinge, capacul de fier se trântește; ecranul final

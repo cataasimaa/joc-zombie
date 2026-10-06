@@ -478,14 +478,18 @@ export class Renderer {
 
   // ---------- Sincronizare cu starea ----------
 
-  /** Apelată o dată pe cadru: aduce scena la zi cu starea jocului. */
-  sync(state: GameState, events: GameEvent[], localPlayerId: string, dt: number): void {
+  /**
+   * Apelată o dată pe cadru: aduce scena la zi cu starea jocului. `state` poate fi starea cu
+   * pozițiile interpolate (vezi Interpolation.ts); `simState` e starea reală a simulării, pe care
+   * o folosesc evenimentele (pozițiile lor sunt cele din simulare).
+   */
+  sync(state: GameState, events: GameEvent[], localPlayerId: string, dt: number, simState: GameState = state): void {
     this.time += dt;
     this.killed.clear();
     this.destroyed.clear();
     const me = state.players[localPlayerId];
     this.localHeroId = me?.heroId ?? null;
-    for (const e of events) this.handleEvent(state, e);
+    for (const e of events) this.handleEvent(simState, e);
 
     this.syncHeroes(state, dt);
     this.syncZombies(state, dt);
@@ -544,7 +548,9 @@ export class Renderer {
       // Ținta e puțin în dreapta, ca scena să stea în stânga ecranului (meniul e în dreapta).
       this.camera.setTarget(new Vector3(-Math.cos(a) * 4, 2, Math.sin(a) * 4 + 2));
     } else {
-      Vector3.LerpToRef(this.camera.position, focus.add(this.cameraOffset), Math.min(1, dt * 5), this.camera.position);
+      // Urmărire exponențială (1 − e^(−k·dt)): aceeași senzație la 30, 60 sau 120 de cadre pe secundă.
+      // `focus` vine din poziția interpolată a eroului, deci camera nu mai sare o dată pe pas.
+      Vector3.LerpToRef(this.camera.position, focus.add(this.cameraOffset), 1 - Math.exp(-dt * 5), this.camera.position);
       this.camera.setTarget(this.camera.position.subtract(this.cameraOffset));
       // Tresărirea camerei când ești lovit.
       this.cameraShake = Math.max(0, this.cameraShake - dt * 3);
@@ -554,7 +560,7 @@ export class Renderer {
         this.camera.position.y += (Math.random() - 0.5) * k;
       }
     }
-    if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.6, hero.pos.z);
+    if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.4, hero.pos.z);
     this.world.lanternOn = !!hero && hero.alive && hero.lantern;
     this.world.setWeather(state.weather);
     this.world.syncTrees(state.treeHits, CONFIG.gather.treeHits, dt);
