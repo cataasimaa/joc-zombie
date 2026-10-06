@@ -409,6 +409,9 @@ sau texturi din acele jocuri.
   tuburi de alamă care sar pe zăpadă; zombii se încordează, izbesc și îngheață o clipă la impact
   (brutele se aruncă mai departe); loviturile îi împing din direcția glonțului, iar la moarte
   cad pe spate, departe de trăgător, și ridică zăpadă.
+- **Uneltele stau în mână**: cu o unealtă (nu arma), brațele eroului sunt piese mobile (pivot în umăr,
+  `HeroModel.arms`), iar târnăcopul, drujba, undița și felinarul sunt prinse de mâini; brațele urmează
+  lovitura, felinarul atârnă drept din mâna stângă și se leagănă la mers.
 - **Unelte mai fluide**: lovitura cu târnăcopul se întinde exact pe intervalul dintre lovituri
   (izbitură, ricoșeu, ridicare, încordare); bradul se leagănă amortizat, zăcământul tresare.
 

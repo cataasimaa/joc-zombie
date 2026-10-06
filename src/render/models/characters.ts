@@ -44,6 +44,11 @@ export interface HeroModel {
   legR: Leg;
   /** Vârful armei (pentru flacără și trasoare), în coordonatele eroului. */
   muzzle: [number, number, number];
+  /**
+   * Cu o unealtă în mână (fără armă), brațele sunt piese separate care se mișcă: atârnă din umăr
+   * (în jos, pe -y), iar mâna e la `hand` sub umăr. Unealta se prinde de mână, deci nu mai trece prin ea.
+   */
+  arms?: { L: Mesh[]; R: Mesh[]; shoulder: [number, number, number]; hand: number };
 }
 
 const SMOOTH = { smooth: true } as const;
@@ -182,8 +187,10 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
     }
   }
 
-  // Brațe întinse înainte, ținând arma (umăr → cot → mână).
+  // Brațe întinse înainte, ținând arma (umăr → cot → mână). Cu unealta în mână, brațele se fac
+  // separat (vezi `toolArm`), ca să poată ține unealta.
   const arm = (x: number, reach: number) => {
+    if (look.noGun) return;
     k.capsule(0.42, 0.095 * bulk, { p: [x, 1.48, 0.12 + reach * 0.05], r: [0.9, 0, 0] }, { color: coat, wear: 0.1, ...SMOOTH });
     k.capsule(0.4, 0.085 * bulk, { p: [x * 0.65, 1.33, 0.42 + reach * 0.15], r: [1.45, 0, 0] }, { color: coat.scale(0.9), wear: 0.1, ...SMOOTH });
     k.sphere(0.15, 8, { p: [x * 0.55, 1.3, 0.62 + reach * 0.15] }, { color: PAL.leather, ...SMOOTH });
@@ -219,7 +226,18 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
   const body = k.build(`hero_${cls}`);
   const legL = buildLeg(scene, mats, 21, trousers, -0.15 * bulk, bulk, look.armor?.legs ?? null, look.armor?.feet ?? null);
   const legR = buildLeg(scene, mats, 23, trousers, 0.15 * bulk, bulk, look.armor?.legs ?? null, look.armor?.feet ?? null);
-  return { body, legL, legR, muzzle };
+  let arms: HeroModel["arms"];
+  if (look.noGun) {
+    const toolArm = (seed: number) => {
+      const a = new ModelKit(scene, mats, seed);
+      a.capsule(0.42, 0.095 * bulk, { p: [0, -0.2, 0] }, { color: coat, wear: 0.1, ...SMOOTH });
+      a.capsule(0.38, 0.085 * bulk, { p: [0, -0.5, 0.02] }, { color: coat.scale(0.9), wear: 0.1, ...SMOOTH });
+      a.sphere(0.16, 8, { p: [0, -0.72, 0.02] }, { color: PAL.leather, ...SMOOTH });
+      return a.build(`heroArm${seed}`);
+    };
+    arms = { L: toolArm(31), R: toolArm(33), shoulder: [0.38 * bulk, 1.58, 0.04], hand: 0.72 };
+  }
+  return { body, legL, legR, muzzle, arms };
 }
 
 /** Capul (și ce mai ține de el) pentru fiecare skin amuzant. */

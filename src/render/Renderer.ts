@@ -157,6 +157,11 @@ interface HeroView {
   lantern: TransformNode;
   lanternGlow: TransformNode;
   rodTip: TransformNode;
+  /** Brațele mobile (doar cu o unealtă în mână) și mâinile de care se prind uneltele. */
+  armL: TransformNode | null;
+  armR: TransformNode | null;
+  /** Unghiul târnăcopului (lin, de la o poză la alta). */
+  pickAngle: number;
   /** Secunde de la ultima lovitură cu târnăcopul (animația: izbește, apoi îl ridică din nou). */
   swing: number;
   /** Cât durează o lovitură întreagă (intervalul dintre lovituri): animația se întinde exact pe el. */
@@ -1116,10 +1121,36 @@ export class Renderer {
       for (const m of leg.meshes) this.world.shadows.addShadowCaster(m);
     }
     for (const m of model.body) this.world.shadows.addShadowCaster(m);
+    // Brațele mobile: pivot în umăr, mâna la capăt (uneltele se prind de mâini).
+    let armL: TransformNode | null = null;
+    let armR: TransformNode | null = null;
+    let handL: TransformNode | null = null;
+    let handR: TransformNode | null = null;
+    if (model.arms) {
+      const [sx, sy, sz] = model.arms.shoulder;
+      const makeArm = (meshes: Mesh[], side: number): [TransformNode, TransformNode] => {
+        const arm = new TransformNode("heroArm", this.scene);
+        arm.parent = body;
+        arm.position.set(side * sx, sy, sz);
+        for (const m of meshes) {
+          m.parent = arm;
+          this.world.shadows.addShadowCaster(m);
+        }
+        const hand = new TransformNode("heroHand", this.scene);
+        hand.parent = arm;
+        hand.position.set(0, -model.arms!.hand, 0.02);
+        return [arm, hand];
+      };
+      [armL, handL] = makeArm(model.arms.L, -1);
+      [armR, handR] = makeArm(model.arms.R, 1);
+    }
     return {
       root,
       body,
       model,
+      armL,
+      armR,
+      pickAngle: 0.35,
       key: this.heroLookKey(state, hero),
       lastPos: { ...hero.pos },
       walk: 0,
@@ -1132,7 +1163,7 @@ export class Renderer {
       hitStop: 0,
       reload: 0,
       reloadTotal: 1,
-      ...this.heroTools(root),
+      ...this.heroTools(root, handL, handR),
       swing: 9,
       swingDur: 0.7,
       toolShow: 0,
@@ -1144,39 +1175,48 @@ export class Renderer {
   }
 
   /** Târnăcopul și undița, atașate eroului (ascunse până le folosește). */
-  private heroTools(root: TransformNode): { pickaxe: TransformNode; chainsaw: TransformNode; rod: TransformNode; rodTip: TransformNode; lantern: TransformNode; lanternGlow: TransformNode } {
-    // Târnăcopul e prins în mâini (în fața pieptului): pivotul e la mâini, coada coboară puțin
-    // sub ele, iar capul de fier e sus. Lovitura rotește tot în jurul mâinilor.
-    const pickaxe = new TransformNode("pickaxe", this.scene);
-    pickaxe.parent = root;
-    pickaxe.position.set(0.1, 1.3, 0.55);
+  private heroTools(root: TransformNode, handL: TransformNode | null, handR: TransformNode | null): { pickaxe: TransformNode; chainsaw: TransformNode; rod: TransformNode; rodTip: TransformNode; lantern: TransformNode; lanternGlow: TransformNode } {
+    // Uneltele se prind de mâini (brațele mobile), deci se mișcă odată cu ele și nu mai trec prin
+    // mână. Fără brațe mobile (cu arma în mână) rămân lângă corp, ascunse.
+    const holder = (hand: TransformNode | null, fallback: [number, number, number]) => {
+      const n = new TransformNode("toolHold", this.scene);
+      n.parent = hand ?? root;
+      if (!hand) n.position.set(...fallback);
+      return n;
+    };
+    // Târnăcopul: mâna dreaptă îl ține de coadă, la un sfert de la capăt; capul de fier e sus.
+    const pickaxe = holder(handR, [0.1, 1.3, 0.55]);
     const grip = new TransformNode("pickaxeGrip", this.scene);
     grip.parent = pickaxe;
     grip.position.set(0, -0.25, 0);
     grip.scaling.setAll(1.1);
     this.pickaxePrefab.instance("pickaxeMesh", grip);
     pickaxe.setEnabled(false);
-    // Drujba: ținută cu ambele mâini, în fața bazinului, cu lama spre înainte.
-    const chainsaw = new TransformNode("chainsaw", this.scene);
-    chainsaw.parent = root;
-    chainsaw.position.set(0.12, 1.05, 0.5);
-    this.chainsawPrefab.instance("chainsawMesh", chainsaw);
+    // Drujba: mâna dreaptă pe mânerul de sus (bucla), lama înainte.
+    const chainsaw = holder(handR, [0.12, 1.05, 0.5]);
+    const saw = new TransformNode("chainsawBody", this.scene);
+    saw.parent = chainsaw;
+    saw.position.set(-0.08, -0.3, -0.02);
+    this.chainsawPrefab.instance("chainsawMesh", saw);
     chainsaw.setEnabled(false);
-    // Felinarul, ținut în mâna stângă, ușor în față.
-    const lantern = new TransformNode("handLantern", this.scene);
-    lantern.parent = root;
-    lantern.position.set(-0.3, 1.0, 0.6);
-    this.lanternPrefab.instance("handLanternMesh", lantern);
+    // Felinarul atârnă de mânerul lui, din mâna stângă.
+    const lantern = holder(handL, [-0.3, 1.0, 0.6]);
+    const lanternBody = new TransformNode("handLanternBody", this.scene);
+    lanternBody.parent = lantern;
+    lanternBody.position.set(0, -0.47, 0);
+    this.lanternPrefab.instance("handLanternMesh", lanternBody);
     const lanternGlow = new TransformNode("handLanternGlow", this.scene);
-    lanternGlow.parent = lantern;
+    lanternGlow.parent = lanternBody;
     this.lanternGlowPrefab.instance("handLanternGlowMesh", lanternGlow);
     lantern.setEnabled(false);
-    const rod = new TransformNode("rod", this.scene);
-    rod.parent = root;
-    rod.position.set(0.12, 1.25, 0.5);
-    this.rodPrefab.instance("rodMesh", rod);
+    // Undița: mâna dreaptă o ține deasupra mulinetei.
+    const rod = holder(handR, [0.12, 1.25, 0.5]);
+    const rodBody = new TransformNode("rodBody", this.scene);
+    rodBody.parent = rod;
+    rodBody.position.set(0, -0.48, 0);
+    this.rodPrefab.instance("rodMesh", rodBody);
     const rodTip = new TransformNode("rodTip", this.scene);
-    rodTip.parent = rod;
+    rodTip.parent = rodBody;
     rodTip.position.set(0, 2.2, 0);
     rod.setEnabled(false);
     return { pickaxe, chainsaw, rod, rodTip, lantern, lanternGlow };
@@ -1279,8 +1319,7 @@ export class Renderer {
       }
       if (!holding) lean = 0;
       // Lin de la o poză la alta (fără sărituri când începi / te oprești din lucru).
-      view.pickaxe.rotation.x += (swingAngle - view.pickaxe.rotation.x) * Math.min(1, dt * 30);
-      view.pickaxe.rotation.z = holding ? -0.15 : 0;
+      view.pickAngle += (swingAngle - view.pickAngle) * Math.min(1, dt * 30);
       // Corpul însoțește lovitura: se lasă pe spate când ridică, se apleacă în față când izbește.
       const strikeLean = lean;
       // Drujba: ținută în față, vibrează cât merge, trage ușor înainte când taie.
@@ -1289,8 +1328,7 @@ export class Renderer {
       view.chainsaw.setEnabled(hero.alive && saw);
       if (saw) {
         const buzz = sawing ? 0.025 : 0.006;
-        view.chainsaw.position.set(0.12 + (Math.random() - 0.5) * buzz, 1.05 + (Math.random() - 0.5) * buzz, 0.5 + (sawing ? 0.12 : 0));
-        view.chainsaw.rotation.x = sawing ? 0.15 + Math.sin(this.time * 40) * 0.015 : 0.05;
+        view.chainsaw.position.set((Math.random() - 0.5) * buzz, (Math.random() - 0.5) * buzz, 0);
         if (Math.random() < (sawing ? 0.25 : 0.04)) {
           // Fumul de eșapament din motor.
           const f = view.root.rotation.y;
@@ -1300,12 +1338,59 @@ export class Renderer {
       // Felinarul în mână (aprins = flacăra și lumina).
       view.lantern.setEnabled(hero.alive && tool === "lantern");
       view.lanternGlow.setEnabled(hero.lantern);
-      view.lantern.rotation.z = Math.sin(this.time * 2.3) * 0.08;
       view.rod.setEnabled(hero.alive && (fishing || tool === "rod"));
-      if (!fishing && tool === "rod") view.rod.rotation.x = 0.5 + Math.sin(this.time * 1.5) * 0.03;
+      const bite = fishing && hero.biteTimer > 0;
+      const rodAngle = fishing ? 0.95 + (bite ? Math.sin(this.time * 40) * 0.08 : Math.sin(this.time * 1.7) * 0.03) : 0.5 + Math.sin(this.time * 1.5) * 0.03;
+
+      // Brațele țin unealta: fiecare braț se rotește din umăr (pitch = înainte / înapoi, roll = spre
+      // piept), iar unealta din mână se rotește invers, ca să stea în unghiul dorit în lume.
+      // Pitch -π/2 = brațul întins înainte; roll pozitiv = mâna spre +x.
+      if (view.armL && view.armR) {
+        const swingArm = Math.sin(w) * 0.45 * amp;
+        let pL = swingArm;
+        let pR = -swingArm;
+        let rL = -0.08;
+        let rR = 0.08;
+        if (tool === "pickaxe") {
+          // Ambele mâini pe coadă (dreapta sus, stânga mai jos); brațele urmează lovitura.
+          const a = view.pickAngle;
+          pR = -1.05 + a * 0.62;
+          pL = pR + 0.12;
+          rR = -0.36;
+          rL = 0.42;
+        } else if (saw) {
+          // Drujba cu ambele mâini, în fața bazinului; trage ușor înainte când taie.
+          pR = -0.8 - (sawing ? 0.25 : 0);
+          pL = pR - 0.15;
+          rR = -0.3;
+          rL = 0.38;
+        } else if (tool === "lantern") {
+          // Felinarul în mâna stângă, ținut puțin în față; atârnă drept și se leagănă la mers.
+          pL = -0.55 + Math.sin(w) * 0.08 * amp;
+          rL = -0.05;
+        } else if (fishing || tool === "rod") {
+          // Undița în dreapta; stânga o sprijină mai sus.
+          pR = -0.75 + (bite ? Math.sin(this.time * 40) * 0.05 : 0);
+          pL = -1.15;
+          rR = -0.22;
+          rL = 0.5;
+        }
+        if (view.kneel > 0.01) {
+          pL *= 1 - view.kneel;
+          pR *= 1 - view.kneel;
+        }
+        const ease = Math.min(1, dt * 14);
+        view.armL.rotation.x += (pL - view.armL.rotation.x) * ease;
+        view.armR.rotation.x += (pR - view.armR.rotation.x) * ease;
+        view.armL.rotation.z += (rL - view.armL.rotation.z) * ease;
+        view.armR.rotation.z += (rR - view.armR.rotation.z) * ease;
+        // Unealta urmează brațul așa cum e acum (nu ținta lui), ca să nu „alunece” în mână.
+        if (tool === "pickaxe") view.pickaxe.rotation.set(view.pickAngle - view.armR.rotation.x, 0, -view.armR.rotation.z - 0.15);
+        if (tool === "lantern") view.lantern.rotation.set(-view.armL.rotation.x + Math.sin(w * 2) * 0.12 * amp, 0, -view.armL.rotation.z + Math.sin(this.time * 2.3) * 0.08);
+        if (fishing || tool === "rod") view.rod.rotation.set(rodAngle - view.armR.rotation.x, 0, -view.armR.rotation.z);
+        if (saw) view.chainsaw.rotation.set((sawing ? 0.15 + Math.sin(this.time * 40) * 0.015 : 0.05) - view.armR.rotation.x, 0, -view.armR.rotation.z);
+      }
       if (fishing) {
-        const bite = hero.biteTimer > 0;
-        view.rod.rotation.x = 0.95 + (bite ? Math.sin(this.time * 40) * 0.08 : Math.sin(this.time * 1.7) * 0.03);
         // Firul: de la vârful undiței până la plută, în copcă.
         // Pluta plutește pe apă (apa e la -0,25 m, sub mal).
         const bp = bobberPos(hero);
