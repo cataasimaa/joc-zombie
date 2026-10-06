@@ -141,13 +141,18 @@ export function buildEmbers(scene: Scene, mats: Materials): Mesh {
 
 // ---------- Obiecte pe jos ----------
 
-export function buildDrop(scene: Scene, mats: Materials, kind: "ammo" | "rawMeat" | "cookedMeat"): Mesh[] {
+export function buildDrop(scene: Scene, mats: Materials, kind: "ammo" | "rawMeat" | "cookedMeat" | "fish"): Mesh[] {
   const k = new ModelKit(scene, mats, 3400 + kind.length);
   if (kind === "ammo") {
     // Lădiță de lemn legată cu fier, cu cartușe de alamă deasupra.
     k.box(0.6, 0.32, 0.4, { p: [0, 0.16, 0] }, { color: PAL.oldWood, wear: 0.3, frost: 0.4 });
     for (const x of [-0.22, 0.22]) k.box(0.05, 0.34, 0.42, { p: [x, 0.16, 0] }, { color: PAL.iron, mat: "metal" });
     for (let i = 0; i < 4; i++) k.cyl(0.2, 0.06, 0.06, 6, { p: [-0.12 + i * 0.08, 0.38, 0], r: [0, 0, 0] }, { color: hex("#d9a441"), mat: "metal" });
+  } else if (kind === "fish") {
+    // Păstrăv argintiu cu spinarea verzuie și coadă în V.
+    k.sphere(0.5, 8, { p: [0, 0.14, 0], s: [1.4, 0.45, 0.32] }, { color: hex("#a9b8bf"), wear: 0.15, ...SMOOTH });
+    k.sphere(0.42, 8, { p: [0, 0.2, 0], s: [1.3, 0.25, 0.2] }, { color: hex("#4f6b5a"), wear: 0.15, ...SMOOTH });
+    k.cyl(0.22, 0, 0.26, 3, { p: [-0.42, 0.14, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.3] }, { color: hex("#7d8f96"), wear: 0.1 });
   } else if (kind === "rawMeat") {
     k.sphere(0.45, 8, { p: [0, 0.18, 0], s: [1.2, 0.6, 0.9] }, { color: hex("#a8323a"), wear: 0.2, ...SMOOTH });
     k.cyl(0.4, 0.07, 0.07, 6, { p: [0.3, 0.18, 0], r: [0, 0, Math.PI / 2] }, { color: PAL.bone });

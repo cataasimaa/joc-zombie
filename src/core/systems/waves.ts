@@ -4,7 +4,8 @@
 import { CONFIG, type Difficulty, type GameMode, type Weather, type ZombieType } from "../config";
 import { nextRandom } from "../math";
 import type { GameEvent, GameState } from "../types";
-import { gunStats, respawnHero } from "./heroes";
+import { spawnDayOres } from "./gather";
+import { gunStats } from "./heroes";
 import { spawnZombie } from "./zombies";
 
 /**
@@ -84,8 +85,8 @@ function startDay(state: GameState, events: GameEvent[]): void {
   state.phase = "day";
   state.phaseDuration = state.phaseTimer = CONFIG.waves.day;
   changeWeather(state, events);
-  // Supraviețuire: cei căzuți reapar în zori (dacă a rezistat cineva peste noapte).
-  if (state.mode === "survival") for (const h of state.heroes) if (!h.alive) respawnHero(state, h, events);
+  // Ziua apar zăcăminte noi de argint și aur.
+  spawnDayOres(state, events);
 }
 
 /** Vremea se schimbă la fiecare zi și noapte (alegere ponderată, cu RNG-ul jocului). */

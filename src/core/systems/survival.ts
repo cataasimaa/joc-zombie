@@ -3,7 +3,7 @@
 // Foamea și frigul contează doar în modul „Supraviețuire”; focul și obiectele merg în ambele.
 
 import { type AnimalKind, CONFIG, type ItemKind } from "../config";
-import { OBSTACLES } from "../map";
+import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, angleOf, clamp, dist, nextRandom } from "../math";
 import type { Animal, Campfire, Drop, EntityId, GameEvent, GameState, Hero, PlayerId } from "../types";
 import { distToBarricade } from "./barricades";
@@ -15,7 +15,7 @@ const S = CONFIG.survival;
 
 export type BuildingKind = "campfire" | "farmChicken" | "farmPig";
 
-export const buildingRadius = (kind: BuildingKind): number => (kind === "campfire" ? 0.8 : 1.5);
+export const buildingRadius = (kind: BuildingKind): number => (kind === "campfire" ? 0.8 : 1.0);
 export const buildingCost = (kind: BuildingKind): number => (kind === "campfire" ? S.campfireCost : S.farmCost);
 
 /** Un loc liber pentru un foc sau o fermă? null = da, altfel motivul. */
@@ -32,11 +32,12 @@ export function canBuildBuilding(state: GameState, playerId: PlayerId, kind: Bui
   const edge = CONFIG.map.halfSize - r;
   if (Math.abs(pos.x) > edge || Math.abs(pos.z) > edge) return "În afara hărții";
   if (dist(pos, state.shelter.pos) < state.shelter.radius + r + 0.3) return "Prea aproape de mină";
-  for (const o of OBSTACLES) if (dist(pos, o.pos) < o.radius + r) return "Loc ocupat";
+  for (const o of OBSTACLES) if (obstacleActive(state, o) && dist(pos, o.pos) < o.radius + r) return "Loc ocupat";
   for (const t of state.towers) if (dist(pos, t.pos) < CONFIG.tower.radius + r) return "Loc ocupat";
   for (const b of state.barricades) if (distToBarricade(pos, b) < r) return "Loc ocupat";
   for (const f of state.campfires) if (dist(pos, f.pos) < buildingRadius("campfire") + r) return "Loc ocupat";
   for (const f of state.farms) if (dist(pos, f.pos) < buildingRadius("farmPig") + r) return "Loc ocupat";
+  for (const o of state.ores) if (dist(pos, o.pos) < 0.8 + r) return "Loc ocupat";
   return null;
 }
 
@@ -58,7 +59,7 @@ export function buildBuilding(state: GameState, playerId: PlayerId, kind: Buildi
 export function buildingAt(state: GameState, pos: Vec2): Campfire | (typeof state.farms)[number] | null {
   return (
     state.campfires.find((f) => dist(f.pos, pos) <= 1.3) ??
-    state.farms.find((f) => dist(f.pos, pos) <= 1.9) ??
+    state.farms.find((f) => dist(f.pos, pos) <= 1.4) ??
     null
   );
 }
@@ -123,6 +124,13 @@ export function useItem(state: GameState, playerId: PlayerId, item: ItemKind, ev
   const player = state.players[playerId];
   const hero = player && heroById(state, player.heroId);
   if (!player || !hero || !hero.alive || player.inventory[item] <= 0) return false;
+  if (item === "fish") {
+    // Peștele se poate și mânca (crud, dar nu te doare burta); mai bine îl vinzi la tarabă.
+    player.inventory.fish--;
+    hero.hunger = Math.min(100, hero.hunger + S.fishFood);
+    events.push({ type: "ate", playerId, cooked: true });
+    return true;
+  }
   if (item === "cookedMeat") {
     player.inventory.cookedMeat--;
     hero.hunger = Math.min(100, hero.hunger + S.cookedMeatFood);
@@ -228,8 +236,7 @@ function spawnAnimal(state: GameState, kind: AnimalKind, pos: Vec2, farmId: Enti
 }
 
 export function updateAnimals(state: GameState, dt: number, events: GameEvent[]): void {
-  if (state.mode !== "survival") return;
-  // Animalele sălbatice intră pe hartă ziua, pe la margini.
+  // Animalele sălbatice (în ambele moduri) ies ziua din pădure, departe de eroi.
   state.wildTimer -= dt;
   if (state.wildTimer <= 0 && state.phase === "day") {
     state.wildTimer = S.animalSpawnEvery;
@@ -237,11 +244,16 @@ export function updateAnimals(state: GameState, dt: number, events: GameEvent[])
     const bears = state.animals.filter((a) => a.kind === "bear").length;
     const kind: AnimalKind | null = deer < S.maxDeer ? (bears < S.maxBears && nextRandom(state) < 0.25 ? "bear" : "deer") : bears < S.maxBears ? "bear" : null;
     if (kind) {
-      const e = CONFIG.map.halfSize - 4;
-      const t = (nextRandom(state) * 2 - 1) * e;
-      const side = Math.floor(nextRandom(state) * 4);
-      const pos = side === 0 ? { x: t, z: e } : side === 1 ? { x: t, z: -e } : side === 2 ? { x: e, z: t } : { x: -e, z: t };
-      spawnAnimal(state, kind, pos, null);
+      for (let tries = 0; tries < 12; tries++) {
+        const a = nextRandom(state) * Math.PI * 2;
+        const r = 16 + nextRandom(state) * 18;
+        const pos = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+        const far = state.heroes.every((h) => !h.alive || dist(h.pos, pos) > 12);
+        const free = OBSTACLES.every((o) => !obstacleActive(state, o) || dist(o.pos, pos) > o.radius + 1.2);
+        if (!far || !free) continue;
+        spawnAnimal(state, kind, pos, null);
+        break;
+      }
     }
   }
   // Fermele: un pui sau un purceluș din când în când (limitat).
@@ -250,7 +262,7 @@ export function updateAnimals(state: GameState, dt: number, events: GameEvent[])
     if (farm.timer > 0) continue;
     farm.timer = farm.kind === "chicken" ? S.chickenEvery : S.pigEvery;
     if (state.animals.filter((a) => a.farmId === farm.id).length < S.maxPerFarm) {
-      spawnAnimal(state, farm.kind, { x: farm.pos.x + (nextRandom(state) - 0.5) * 2, z: farm.pos.z + (nextRandom(state) - 0.5) * 2 }, farm.id);
+      spawnAnimal(state, farm.kind, { x: farm.pos.x + (nextRandom(state) - 0.5) * 1.2, z: farm.pos.z + (nextRandom(state) - 0.5) * 1.2 }, farm.id);
     }
   }
 
@@ -285,7 +297,7 @@ export function updateAnimals(state: GameState, dt: number, events: GameEvent[])
       // Se plimbă: găinile și porcii lângă fermă, restul prin pădure.
       a.timer = 3 + nextRandom(state) * 5;
       const center = farm ? farm.pos : a.pos;
-      const r = farm ? 2.5 : 9;
+      const r = farm ? 1.1 : 9;
       a.goal = { x: center.x + (nextRandom(state) * 2 - 1) * r, z: center.z + (nextRandom(state) * 2 - 1) * r };
     }
     const dx = a.goal.x - a.pos.x;
@@ -313,6 +325,9 @@ export function damageAnimal(state: GameState, a: Animal, amount: number, events
   if (a.hp > 0) return;
   state.animals.splice(state.animals.indexOf(a), 1);
   spawnDrop(state, a.pos, "rawMeat", CONFIG.animals[a.kind].meat);
+  // Vânatul sălbatic lasă și aur (blana / coarnele se vând): monede pe jos.
+  const coins = CONFIG.animals[a.kind].coins;
+  if (coins > 0) state.coins.push({ id: state.nextId++, pos: { x: a.pos.x + 0.4, z: a.pos.z }, value: coins, age: 0 });
   events.push({ type: "animalDied", id: a.id, kind: a.kind, pos: { ...a.pos } });
 }
 

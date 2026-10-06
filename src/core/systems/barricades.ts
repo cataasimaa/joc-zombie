@@ -2,7 +2,7 @@
 // Se pot muta, roti, întări (palisadă) sau transforma în ușă.
 
 import { CONFIG } from "../config";
-import { OBSTACLES } from "../map";
+import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, dist, distToSegment, segmentDistance, segmentEnds } from "../math";
 import type { Barricade, EntityId, GameEvent, GameState, PlayerId } from "../types";
 import { refundFactor } from "./towers";
@@ -64,7 +64,7 @@ export function barricadeSpotProblem(
   const edge = CONFIG.map.halfSize - 0.5;
   for (const p of [a, b]) if (Math.abs(p.x) > edge || Math.abs(p.z) > edge) return "În afara hărții";
   if (distToSegment(state.shelter.pos, a, b) < state.shelter.radius + half + 0.3) return "Prea aproape de adăpost";
-  for (const o of OBSTACLES) if (distToSegment(o.pos, a, b) < o.radius + half) return "Loc ocupat";
+  for (const o of OBSTACLES) if (obstacleActive(state, o) && distToSegment(o.pos, a, b) < o.radius + half) return "Loc ocupat";
   for (const t of state.towers) if (distToSegment(t.pos, a, b) < CONFIG.tower.radius + half) return "Loc ocupat";
   // Zidurile se pot atinge la capete (sau în unghi), dar nu se pot suprapune.
   const shrink = (p: Vec2, q: Vec2): [Vec2, Vec2] => {

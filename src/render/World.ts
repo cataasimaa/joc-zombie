@@ -4,6 +4,7 @@ import {
   type Camera,
   Color3,
   Color4,
+  ColorCurves,
   DefaultRenderingPipeline,
   DirectionalLight,
   DynamicTexture,
@@ -15,6 +16,7 @@ import {
   ParticleSystem,
   PointLight,
   type Scene,
+  SSAO2RenderingPipeline,
   ShadowGenerator,
   StandardMaterial,
   Texture,
@@ -22,8 +24,9 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG, GAME_MAP, type Weather } from "../core";
-import type { Materials } from "./ModelKit";
+import type { Materials, Quality } from "./ModelKit";
 import { PLASMA, buildHouse, buildPine, buildRock, buildShelter, buildTree } from "./models/environment";
+import { buildPond, buildTrader } from "./models/gathering";
 import { buildDeadTree, buildDinoSkeleton } from "./models/survival";
 import { rng } from "./noise";
 import { PAL, hex, mix } from "./palette";
@@ -74,6 +77,43 @@ export class World {
   private smokeTex: DynamicTexture | null = null;
   private smoke: ParticleSystem[] = [];
   private time = 0;
+  private camera: Camera;
+  private ssao: SSAO2RenderingPipeline | null = null;
+  private orthoHalf = 26;
+
+  /**
+   * Calitatea grafică. Înaltă: umbre clare (hartă 2048, filtrare moale), ocluzie ambientală (SSAO:
+   * colțurile și locurile unde lucrurile ating zăpada se întunecă, ca în realitate), claritate.
+   * Medie: fără SSAO, umbre 1024. Mică: umbre 512, fără bloom și granulație (telefoane slabe).
+   */
+  setQuality(q: Quality): void {
+    const map = this.shadows.getShadowMap();
+    map?.resize(q === "high" ? 2048 : q === "medium" ? 1024 : 512);
+    this.shadows.filteringQuality = q === "high" ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
+    this.orthoHalf = q === "high" ? 22 : q === "medium" ? 26 : 30;
+    this.sun.orthoLeft = this.sun.orthoBottom = -this.orthoHalf;
+    this.sun.orthoRight = this.sun.orthoTop = this.orthoHalf;
+    this.pipeline.bloomEnabled = q !== "low";
+    this.pipeline.grainEnabled = q !== "low";
+    this.pipeline.sharpenEnabled = q !== "low";
+    const manager = this.scene.postProcessRenderPipelineManager;
+    if (q === "high" && SSAO2RenderingPipeline.IsSupported) {
+      if (!this.ssao) {
+        const ssao = new SSAO2RenderingPipeline("ssao", this.scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [this.camera]);
+        ssao.radius = 1.6;
+        ssao.totalStrength = 1.1;
+        ssao.base = 0.12;
+        ssao.samples = 12;
+        ssao.maxZ = 90;
+        ssao.expensiveBlur = false;
+        this.ssao = ssao;
+      } else {
+        manager.attachCamerasToRenderPipeline("ssao", this.camera);
+      }
+    } else if (this.ssao) {
+      manager.detachCamerasFromRenderPipeline("ssao", this.camera);
+    }
+  }
 
   constructor(private scene: Scene, mats: Materials, camera: Camera) {
     // Post-procesare „de film”: bloom (focul strălucește), antialiasing, granulație fină,
@@ -98,7 +138,20 @@ export class World {
     ip.vignetteEnabled = true;
     ip.vignetteWeight = 1.8;
     ip.vignetteColor = new Color4(0.04, 0.06, 0.12, 0);
+    // Gradare de culoare ca la film: umbre reci (albastre), lumini puțin calde.
+    ip.colorCurvesEnabled = true;
+    const curves = new ColorCurves();
+    curves.shadowsHue = 215;
+    curves.shadowsDensity = 22;
+    curves.shadowsSaturation = 15;
+    curves.highlightsHue = 35;
+    curves.highlightsDensity = 8;
+    curves.globalSaturation = -8;
+    ip.colorCurves = curves;
+    pp.sharpenEnabled = true;
+    pp.sharpen.edgeAmount = 0.25;
     this.pipeline = pp;
+    this.camera = camera;
 
     scene.fogMode = 2; // Scene.FOGMODE_EXP2
     scene.fogDensity = 0.014;
@@ -125,6 +178,7 @@ export class World {
     this.placeTrees(mats);
     this.placeRocks(mats);
     this.placeHouses(mats);
+    this.placeGathering(mats);
 
     const shelter = buildShelter(scene, mats);
     this.shelter = new TransformNode("shelter", scene);
@@ -222,11 +276,15 @@ export class World {
       node.rotation.y = r() * Math.PI * 2;
       node.scaling.setAll(scale);
       variants[i % 3].instance(`tree${i}`, node);
+      return node;
     };
     // Unul din cinci copaci din sat e mort: fără ace, cu crengi rupte și țurțuri.
     const dead = [1, 2].map((seed) => new Prefab(buildDeadTree(this.scene, mats, seed)));
     for (const v of dead) for (const s of v.sources) this.shadows.addShadowCaster(s);
-    GAME_MAP.trees.forEach((t, i) => place(i % 5 === 2 ? [...dead, dead[0]] : pines, t.pos.x, t.pos.z, t.scale, i));
+    this.mapTrees = GAME_MAP.trees.map((t, i) => {
+      const node = place(i % 5 === 2 ? [...dead, dead[0]] : pines, t.pos.x, t.pos.z, t.scale, i);
+      return { node, hits: 0, shake: 0, fall: -1, fallDir: 0, y0: node.position.y, rotY: node.rotation.y };
+    });
     // Schelete de dinozaur, pe jumătate îngropate.
     GAME_MAP.fossils.forEach((f, i) => {
       const node = new TransformNode(`fossil${i}`, this.scene);
@@ -253,6 +311,73 @@ export class World {
       }
     }
   }
+
+  /** Brazii din sat (pot fi tăiați): se scutură la fiecare lovitură, cad și dispar. */
+  private mapTrees: { node: TransformNode; hits: number; shake: number; fall: number; fallDir: number; y0: number; rotY: number }[] = [];
+
+  /** Sincronizează brazii cu loviturile din joc (`state.treeHits`). */
+  syncTrees(treeHits: number[], felledAt: number, dt: number): void {
+    this.mapTrees.forEach((t, i) => {
+      const hits = treeHits[i] ?? 0;
+      if (hits < t.hits) {
+        // Joc nou: bradul crește la loc.
+        t.node.setEnabled(true);
+        t.node.rotation.set(0, t.rotY, 0);
+        t.node.position.y = t.y0;
+        t.fall = -1;
+      } else if (hits > t.hits) {
+        t.shake = 1;
+        if (hits >= felledAt && t.fall < 0) {
+          t.fall = 0;
+          t.fallDir = Math.random() * Math.PI * 2;
+        }
+      }
+      t.hits = hits;
+      if (t.fall >= 0) {
+        // Cade: întâi încet, apoi tot mai repede; după ce lovește zăpada se scufundă și dispare.
+        t.fall += dt;
+        const k = Math.min(1, (t.fall / 1.3) ** 2);
+        t.node.rotation.set(Math.cos(t.fallDir) * k * 1.5, t.rotY, Math.sin(t.fallDir) * k * 1.5);
+        if (t.fall > 2.2) t.node.position.y = t.y0 - (t.fall - 2.2) * 2;
+        if (t.fall > 3.2) t.node.setEnabled(false);
+        return;
+      }
+      if (t.shake > 0) {
+        t.shake = Math.max(0, t.shake - dt * 4);
+        const w = Math.sin(t.shake * 30) * t.shake * 0.05;
+        t.node.rotation.set(w, t.rotY, w * 0.6);
+      }
+    });
+  }
+
+  /** Lacul înghețat cu copca și taraba negustorului (unde vinzi peștele). */
+  private placeGathering(mats: Materials): void {
+    const p = GAME_MAP.pond;
+    const pond = new TransformNode("pond", this.scene);
+    pond.position.set(p.pos.x, terrainHeight(p.pos.x, p.pos.z), p.pos.z);
+    for (const m of buildPond(this.scene, mats, p.radius)) {
+      m.parent = pond;
+      m.receiveShadows = true;
+    }
+    const t = GAME_MAP.trader;
+    const node = new TransformNode("trader", this.scene);
+    node.position.set(t.pos.x, terrainHeight(t.pos.x, t.pos.z), t.pos.z);
+    // Tejgheaua privește spre mină.
+    node.rotation.y = Math.atan2(-t.pos.x, -t.pos.z);
+    const trader = buildTrader(this.scene, mats);
+    for (const m of trader.meshes) {
+      m.parent = node;
+      this.shadows.addShadowCaster(m);
+      m.receiveShadows = true;
+    }
+    node.computeWorldMatrix(true);
+    this.traderLamp = new PointLight("traderLamp", Vector3.TransformCoordinates(new Vector3(...trader.lampPos), node.getWorldMatrix()), this.scene);
+    this.traderLamp.diffuse = PAL.window;
+    this.traderLamp.specular = Color3.Black();
+    this.traderLamp.range = 6;
+    this.traderLamp.intensity = 0;
+  }
+  private traderLamp: PointLight | null = null;
 
   private placeRocks(mats: Materials): void {
     const variants = [5, 6, 7].map((seed) => new Prefab(buildRock(this.scene, mats, seed)));
@@ -496,6 +621,7 @@ export class World {
     });
     if (this.mineDead >= 0) this.updateMineFall(dt);
     this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
+    if (this.traderLamp) this.traderLamp.intensity = 0.2 + night * 1.2 * (0.93 + Math.sin(t * 7 + 1) * 0.07);
     // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.
     this.pipeline.bloomWeight = 0.25 + night * 0.45;
     this.pipeline.bloomThreshold = 0.85 - night * 0.25;

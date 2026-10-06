@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import { OBSTACLES } from "../map";
+import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, clamp, closestPointOnSegment } from "../math";
 import type { GameState } from "../types";
 import { barricadeEnds } from "./barricades";
@@ -16,7 +16,7 @@ export interface CollisionOptions {
 /** Împinge un cerc (pos, radius) afară din obstacole, adăpost și ziduri, și îl ține pe hartă. */
 export function resolveCollisions(state: GameState, pos: Vec2, radius: number, opts: CollisionOptions = {}): void {
   pushOutOf(pos, radius, state.shelter.pos, state.shelter.radius);
-  if (!opts.ignoreObstacles) for (const o of OBSTACLES) pushOutOf(pos, radius, o.pos, o.radius);
+  if (!opts.ignoreObstacles) for (const o of OBSTACLES) if (obstacleActive(state, o)) pushOutOf(pos, radius, o.pos, o.radius);
   if (opts.towers) for (const t of state.towers) pushOutOf(pos, radius, t.pos, CONFIG.tower.radius);
   const mode = opts.barricades ?? "none";
   if (mode !== "none") {

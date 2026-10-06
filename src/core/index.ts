@@ -8,7 +8,7 @@ export { DEFAULT_SKIN_COLOR, HERO_DEFS, SKINS } from "./heroDefs";
 export type { HeroDef, SkinAccessory, SkinDef } from "./heroDefs";
 export { CHEST_POOL, REPEATABLE, SHOP_POOLS, WEAPONS, rewardKey } from "./items";
 export type { ShopReward, WeaponDef, WeaponId } from "./items";
-export { GAME_MAP } from "./map";
+export { GAME_MAP, treeFelled } from "./map";
 export type { GameMap, House, Rock, Tree } from "./map";
 export { segmentEnds } from "./math";
 export type { Vec2 } from "./math";
@@ -26,6 +26,8 @@ export {
   snapBarricade,
 } from "./systems/barricades";
 export { gunStats, heroById, heroRange, traceBullet, xpToNextLevel } from "./systems/heroes";
+export { actionHint, nearFishingHole, nearTrader } from "./systems/gather";
+export type { ActionHint } from "./systems/gather";
 export type { GunStats } from "./systems/heroes";
 export { canPlaceMine } from "./systems/mines";
 export { canShopRoll, shopRemaining } from "./systems/shop";

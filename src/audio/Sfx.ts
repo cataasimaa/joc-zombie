@@ -126,32 +126,6 @@ export class Sfx {
     this.music?.setMenu(on);
   }
 
-  /**
-   * Anunțul cu voce (ca în Warcraft / DotA): „Double Kill”, „Rampage”... Vocea e cea a
-   * browserului (sintetizată), coborâtă și rară, plus o lovitură grea cu ecou dedesubt.
-   */
-  announce(text: string, tier: 1 | 2 | 3): void {
-    if (this.muted || !this.ctx || this.ctx.state !== "running") return;
-    this.tone(55, 30, 0.9, "sine", 0.35 + tier * 0.12);
-    this.noiseHit({ type: "lowpass", freq: 600, dur: 1.4, vol: 0.12 + tier * 0.05, reverbOnly: true });
-    if (tier === 3) this.chord([147, 220, 294], 1.2, 0.05);
-    try {
-      const synth = window.speechSynthesis;
-      if (!synth) return;
-      synth.cancel();
-      const u = new SpeechSynthesisUtterance(text.replace("!", ""));
-      u.lang = "en-US";
-      u.pitch = 0.35;
-      u.rate = 0.82;
-      u.volume = Math.min(1, 0.6 + tier * 0.15);
-      const voice = synth.getVoices().find((v) => v.lang.startsWith("en") && /male|daniel|fred|alex|david|google uk english male/i.test(v.name));
-      if (voice) u.voice = voice;
-      synth.speak(u);
-    } catch {
-      // fără voce pe acest dispozitiv: rămâne textul de pe ecran
-    }
-  }
-
   setMusicOn(on: boolean): void {
     this.musicOn = on;
     if (this.ctx && this.musicBus) this.musicBus.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.1);
@@ -332,7 +306,7 @@ export class Sfx {
         else if (this.throttle("die", 0.08)) this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
         break;
       case "zombieAttack":
-        if (this.throttle("snarl", 0.12)) this.snarl(e.zombieType === "brute" || e.zombieType === "boss" ? 0.6 : e.zombieType === "flyer" ? 2 : e.zombieType === "runner" ? 1.3 : 1);
+        if (this.throttle("snarl", 0.12)) this.zombieAttack(e.zombieType, !!e.wall);
         // Brută în zid: o tobă mare rară și vântul se „strânge” o clipă.
         if (e.wall && (e.zombieType === "brute" || e.zombieType === "boss")) {
           this.music?.accent();
@@ -396,6 +370,65 @@ export class Sfx {
         break;
       case "heroDied":
         if (mine(e.id)) this.tone(400, 100, 0.7, "sawtooth", 0.15, 0, 900);
+        break;
+      case "toolHit":
+        if (e.target === "tree") {
+          // Topor în lemn înghețat: „toc” sec + scârțâitul trunchiului.
+          this.thunk(220 + Math.random() * 40, 0.45);
+          this.noiseHit({ type: "bandpass", freq: 1800, dur: 0.05, vol: 0.3 });
+          if (Math.random() < 0.3) this.tone(140, 110, 0.4, "triangle", 0.05, 0.05, 600);
+        } else if (e.target === "ore") {
+          // Târnăcop în piatră: clinchet metalic + pietriș.
+          this.tone(2400 + Math.random() * 300, 2200, 0.18, "triangle", 0.12);
+          this.noiseHit({ type: "highpass", freq: 3000, dur: 0.06, vol: 0.35 });
+          this.noiseHit({ type: "bandpass", freq: 800, dur: 0.15, vol: 0.15, delay: 0.04 });
+        } else {
+          this.noiseHit({ type: "lowpass", freq: 400, dur: 0.1, vol: 0.4 });
+        }
+        break;
+      case "treeFelled":
+        // Trosnet lung, apoi bradul se prăbușește în zăpadă.
+        this.tone(160, 70, 1.0, "sawtooth", 0.07, 0, 500);
+        for (let i = 0; i < 5; i++) this.noiseHit({ type: "highpass", freq: 2000, dur: 0.03, vol: 0.25, delay: 0.1 + i * 0.13 + Math.random() * 0.05 });
+        this.noiseHit({ type: "lowpass", freq: 900, sweepTo: 150, dur: 1.0, vol: 0.6, delay: 1.1 });
+        this.tone(60, 30, 0.6, "sine", 0.6, 1.1);
+        break;
+      case "oreMined":
+        this.noiseHit({ type: "lowpass", freq: 1500, sweepTo: 200, dur: 0.4, vol: 0.5, dist: true });
+        if (e.playerId === f.localPlayer) {
+          this.bell(e.kind === "gold" ? 1568 : 1319, 0.2, 0.15);
+          this.coinRain(e.kind === "gold" ? 14 : 8, 0.2, 0.6);
+        }
+        break;
+      case "fishCast":
+        // Aruncarea: șuierat de fir, apoi „plop” în copcă.
+        this.noiseHit({ type: "bandpass", freq: 2500, sweepTo: 900, dur: 0.35, vol: 0.12 });
+        this.tone(500, 180, 0.12, "sine", 0.25, 0.4);
+        break;
+      case "fishBite":
+        // A mușcat: bulbuc + un clopoțel (să-l auzi și dacă nu te uiți).
+        this.tone(320, 900, 0.1, "sine", 0.3);
+        this.bell(1760, 0.22, 0.05);
+        break;
+      case "fishCaught":
+        this.noiseHit({ type: "lowpass", freq: 1600, dur: 0.35, vol: 0.4 });
+        this.tone(400, 160, 0.15, "sine", 0.3, 0.05);
+        if (e.playerId === f.localPlayer) [784, 988, 1319].forEach((fr, i) => this.bell(fr, 0.16, 0.2 + i * 0.09));
+        break;
+      case "fishLost":
+        this.tone(300, 140, 0.18, "sine", 0.15);
+        break;
+      case "sold":
+        if (e.playerId === f.localPlayer) {
+          // Ka-ching!
+          this.noiseHit({ type: "highpass", freq: 3000, dur: 0.05, vol: 0.4 });
+          this.bell(2637, 0.3, 0.05);
+          this.bell(3520, 0.25, 0.13);
+          this.coinRain(Math.min(30, 6 + e.fish * 3), 0.2, 0.8);
+        }
+        break;
+      case "heroRespawned":
+        this.chord([392, 523, 659], 0.8, 0.06);
         break;
       case "gameOver":
         this.endStinger(false);
@@ -624,35 +657,120 @@ export class Sfx {
     this.tone(freq * 1.5, freq, 0.03, "square", vol * 0.3, delay);
   }
 
-  /** Mârâit de zombie la atac. `pitch` > 1 = mai ascuțit (zburător), < 1 = mai gros (brută). */
-  private snarl(pitch: number): void {
+  /**
+   * Vocea unui zombi, sintetizată ca o voce adevărată:
+   *  - sursa = „corzile vocale”: un ton aspru care tremură neregulat (jitter), plus respirație răgușită;
+   *  - trece prin 3 formanți (rezonanțele gurii) care alunecă de la „aaah” la „uh” — de aici sună a gât;
+   *  - volumul pâlpâie neregulat (horcăit), cu puțină saturație.
+   * `pitch` < 1 = gros (brută, boss), > 1 = ascuțit (fugar, zburător). `len` = durata.
+   */
+  private zombieVoice(o: { pitch: number; len: number; vol: number; open?: number; delay?: number; distant?: boolean; gurgle?: boolean }): void {
     const ctx = this.ctx!;
-    const t = ctx.currentTime;
-    const dur = 0.35 + Math.random() * 0.15;
+    const t = ctx.currentTime + (o.delay ?? 0);
+    const dur = o.len * (0.85 + Math.random() * 0.3);
+    const p = o.pitch * (0.92 + Math.random() * 0.16);
+    const open = o.open ?? 1;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(o.vol, t + 0.05);
+    out.gain.setValueAtTime(o.vol * 0.9, t + dur * 0.55);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    // Horcăit: volumul tremură neregulat (două oscilații care nu se potrivesc).
+    const trem = ctx.createGain();
+    trem.gain.value = 0.7;
+    for (const [f, d] of [[17 + Math.random() * 6, 0.25], [o.gurgle ? 31 : 6.3, o.gurgle ? 0.35 : 0.12]] as const) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = d;
+      lfo.connect(g).connect(trem.gain);
+      lfo.start(t);
+      lfo.stop(t + dur + 0.05);
+    }
+    // Sursa: ton aspru cu jitter de frecvență + respirație.
+    const src = ctx.createGain();
+    const f0 = 95 * p;
     const osc = ctx.createOscillator();
     osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(170 * pitch, t);
-    osc.frequency.exponentialRampToValueAtTime(95 * pitch, t + dur);
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 28;
-    const vg = ctx.createGain();
-    vg.gain.value = 18 * pitch;
-    vib.connect(vg).connect(osc.frequency);
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 700 * pitch;
-    bp.Q.value = 1.5;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.42, t + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(bp).connect(g);
-    g.connect(this.distortion);
+    osc.frequency.setValueAtTime(f0 * 1.25, t);
+    osc.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + dur);
+    for (const [f, d] of [[7.3, 0.06], [13.7, 0.04], [3.1, 0.05]] as const) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = f * (0.8 + Math.random() * 0.4);
+      const g = ctx.createGain();
+      g.gain.value = f0 * d;
+      lfo.connect(g).connect(osc.frequency);
+      lfo.start(t);
+      lfo.stop(t + dur + 0.05);
+    }
+    osc.connect(src);
+    const breath = ctx.createBufferSource();
+    breath.buffer = this.noise;
+    const bg = ctx.createGain();
+    bg.gain.value = 0.55;
+    breath.connect(bg).connect(src);
+    // Formanții: vocala „aaah” care se închide în „uh”.
+    const formants: [number, number, number, number][] = [
+      [700, 480, 8, 1],
+      [1150, 850, 10, 0.55],
+      [2600, 2300, 12, 0.22],
+    ];
+    for (const [fa, fb, q, g] of formants) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(fa * p * open, t);
+      bp.frequency.exponentialRampToValueAtTime(fb * p, t + dur);
+      const fg = ctx.createGain();
+      fg.gain.value = g * 2.2;
+      src.connect(bp).connect(fg).connect(trem);
+    }
+    // Puțină saturație (gât răgușit), nu distorsiunea grea a armelor.
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) curve[i] = Math.tanh(((i / 255) * 2 - 1) * 2.2);
+    shaper.curve = curve;
+    trem.connect(shaper).connect(out);
+    if (o.distant) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 900;
+      out.connect(lp).connect(this.reverbSend);
+    } else {
+      out.connect(this.sfxBus);
+      out.connect(this.reverbSend);
+    }
     osc.start(t);
-    vib.start(t);
-    osc.stop(t + dur);
-    vib.stop(t + dur);
-    this.noiseHit({ type: "bandpass", freq: 1200 * pitch, dur: 0.15, vol: 0.16 });
+    osc.stop(t + dur + 0.05);
+    breath.start(t, Math.random() * 1.5);
+    breath.stop(t + dur + 0.05);
+  }
+
+  /**
+   * Atacul unui zombi: un răget scurt (vocea), șuieratul ghearelor / bâtei prin aer
+   * și lovitura surdă în carne sau lemn. Mai gros și mai lung la brută / boss.
+   */
+  private zombieAttack(type: string, wall: boolean): void {
+    const big = type === "brute" || type === "boss";
+    const pitch = type === "boss" ? 0.55 : type === "brute" ? 0.65 : type === "runner" ? 1.35 : type === "flyer" ? 1.8 : type === "spitter" ? 1.1 : 1;
+    this.zombieVoice({ pitch, len: big ? 0.9 : type === "runner" ? 0.35 : 0.55, vol: big ? 0.5 : 0.38, open: 1.15, gurgle: type === "spitter" });
+    // Șuieratul: zgomot care urcă rapid în frecvență (brațul / bâta trece prin aer).
+    this.noiseHit({ type: "bandpass", freq: big ? 300 : 600, sweepTo: big ? 1200 : 2600, dur: big ? 0.22 : 0.13, vol: big ? 0.18 : 0.12, delay: 0.08 });
+    // Impactul: lemn (zid) sau carne (erou / turn).
+    const hit = big ? 0.3 : 0.2;
+    if (wall) {
+      this.thunk(big ? 85 : 140, big ? 0.55 : 0.35, hit);
+      this.noiseHit({ type: "bandpass", freq: 1100, dur: 0.07, vol: 0.25, delay: hit });
+    } else {
+      this.noiseHit({ type: "lowpass", freq: 260, dur: 0.12, vol: big ? 0.6 : 0.4, delay: hit });
+      this.noiseHit({ type: "bandpass", freq: 1500, dur: 0.05, vol: 0.18, delay: hit + 0.01 });
+      this.tone(big ? 70 : 110, 45, 0.14, "sine", big ? 0.5 : 0.3, hit);
+    }
+  }
+
+  /** Mârâitul unui animal (ursul): aceeași voce, foarte grosă. */
+  private snarl(pitch: number): void {
+    this.zombieVoice({ pitch: pitch * 0.9, len: 0.7, vol: 0.45, open: 1.2 });
   }
 
   /** Arma de foc a eroului: pocnitură + corp distorsionat + bubuitură joasă + ecou. */
@@ -769,35 +887,9 @@ export class Sfx {
     this.noiseHit({ type: "lowpass", freq: 900, dur: 0.07, vol: vol * 0.6, delay });
   }
 
-  /** Geamăt de zombie: ton aspru care alunecă în jos, cu vibrato. */
+  /** Geamăt de zombi: vocea, mai lentă, cu gura închisă („uuuh”). Departe = înfundat, cu ecou. */
   private groan(vol: number, speed: number, distant: boolean): void {
-    const ctx = this.ctx!;
-    const t = ctx.currentTime;
-    const dur = 0.6 / speed + Math.random() * 0.3;
-    const osc = ctx.createOscillator();
-    osc.type = "sawtooth";
-    const base = 90 + Math.random() * 50;
-    osc.frequency.setValueAtTime(base * 1.3, t);
-    osc.frequency.exponentialRampToValueAtTime(base * 0.7, t + dur);
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 6 + Math.random() * 4;
-    const vibGain = ctx.createGain();
-    vibGain.gain.value = 6;
-    vib.connect(vibGain).connect(osc.frequency);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = distant ? 500 : 900;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(lp).connect(g);
-    g.connect(distant ? this.reverbSend : this.sfxBus);
-    if (!distant) g.connect(this.reverbSend);
-    osc.start(t);
-    vib.start(t);
-    osc.stop(t + dur);
-    vib.stop(t + dur);
+    this.zombieVoice({ pitch: 0.8 + Math.random() * 0.35, len: 0.9 / speed + Math.random() * 0.4, vol, open: 0.75, distant });
   }
 
   // ---------- Ingrediente ----------

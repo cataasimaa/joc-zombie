@@ -12,7 +12,7 @@ export type Difficulty = "easy" | "medium" | "hard" | "nightmare";
 export type GameMode = "defend" | "survival";
 export type Weather = "clear" | "snow" | "blizzard" | "frost" | "rain" | "wind";
 export type AnimalKind = "deer" | "bear" | "chicken" | "pig";
-export type ItemKind = "rawMeat" | "cookedMeat";
+export type ItemKind = "rawMeat" | "cookedMeat" | "fish";
 
 export interface WeatherStats {
   name: string;
@@ -44,6 +44,8 @@ export interface AnimalStats {
   aggroRadius: number;
   /** Căprioara fuge când te apropii. */
   fleeRadius: number;
+  /** Aur (monede) lăsat la moarte. */
+  coins: number;
 }
 
 export interface TowerStats {
@@ -133,14 +135,14 @@ export const CONFIG = {
   /** Muniția nu e nelimitată: rezervă + cutii lăsate de zombi. */
   ammo: {
     /** Câte încărcătoare ai în rezervă la start. */
-    startMagazines: 4,
+    startMagazines: 8,
     /** Șansa ca un zombie să lase o cutie de gloanțe și cât din încărcător conține. */
     dropChance: 0.3,
     dropMagazine: 0.6,
     /** În fiecare zori primești o „aprovizionare” (atâtea încărcătoare). */
-    dawnMagazines: 2,
+    dawnMagazines: 3,
     /** Cel mult atâtea încărcătoare în rezervă. */
-    maxMagazines: 8,
+    maxMagazines: 12,
   },
 
   /** Obiecte pe jos (gloanțe, carne): dispar după atâtea secunde. */
@@ -156,6 +158,7 @@ export const CONFIG = {
     fireWarmRadius: 4.5,
     fireWarmPerSec: 9,
     rawMeatFood: 12,
+    fishFood: 18,
     rawMeatHurt: 6,
     cookedMeatFood: 45,
     cookTime: 15,
@@ -171,17 +174,17 @@ export const CONFIG = {
     chickenEvery: 35,
     pigEvery: 60,
     maxPerFarm: 3,
-    /** Animalele sălbatice care trec prin hartă. */
+    /** Animalele sălbatice care trec prin hartă (în ambele moduri, ziua). */
     maxDeer: 4,
-    maxBears: 1,
-    animalSpawnEvery: 12,
+    maxBears: 2,
+    animalSpawnEvery: 9,
   },
 
   animals: {
-    deer: { hp: 40, speed: 6.5, radius: 0.6, meat: 2, damage: 0, aggroRadius: 0, fleeRadius: 9 },
-    bear: { hp: 220, speed: 4.2, radius: 1.0, meat: 5, damage: 24, aggroRadius: 9, fleeRadius: 0 },
-    chicken: { hp: 8, speed: 1.6, radius: 0.3, meat: 1, damage: 0, aggroRadius: 0, fleeRadius: 0 },
-    pig: { hp: 30, speed: 1.4, radius: 0.55, meat: 3, damage: 0, aggroRadius: 0, fleeRadius: 0 },
+    deer: { hp: 40, speed: 6.5, radius: 0.6, meat: 2, damage: 0, aggroRadius: 0, fleeRadius: 9, coins: 12 },
+    bear: { hp: 220, speed: 4.2, radius: 1.0, meat: 5, damage: 24, aggroRadius: 9, fleeRadius: 0, coins: 40 },
+    chicken: { hp: 8, speed: 1.6, radius: 0.3, meat: 1, damage: 0, aggroRadius: 0, fleeRadius: 0, coins: 0 },
+    pig: { hp: 30, speed: 1.4, radius: 0.55, meat: 3, damage: 0, aggroRadius: 0, fleeRadius: 0, coins: 0 },
   } satisfies Record<AnimalKind, AnimalStats>,
 
   /** Vremea: se schimbă la fiecare zi / noapte și face ceva mai greu. */
@@ -220,7 +223,11 @@ export const CONFIG = {
   } satisfies Record<HeroClass, HeroStats>,
 
   heroCommon: {
-    respawnTime: 10,
+    /** Cine cade NU reînvie singur: un coleg trebuie să stea lângă el atâtea secunde. */
+    reviveTime: 4,
+    reviveRadius: 1.8,
+    /** Cu cât din viață te ridici. */
+    reviveHp: 0.4,
     /** Raza în care un erou repară automat baricadele. */
     repairRadius: 2.8,
     /** HP pe secundă reparat (Tank-ul repară de 3 ori mai repede). */
@@ -280,7 +287,7 @@ export const CONFIG = {
     /** Eroii din apropiere repară și turnurile (HP/s) — doar ziua. */
     repairRate: 10,
     kinds: {
-      crossbow: { name: "Arbaletă", cost: 30, damage: 8, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 120 },
+      crossbow: { name: "Arbaletă", cost: 50, damage: 8, range: 11, fireInterval: 0.65, shellSpeed: 34, splash: 0, abilityCooldown: 6, hp: 120 },
       rocket: { name: "Rachete", cost: 50, damage: 20, range: 12, fireInterval: 1.8, shellSpeed: 16, splash: 1.2, abilityCooldown: 8, hp: 132 },
       cannon: { name: "Tun", cost: 55, damage: 13, range: 10, fireInterval: 2.5, shellSpeed: 13, splash: 2.0, abilityCooldown: 9, hp: 168 },
       tesla: { name: "Tesla", cost: 60, damage: 14, range: 9, fireInterval: 0.95, shellSpeed: 0, splash: 0, abilityCooldown: 7, hp: 114 },
@@ -315,10 +322,11 @@ export const CONFIG = {
     /** Un zid e un segment: lungime × grosime. Se leagă cap la cap cu altele. */
     length: 2.6,
     thickness: 0.5,
-    /** Nivelul 1 = gard de lemn, nivelul 2 = palisadă întărită. */
+    /** Nivelul 1 = gard de lemn (5), 2 = palisadă forjată (10), 3 = zid de metal (20). */
     levels: [
-      { maxHp: 250, cost: 10 },
-      { maxHp: 750, cost: 20 },
+      { maxHp: 250, cost: 5 },
+      { maxHp: 600, cost: 10 },
+      { maxHp: 1200, cost: 20 },
     ],
     /** Transformarea într-o ușă (eroii trec, zombii nu). */
     doorCost: 10,
@@ -341,7 +349,7 @@ export const CONFIG = {
 
   economy: {
     /** Lemn = resursa pentru construcții. Monedele sunt pentru magazin. */
-    startWood: 70,
+    startWood: 80,
     /** Lemn primit în fiecare zori: base + perWave * noapte. */
     woodIncomeBase: 30,
     woodIncomePerWave: 10,
@@ -350,6 +358,34 @@ export const CONFIG = {
     /** La fiecare N nopți: +1 slot de turn și +4 sloturi de zid. */
     slotEveryWaves: 3,
     barricadeSlotsPerStep: 4,
+  },
+
+  /** Unelte: târnăcopul (copaci, minereuri, animale), undița și vânzarea la tarabă. */
+  gather: {
+    /** Cât de departe ajungi cu târnăcopul și cât de des lovești cât ții apăsat. */
+    reach: 2.3,
+    hitInterval: 0.4,
+    /** Un brad cade după atâtea lovituri; fiecare lovitură dă atâta lemn. */
+    treeHits: 50,
+    woodPerHit: 1,
+    /** Damage-ul târnăcopului în animale (o găină moare dintr-o lovitură, un porc din două). */
+    animalDamage: 16,
+    /** Minereuri: apar ziua, aleator. Câte lovituri țin și câte monede (aur) dau. */
+    ore: {
+      silver: { hits: 8, coins: 18 },
+      gold: { hits: 12, coins: 45 },
+    },
+    orePerDay: 3,
+    oreMax: 6,
+    goldChance: 0.3,
+    /** Pescuit (doar ziua, la copcă): peștele mușcă după 4–10 s; ai atâtea secunde să tragi. */
+    fishReach: 2.6,
+    biteMin: 4,
+    biteMax: 10,
+    biteWindow: 1.6,
+    /** Peștele se vinde la tarabă (casa principală): monede pe bucată. */
+    fishPrice: 14,
+    sellReach: 2.8,
   },
 
   coins: {

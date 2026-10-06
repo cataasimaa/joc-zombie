@@ -37,5 +37,10 @@ export type Command =
   | { type: "demolishBuilding"; playerId: PlayerId; buildingId: EntityId }
   /** O încercare la magazin (gambling). */
   | { type: "shopRoll"; playerId: PlayerId }
+  /**
+   * Butonul de acțiune (ții apăsat): târnăcop în copaci / minereuri / animale, undița la copcă,
+   * vânzarea peștelui la tarabă. Acțiunea depinde de ce e lângă erou.
+   */
+  | { type: "action"; playerId: PlayerId; on: boolean }
   /** Sare peste restul zilei și începe noaptea. */
   | { type: "startNightNow"; playerId: PlayerId };

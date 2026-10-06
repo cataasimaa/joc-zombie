@@ -29,11 +29,13 @@ import {
   type TowerKind,
   type Vec2,
   type ZombieType,
+  GAME_MAP,
   effectiveTowerStats,
   segmentEnds,
 } from "../core";
 import { Fx } from "./Fx";
-import { Materials, ModelKit } from "./ModelKit";
+import { buildPickaxe, buildRod } from "./models/gathering";
+import { Materials, ModelKit, type Quality } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
 import {
   type ShellModel,
@@ -102,6 +104,12 @@ interface HeroView {
   stepSide: number;
   kneel: number;
   recoil: number;
+  /** Uneltele din mână: târnăcopul (cu lovitura) și undița (cu vârful, pentru fir). */
+  pickaxe: TransformNode;
+  rod: TransformNode;
+  rodTip: TransformNode;
+  swing: number;
+  toolShow: number;
   reload: number;
   reloadTotal: number;
   dispose(): void;
@@ -192,6 +200,8 @@ export class Renderer {
   private shellPrefabs = {} as Record<ShellModel, Prefab>;
   private iceShell!: Prefab;
   private flame!: Prefab;
+  private pickaxePrefab!: Prefab;
+  private rodPrefab!: Prefab;
   private walls = new Map<string, Prefab>();
   private mine!: Prefab;
   private coin!: Prefab;
@@ -318,7 +328,9 @@ export class Renderer {
     }
     this.iceShell = new Prefab([buildIceShell(s, this.mats)]);
     this.flame = new Prefab([buildFlame(s, this.mats)]);
-    for (const level of [1, 2]) {
+    this.pickaxePrefab = new Prefab(buildPickaxe(s, this.mats));
+    this.rodPrefab = new Prefab(buildRod(s, this.mats));
+    for (const level of [1, 2, 3]) {
       for (const door of [false, true]) {
         for (const st of ["intact", "cracked", "broken"] as WallState[]) {
           const prefab = new Prefab(buildWall(s, this.mats, level, door, st));
@@ -406,6 +418,7 @@ export class Renderer {
     }
     if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.6, hero.pos.z);
     this.world.setWeather(state.weather);
+    this.world.syncTrees(state.treeHits, CONFIG.gather.treeHits, dt);
     this.world.setFogCloseIn(state.difficulty === "nightmare" ? 0.75 : state.difficulty === "hard" ? 0.5 : 0);
     this.world.update(dt, this.night, focus, this.camera.position);
   }
@@ -420,6 +433,13 @@ export class Renderer {
     const n = this.steps;
     this.steps = 0;
     return n;
+  }
+
+  /** Calitatea grafică (din meniu): rezoluția randării + umbre, SSAO, efecte. */
+  setQuality(q: Quality): void {
+    const dpr = window.devicePixelRatio || 1;
+    this.engine.setHardwareScalingLevel(1 / Math.min(dpr, q === "high" ? 2 : q === "medium" ? 1.5 : 1));
+    this.world.setQuality(q);
   }
 
   /** Poziția pe ecran (în pixeli CSS) a unui punct de pe hartă. */
@@ -606,6 +626,47 @@ export class Renderer {
       case "mineExploded":
         this.fx.explosion(this.at(e.pos), e.radius);
         break;
+      case "toolHit": {
+        const v = this.heroViews.get(e.heroId);
+        if (v) {
+          v.swing = 1;
+          v.toolShow = 0.6;
+        }
+        const at = this.at(e.pos, e.target === "tree" ? 1.1 : 0.5);
+        if (e.target === "tree") {
+          // Așchii de lemn și zăpadă care cade din crengi.
+          this.fx.burst("wood", at, null, 5, 3.5, 0.07);
+          this.fx.burst("snow", this.at(e.pos, 3.5), new Vector3(0, -1, 0), 6, 1.5, 0.1);
+        } else if (e.target === "ore") {
+          this.fx.burst("spark", at, null, 6, 4, 0.05);
+          this.fx.burst("stone", at, null, 4, 3, 0.08);
+        }
+        break;
+      }
+      case "treeFelled":
+        this.fx.dust(this.at(e.pos, 0.3), 2.2, 1);
+        this.fx.burst("snow", this.at(e.pos, 2), null, 30, 5, 0.18);
+        this.fx.burst("plank", this.at(e.pos, 1), null, 5, 4, 0.12);
+        break;
+      case "oreSpawned":
+        this.fx.burst("snow", this.at(e.pos, 0.4), new Vector3(0, 1, 0), 10, 2.5, 0.12);
+        break;
+      case "oreMined":
+        this.fx.burst("stone", this.at(e.pos, 0.5), null, 14, 5, 0.12);
+        this.fx.burst("spark", this.at(e.pos, 0.6), new Vector3(0, 1, 0), 18, 5, 0.06);
+        this.fx.ring(this.at(e.pos, 0.15), 1.6, PAL.gold, 0.5);
+        break;
+      case "fishCast":
+      case "fishBite":
+      case "fishCaught":
+        // Stropi de apă din copcă (la prindere: și peștele care sare).
+        this.fx.burst("ice", this.at(e.pos, 0.2), new Vector3(0, 1, 0), e.type === "fishCast" ? 4 : 10, e.type === "fishCaught" ? 5 : 2.5, 0.07);
+        if (e.type === "fishCaught") this.fx.burst("snow", this.at(e.pos, 0.3), new Vector3(0, 1, 0), 12, 4, 0.08);
+        break;
+      case "sold":
+        this.fx.burst("spark", this.at(e.pos, 1.4), new Vector3(0, 1, 0), 24, 4, 0.06);
+        this.fx.ring(this.at(e.pos, 0.15), 2.2, PAL.gold, 0.6);
+        break;
       case "gameOver":
         if (state.mode === "defend" && state.shelter.hp <= 0) {
           // Mina cade: crapă (pietre + praf), plasma pâlpâie, capacul se trântește (vezi World).
@@ -687,8 +748,29 @@ export class Renderer {
       recoil: 0,
       reload: 0,
       reloadTotal: 1,
+      ...this.heroTools(root),
+      swing: 0,
+      toolShow: 0,
       dispose: () => root.dispose(),
     };
+  }
+
+  /** Târnăcopul și undița, atașate eroului (ascunse până le folosește). */
+  private heroTools(root: TransformNode): { pickaxe: TransformNode; rod: TransformNode; rodTip: TransformNode } {
+    const pickaxe = new TransformNode("pickaxe", this.scene);
+    pickaxe.parent = root;
+    pickaxe.position.set(0.42, 1.05, 0.15);
+    this.pickaxePrefab.instance("pickaxeMesh", pickaxe);
+    pickaxe.setEnabled(false);
+    const rod = new TransformNode("rod", this.scene);
+    rod.parent = root;
+    rod.position.set(0.3, 0.95, 0.25);
+    this.rodPrefab.instance("rodMesh", rod);
+    const rodTip = new TransformNode("rodTip", this.scene);
+    rodTip.parent = rod;
+    rodTip.position.set(0, 2.2, 0);
+    rod.setEnabled(false);
+    return { pickaxe, rod, rodTip };
   }
 
   /** Poziția gurii armei, în lume (pentru trasoare și flacără). */
@@ -744,6 +826,23 @@ export class Renderer {
         this.fx.footprint(fx, fz, view.root.rotation.y);
         this.fx.burst("snow", new Vector3(fx, y + 0.05, fz), null, 2, 1.2, 0.06);
         if (hero.id === this.localHeroId) this.steps++;
+      }
+
+      // Unelte: târnăcopul cât ții apăsat acțiunea (se ridică și lovește), undița cât pescuiești.
+      const fishing = hero.alive && hero.fishTimer >= 0;
+      view.toolShow = hero.alive && hero.action && !fishing ? 0.6 : Math.max(0, view.toolShow - dt);
+      view.swing = Math.max(0, view.swing - dt * 3.2);
+      view.pickaxe.setEnabled(view.toolShow > 0 || view.swing > 0);
+      view.pickaxe.rotation.x = 0.9 - 2.9 * view.swing * view.swing;
+      view.rod.setEnabled(fishing);
+      if (fishing) {
+        const bite = hero.biteTimer > 0;
+        view.rod.rotation.x = 0.95 + (bite ? Math.sin(this.time * 40) * 0.08 : Math.sin(this.time * 1.7) * 0.03);
+        // Firul: de la vârful undiței până la plută, în copcă.
+        const hole = GAME_MAP.pond.pos;
+        const bob = this.at(hole, 0.12 + (bite ? -0.12 + Math.sin(this.time * 30) * 0.05 : Math.sin(this.time * 3) * 0.03));
+        this.fx.tracer(view.rodTip.getAbsolutePosition(), bob, PAL.bone, 0.012, 0.04);
+        this.fx.muzzle(bob, bite ? PAL.fire : hex("#d8483a"), 0.12, 0.04);
       }
 
       // Recul la tragere, animație de reîncărcare, îngenunchere la moarte.
@@ -1260,7 +1359,9 @@ export class Renderer {
     syncMap(this.mineViews, state.mines, () => {
       const root = new TransformNode("mine", this.scene);
       const parts = this.mine.instance("mineMesh", root);
-      return { root, light: parts[2] ?? parts[1], dispose: () => root.dispose() };
+      // Beculețul minei = piesa strălucitoare (o găsim după material, nu după poziție).
+      const light = parts.find((p) => p.sourceMesh.name.includes("_glow")) ?? parts[parts.length - 1];
+      return { root, light, dispose: () => root.dispose() };
     }, (view, m) => {
       view.root.position.set(m.pos.x, terrainHeight(m.pos.x, m.pos.z), m.pos.z);
       // Lumina clipește când mina e armată.

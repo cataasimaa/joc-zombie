@@ -14,6 +14,7 @@ import {
 } from "./systems/barricades";
 import { updateChests, updateCoins } from "./systems/coins";
 import { addFuel, buildBuilding, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
+import { spawnDayOres, updateGather } from "./systems/gather";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
@@ -65,6 +66,7 @@ export class GameSimulation {
     s.time += dt;
     updateWaves(s, dt, this.events);
     updateHeroes(s, dt, this.events);
+    updateGather(s, dt, this.events);
     updateTowers(s, dt, this.events);
     updateShells(s, dt, this.events);
     updateFires(s, dt, this.events);
@@ -77,8 +79,8 @@ export class GameSimulation {
     updateDrops(s, dt, this.events);
     updateAnimals(s, dt, this.events);
 
-    // Pierzi: mina cade (Apără mina) sau toți eroii sunt căzuți (Supraviețuire).
-    const lost = s.mode === "survival" ? s.heroes.every((h) => !h.alive) : s.shelter.hp <= 0;
+    // Pierzi: toți eroii sunt căzuți (nu mai are cine să-i ridice) sau mina cade (Apără mina).
+    const lost = s.heroes.every((h) => !h.alive) || (s.mode === "defend" && s.shelter.hp <= 0);
     if (lost) {
       s.phase = "gameover";
       this.events.push({ type: "gameOver" });
@@ -159,6 +161,13 @@ export class GameSimulation {
       case "shopRoll":
         shopRoll(s, cmd.playerId, this.events);
         break;
+      case "action": {
+        const hero = heroById(s, player.heroId);
+        if (!hero || !hero.alive) return;
+        if (cmd.on && !hero.action) hero.actionPress = true;
+        hero.action = cmd.on;
+        break;
+      }
       case "startNightNow":
         startNight(s, this.events);
         break;
@@ -197,6 +206,8 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
     farms: [],
     animals: [],
     drops: [],
+    ores: [],
+    treeHits: [],
     wildTimer: 4,
     nextId: 1,
     rngState: seed | 0,
@@ -226,7 +237,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       skin: null,
       unlocked: [],
       kills: 0,
-      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0 },
+      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, fish: 0 },
     };
     state.heroes.push({
       id: heroId,
@@ -252,6 +263,12 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       aimDist: 0,
       hunger: 100,
       warmth: 100,
+      action: false,
+      actionPress: false,
+      actionTimer: 0,
+      fishTimer: -1,
+      biteTimer: 0,
+      reviveProgress: 0,
     });
     const hero = state.heroes[state.heroes.length - 1];
     hero.ammo = gunStats(state, hero).magazine;
@@ -260,5 +277,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
 
   // Focul de tabără de lângă mină (în Apără mina e doar decor și nu se stinge).
   state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 1.6, z: -3.7 }, fuel: CONFIG.survival.campfireFuel, cooking: [] });
+  // Primele zăcăminte de argint / aur, ca să ai ce mina din prima zi.
+  spawnDayOres(state, []);
   return state;
 }

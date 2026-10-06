@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { CONFIG, type HeroClass } from "./config";
 import { GameSimulation } from "./Game";
 import { REPEATABLE, rewardKey } from "./items";
+import { GAME_MAP, treeFelled } from "./map";
 import { segmentEnds } from "./math";
+import type { GameEvent } from "./types";
 import { barricadeSpotProblem, nextInChain, snapBarricade } from "./systems/barricades";
 import { gunStats } from "./systems/heroes";
 import { rollRarity } from "./systems/shop";
@@ -626,5 +628,119 @@ describe("magazin", () => {
       .map(rewardKey);
     expect(new Set(won).size).toBe(won.length);
     expect(p.weapon).not.toBe("rusty");
+  });
+});
+
+describe("unelte: târnăcop, pescuit, vânzare", () => {
+  const near = (sim: GameSimulation, x: number, z: number) => {
+    sim.state.heroes[0].pos = { x, z };
+  };
+
+  it("lovești un brad cu târnăcopul: +1 lemn pe lovitură, cade după 50", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const t = GAME_MAP.trees[0];
+    near(sim, t.pos.x + t.radius + 0.8, t.pos.z);
+    const wood = s.players.p1.wood;
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    run(sim, 2.05);
+    expect(s.treeHits[0]).toBe(6);
+    expect(s.players.p1.wood).toBe(wood + 6);
+    s.treeHits[0] = 49;
+    const events: GameEvent[] = [];
+    for (let i = 0; i < 30; i++) {
+      sim.step(DT);
+      events.push(...sim.drainEvents());
+    }
+    expect(s.treeHits[0]).toBe(50);
+    expect(events.some((e) => e.type === "treeFelled")).toBe(true);
+    // Tăiat: nu mai e obstacol (poți construi sau trece pe acolo).
+    expect(treeFelled(s, 0)).toBe(true);
+  });
+
+  it("zăcământul de aur se sparge și dă monede", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.ores = [{ id: 999, kind: "gold", pos: { x: 12, z: 12 }, hits: 2 }];
+    near(sim, 13.2, 12);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    run(sim, 1);
+    expect(s.ores.length).toBe(0);
+    expect(s.players.p1.coins).toBe(CONFIG.gather.ore.gold.coins);
+  });
+
+  it("pescuiești ziua la copcă, prinzi peștele dacă tragi la timp, îl vinzi la tarabă", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const p = GAME_MAP.pond.pos;
+    near(sim, p.x + 1.5, p.z);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    sim.enqueue({ type: "action", playerId: "p1", on: false });
+    expect(s.heroes[0].fishTimer).toBeGreaterThan(0);
+    // Nu tragi: așteptăm să muște.
+    s.heroes[0].fishTimer = 0.05;
+    run(sim, 0.2);
+    expect(s.heroes[0].biteTimer).toBeGreaterThan(0);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    sim.enqueue({ type: "action", playerId: "p1", on: false });
+    expect(s.players.p1.inventory.fish).toBe(1);
+    const tr = GAME_MAP.trader.pos;
+    near(sim, tr.x + 2, tr.z + 1);
+    sim.step(DT);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    expect(s.players.p1.inventory.fish).toBe(0);
+    expect(s.players.p1.coins).toBe(CONFIG.gather.fishPrice);
+  });
+
+  it("găinile se pot tăia pentru carne; căprioara lasă și aur", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.animals.push({ id: 900, kind: "chicken", pos: { x: 10, z: 10 }, facing: 0, hp: 8, maxHp: 8, goal: { x: 10, z: 10 }, timer: 99, attackTimer: 0, farmId: null });
+    near(sim, 11, 10);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    expect(s.animals.some((a) => a.id === 900)).toBe(false);
+    // Carnea cade lângă tine și o iei pe loc.
+    expect(s.players.p1.inventory.rawMeat + s.drops.filter((d) => d.kind === "rawMeat").length).toBeGreaterThan(0);
+    sim.enqueue({ type: "action", playerId: "p1", on: false });
+    run(sim, 0.5); // târnăcopul are nevoie de 0,4 s între lovituri
+    s.animals.push({ id: 901, kind: "deer", pos: { x: -10, z: 10 }, facing: 0, hp: 1, maxHp: 40, goal: { x: -10, z: 10 }, timer: 99, attackTimer: 0, farmId: null });
+    near(sim, -11, 10);
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    run(sim, 0.5);
+    expect(s.players.p1.coins).toBe(CONFIG.animals.deer.coins);
+  });
+});
+
+describe("moarte și reînviere", () => {
+  it("singur: dacă mori, jocul se termină (nu mai reînvii)", () => {
+    const sim = newGame();
+    sim.state.heroes[0].hp = 1;
+    sim.state.heroes[0].alive = false;
+    sim.step(DT);
+    expect(sim.state.phase).toBe("gameover");
+  });
+
+  it("în echipă: un coleg care stă lângă tine te ridică", () => {
+    const sim = new GameSimulation({ players: [{ id: "p1", heroClass: "assault" }, { id: "p2", heroClass: "tank" }], seed: 3 });
+    const [a, b] = sim.state.heroes;
+    a.alive = false;
+    a.hp = 0;
+    b.pos = { x: a.pos.x + 1, z: a.pos.z };
+    run(sim, CONFIG.heroCommon.reviveTime + 0.2);
+    expect(sim.state.phase).not.toBe("gameover");
+    expect(a.alive).toBe(true);
+    expect(a.hp).toBe(Math.round(a.maxHp * CONFIG.heroCommon.reviveHp));
+  });
+});
+
+describe("prețuri", () => {
+  it("turnul costă 50 lemn, zidurile 5 / 10 / 20 (lemn → forjat → metal)", () => {
+    expect(CONFIG.tower.kinds.crossbow.cost).toBe(50);
+    expect(CONFIG.barricade.levels.map((l) => l.cost)).toEqual([5, 10, 20]);
   });
 });

@@ -17,11 +17,54 @@ import {
   StandardMaterial,
   Texture,
   VertexBuffer,
+  VertexData,
 } from "@babylonjs/core";
+import barkNormal from "../assets/normals/bark.webp";
+import clothNormal from "../assets/normals/cloth.webp";
+import metalNormal from "../assets/normals/metal.webp";
+import skinNormal from "../assets/normals/skin.webp";
+import snowNormal from "../assets/normals/snow.webp";
+import stoneNormal from "../assets/normals/stone.webp";
+import woodNormal from "../assets/normals/wood.webp";
 import { fbm, noise2, rng } from "./noise";
 import { PAL, mix } from "./palette";
 
 export type MatKind = "matte" | "metal" | "glow";
+
+/**
+ * Tipul de suprafață al unei piese mate: decide harta de relief (normal map CC0) și cât de aspră e.
+ * Se ghicește automat după culoare (lemnul din paletă = lemn, piatra = piatră etc.).
+ */
+export type Surface = "plain" | "wood" | "stone" | "snow" | "cloth" | "skin" | "pine";
+
+const SURFACE_OF: [Color3, Surface][] = [
+  [PAL.oldWood, "wood"], [PAL.darkWood, "wood"], [PAL.burntWood, "wood"],
+  [PAL.stone, "stone"], [PAL.stoneDark, "stone"], [PAL.moss, "stone"], [PAL.dirt, "stone"],
+  [PAL.snow, "snow"], [PAL.snowShadow, "snow"], [PAL.path, "snow"],
+  [PAL.cloth, "cloth"], [PAL.rags, "cloth"], [PAL.fur, "cloth"], [PAL.furDark, "cloth"], [PAL.leather, "cloth"],
+  [PAL.skin, "skin"], [PAL.skinZombie, "skin"], [PAL.skinZombieDark, "skin"], [PAL.bone, "skin"],
+  [PAL.pine, "pine"], [PAL.pineLight, "pine"],
+];
+
+/** Suprafața cea mai potrivită pentru o culoare (sau „plain” dacă nu seamănă cu nimic din paletă). */
+export function surfaceOf(c: Color3): Surface {
+  let best: Surface = "plain";
+  let bestD = 0.13;
+  for (const [ref, surf] of SURFACE_OF) {
+    const d = Math.hypot(c.r - ref.r, c.g - ref.g, c.b - ref.b);
+    if (d < bestD) {
+      bestD = d;
+      best = surf;
+    }
+  }
+  return best;
+}
+
+/** Formele organice (piatră, zăpadă, piele, haine, ace) arată mai real cu umbrire netedă. */
+const SMOOTH_SURFACES: Surface[] = ["stone", "snow", "skin", "cloth", "pine"];
+
+/** Nivelul de detaliu grafic (setat din meniu). */
+export type Quality = "high" | "medium" | "low";
 
 export interface PartOptions {
   color: Color3;
@@ -34,8 +77,10 @@ export interface PartOptions {
   frostAbove?: number;
   /** Cât de „orizontală” trebuie să fie fața ca să țină zăpadă (componenta y a normalei). */
   frostNormal?: number;
-  /** Umbrire netedă (pentru forme organice: corpuri, crengi, zăpadă). Implicit: fețe plate. */
+  /** Umbrire netedă (pentru forme organice: corpuri, crengi, zăpadă). Implicit: după suprafață. */
   smooth?: boolean;
+  /** Tipul suprafeței (implicit: ghicit după culoare). */
+  surface?: Surface;
 }
 
 export interface Transform {
@@ -107,6 +152,8 @@ export class Materials {
   readonly matte: PBRMaterial;
   readonly metal: PBRMaterial;
   readonly terrain: PBRMaterial;
+  /** Câte un material mat pe tip de suprafață, cu harta lui de relief. */
+  readonly surfaces: Record<Surface, PBRMaterial>;
   private glows = new Map<string, StandardMaterial>();
 
   constructor(private scene: Scene) {
@@ -115,21 +162,50 @@ export class Materials {
     this.matte.albedoTexture = detail.albedo;
     this.matte.bumpTexture = detail.bump;
     this.matte.bumpTexture.level = 0.7;
-    this.metal = this.pbr("metal", 0.5, 0.45);
+    this.metal = this.pbr("metal", 0.55, 0.42);
     this.metal.albedoTexture = detail.albedo;
-    this.metal.bumpTexture = detail.bump;
-    this.metal.bumpTexture.level = 0.4;
+    this.metal.bumpTexture = this.normalMap(metalNormal, 2);
+    this.metal.bumpTexture.level = 0.45;
 
-    // Zăpada: granulație fină, mici sclipiri și relief moale, repetate des pe teren.
+    // Suprafețe cu relief „fotografic” (normal maps CC0): lemn cu fibră, piatră crăpată, pânză țesută...
+    const surface = (name: Surface, url: string | null, tiling: number, level: number, roughness: number): PBRMaterial => {
+      const m = this.pbr(`surf_${name}`, 0, roughness);
+      m.albedoTexture = detail.albedo;
+      if (url) {
+        m.bumpTexture = this.normalMap(url, tiling);
+        m.bumpTexture.level = level;
+      } else {
+        m.bumpTexture = detail.bump;
+        m.bumpTexture.level = 0.7;
+      }
+      return m;
+    };
+    this.surfaces = {
+      plain: this.matte,
+      wood: surface("wood", woodNormal, 2, 1.0, 0.88),
+      stone: surface("stone", stoneNormal, 1.5, 1.1, 0.92),
+      snow: surface("snow", snowNormal, 2, 0.8, 0.75),
+      cloth: surface("cloth", clothNormal, 3, 0.9, 0.95),
+      skin: surface("skin", skinNormal, 2, 0.6, 0.7),
+      pine: surface("pine", barkNormal, 2, 1.0, 0.9),
+    };
+
+    // Zăpada de pe teren: granulație fină cu sclipiri + relief moale de zăpadă reală, repetat des.
     const snow = detailTextures(scene, "snow", 256, { fibers: 0, contrast: 0.25, sparkle: 0.004 });
-    for (const t of [snow.albedo, snow.bump]) {
-      (t as Texture).uScale = 36;
-      (t as Texture).vScale = 36;
-    }
-    this.terrain = this.pbr("terrain", 0, 0.82);
+    snow.albedo.uScale = snow.albedo.vScale = 36;
+    this.terrain = this.pbr("terrain", 0, 0.8);
     this.terrain.albedoTexture = snow.albedo;
-    this.terrain.bumpTexture = snow.bump;
-    this.terrain.bumpTexture.level = 0.8;
+    this.terrain.bumpTexture = this.normalMap(snowNormal, 28);
+    this.terrain.bumpTexture.level = 1.0;
+  }
+
+  /** O hartă de relief repetabilă (cu filtrare anizotropă: rămâne clară și văzută din unghi). */
+  private normalMap(url: string, tiling: number): Texture {
+    const t = new Texture(url, this.scene);
+    t.wrapU = t.wrapV = Texture.WRAP_ADDRESSMODE;
+    t.uScale = t.vScale = tiling;
+    t.anisotropicFilteringLevel = 8;
+    return t;
   }
 
   private pbr(name: string, metallic: number, roughness: number): PBRMaterial {
@@ -171,7 +247,7 @@ export class Materials {
 }
 
 export class ModelKit {
-  private parts: { mesh: Mesh; mat: MatKind; glowColor?: Color3 }[] = [];
+  private parts: { mesh: Mesh; mat: MatKind; surface: Surface; glowColor?: Color3 }[] = [];
   private random: () => number;
 
   constructor(private scene: Scene, private mats: Materials, seed = 1) {
@@ -205,7 +281,36 @@ export class ModelKit {
   }
 
   ico(r: number, t: Transform, o: PartOptions): Mesh {
-    return this.add(MeshBuilder.CreateIcoSphere("p", { radius: r, subdivisions: 1, flat: true }, this.scene), t, o);
+    const smooth = this.isSmooth(o);
+    const mesh = MeshBuilder.CreateIcoSphere("p", { radius: r, subdivisions: smooth ? 3 : 1, flat: !smooth, updatable: true }, this.scene);
+    if (smooth) {
+      // Bolovan / troian real: suprafața e deformată cu zgomot (umflături, muchii teșite), nu o sferă.
+      const pos = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const ox = this.rand(0, 100);
+      const oz = this.rand(0, 100);
+      const rough = this.surfaceOf(o) === "snow" ? 0.12 : 0.32;
+      for (let i = 0; i < pos.length; i += 3) {
+        const [x, y, z] = [pos[i], pos[i + 1], pos[i + 2]];
+        const n = fbm(x / r * 1.3 + ox, (z + y * 0.7) / r * 1.3 + oz, 3) - 0.5;
+        const k = 1 + n * rough * 2;
+        pos[i] = x * k;
+        pos[i + 1] = y * (k * 0.95);
+        pos[i + 2] = z * k;
+      }
+      mesh.updateVerticesData(VertexBuffer.PositionKind, pos);
+      const normals: number[] = [];
+      VertexData.ComputeNormals(pos, mesh.getIndices()!, normals);
+      mesh.updateVerticesData(VertexBuffer.NormalKind, normals);
+    }
+    return this.add(mesh, t, o);
+  }
+
+  private surfaceOf(o: PartOptions): Surface {
+    return (o.mat ?? "matte") === "matte" ? (o.surface ?? surfaceOf(o.color)) : "plain";
+  }
+
+  private isSmooth(o: PartOptions): boolean {
+    return o.smooth ?? SMOOTH_SURFACES.includes(this.surfaceOf(o));
   }
 
   /** Adaugă o piesă: aplică transformarea, o face low-poly și o colorează. */
@@ -214,10 +319,11 @@ export class ModelKit {
     if (t.r) mesh.rotation.set(...t.r);
     if (t.p) mesh.position.set(...t.p);
     mesh.bakeCurrentTransformIntoVertices();
-    if (!o.smooth) mesh.convertToFlatShadedMesh();
-    this.paint(mesh, o);
+    const smooth = this.isSmooth(o);
+    if (!smooth) mesh.convertToFlatShadedMesh();
+    this.paint(mesh, { ...o, smooth });
     const mat = o.mat ?? "matte";
-    this.parts.push({ mesh, mat, glowColor: mat === "glow" ? o.color : undefined });
+    this.parts.push({ mesh, mat, surface: this.surfaceOf(o), glowColor: mat === "glow" ? o.color : undefined });
     return mesh;
   }
 
@@ -270,18 +376,19 @@ export class ModelKit {
   build(name: string): Mesh[] {
     const groups = new Map<string, Mesh[]>();
     for (const p of this.parts) {
-      const key = p.mat === "glow" ? `glow${p.glowColor!.toHexString()}` : p.mat;
+      const key = p.mat === "glow" ? `glow${p.glowColor!.toHexString()}` : p.mat === "matte" ? `matte_${p.surface}` : p.mat;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(p.mesh);
     }
     const out: Mesh[] = [];
-    for (const key of ["matte", "metal", ...[...groups.keys()].filter((k) => k.startsWith("glow"))]) {
+    const surfaces = [...groups.keys()].filter((k) => k.startsWith("matte_"));
+    for (const key of [...surfaces, "metal", ...[...groups.keys()].filter((k) => k.startsWith("glow"))]) {
       const list = groups.get(key);
       if (!list) continue;
       const merged = list.length === 1 ? list[0] : Mesh.MergeMeshes(list, true, true)!;
       merged.name = `${name}_${key}`;
       merged.isPickable = false;
-      if (key === "matte") merged.material = this.mats.matte;
+      if (key.startsWith("matte_")) merged.material = this.mats.surfaces[key.slice(6) as Surface];
       else if (key === "metal") merged.material = this.mats.metal;
       else {
         const part = this.parts.find((p) => p.mat === "glow" && `glow${p.glowColor!.toHexString()}` === key)!;

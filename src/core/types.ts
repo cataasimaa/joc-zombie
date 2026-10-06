@@ -74,6 +74,17 @@ export interface Hero {
   /** Supraviețuire: 100 = sătul / cald, 0 = pierzi viață. */
   hunger: number;
   warmth: number;
+  /** Ține apăsat butonul de acțiune (târnăcop / undiță / vânzare). */
+  action: boolean;
+  /** Tocmai a apăsat (o singură dată): aruncă / trage undița, vinde. */
+  actionPress: boolean;
+  actionTimer: number;
+  /** Pescuit: secunde până mușcă peștele (-1 = nu pescuiește). */
+  fishTimer: number;
+  /** Peștele a mușcat: secunde rămase ca să tragi. */
+  biteTimer: number;
+  /** Căzut: cât l-a ridicat un coleg (0..CONFIG.heroCommon.reviveTime). */
+  reviveProgress: number;
 }
 
 export interface Zombie {
@@ -172,6 +183,15 @@ export interface Campfire {
   fuel: number;
   /** Bucăți de carne pe foc: secunde rămase până se gătesc. */
   cooking: number[];
+}
+
+/** Zăcământ de argint sau aur: apare ziua, îl spargi cu târnăcopul și primești aur. */
+export interface Ore {
+  id: EntityId;
+  kind: "silver" | "gold";
+  pos: Vec2;
+  /** Lovituri rămase până se sparge. */
+  hits: number;
 }
 
 /** Fermă: coteț de găini sau țarc de porci. */
@@ -279,6 +299,9 @@ export interface GameState {
   farms: Farm[];
   animals: Animal[];
   drops: Drop[];
+  ores: Ore[];
+  /** Lovituri primite de fiecare brad (după index în GAME_MAP.trees); la 50 cade. */
+  treeHits: number[];
   /** Secunde până intră pe hartă un nou animal sălbatic. */
   wildTimer: number;
   nextId: EntityId;
@@ -341,5 +364,14 @@ export type GameEvent =
   | { type: "starving"; heroId: EntityId }
   | { type: "freezing"; heroId: EntityId }
   | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward; wood: number; ammo: number; meat: number }
+  | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal"; pos: Vec2 }
+  | { type: "treeFelled"; index: number; pos: Vec2 }
+  | { type: "oreSpawned"; id: EntityId; kind: Ore["kind"]; pos: Vec2 }
+  | { type: "oreMined"; id: EntityId; kind: Ore["kind"]; pos: Vec2; playerId: PlayerId; coins: number }
+  | { type: "fishCast"; heroId: EntityId; pos: Vec2 }
+  | { type: "fishBite"; heroId: EntityId; pos: Vec2 }
+  | { type: "fishCaught"; heroId: EntityId; playerId: PlayerId; pos: Vec2 }
+  | { type: "fishLost"; heroId: EntityId; pos: Vec2 }
+  | { type: "sold"; playerId: PlayerId; fish: number; coins: number; pos: Vec2 }
   | { type: "gameOver" }
   | { type: "victory" };

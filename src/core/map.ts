@@ -37,12 +37,27 @@ export interface Fossil {
   seed: number;
 }
 
+/** Lacul înghețat cu copca de pescuit (gheața se poate călca; pescuiești doar la copcă). */
+export interface Pond {
+  pos: Vec2;
+  radius: number;
+}
+
+/** Taraba negustorului (casa principală de lângă mină): aici vinzi peștele pentru aur. */
+export interface Trader {
+  pos: Vec2;
+  radius: number;
+  rotation: number;
+}
+
 export interface GameMap {
   halfSize: number;
   houses: House[];
   trees: Tree[];
   rocks: Rock[];
   fossils: Fossil[];
+  pond: Pond;
+  trader: Trader;
 }
 
 /** Lățimea minimă a culoarelor dintre obstacole (diametrul boss-ului + o marjă). */
@@ -75,6 +90,17 @@ function generateMap(): GameMap {
     });
   }
 
+  // Lacul înghețat: între case, cam la 29 m de mină, unde nu e nicio casă.
+  let pond: Pond = { pos: { x: -29, z: 8 }, radius: 4.2 };
+  for (let a = 0; a < Math.PI * 2; a += 0.15) {
+    const pos = { x: Math.cos(a + 2.6) * 29, z: Math.sin(a + 2.6) * 29 };
+    if (houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + 4.2 + 3)) {
+      pond = { pos, radius: 4.2 };
+      break;
+    }
+  }
+  const trader: Trader = { pos: { x: -4.8, z: -4.6 }, radius: 1.1, rotation: 0.75 };
+
   // Brazi, mai deși spre marginea hărții.
   const trees: Tree[] = [];
   let attempts = 0;
@@ -90,7 +116,8 @@ function generateMap(): GameMap {
     // Lăsăm între obstacole un culoar destul de lat cât să treacă și boss-ul.
     const blocked =
       houses.some((h) => Math.hypot(h.pos.x - x, h.pos.z - z) < h.radius + radius + PASSAGE) ||
-      trees.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + radius + PASSAGE);
+      trees.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + radius + PASSAGE) ||
+      Math.hypot(pond.pos.x - x, pond.pos.z - z) < pond.radius + radius + 1.5;
     if (blocked) continue;
     trees.push({ pos: { x, z }, scale, radius });
   }
@@ -99,7 +126,7 @@ function generateMap(): GameMap {
   for (let i = 0; i < 45; i++) {
     const x = (rand() * 2 - 1) * (halfSize - 1);
     const z = (rand() * 2 - 1) * (halfSize - 1);
-    if (Math.hypot(x, z) < 7) continue;
+    if (Math.hypot(x, z) < 7 || Math.hypot(pond.pos.x - x, pond.pos.z - z) < pond.radius + 1) continue;
     rocks.push({ pos: { x, z }, size: 0.3 + rand() * 0.8, seed: Math.floor(rand() * 1e6) });
   }
 
@@ -112,17 +139,36 @@ function generateMap(): GameMap {
     const free =
       houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + 5) &&
       trees.every((t) => Math.hypot(t.pos.x - pos.x, t.pos.z - pos.z) > t.radius + 3) &&
+      Math.hypot(pond.pos.x - pos.x, pond.pos.z - pos.z) > pond.radius + 5 &&
       fossils.every((f) => Math.hypot(f.pos.x - pos.x, f.pos.z - pos.z) > 14);
     if (free) fossils.push({ pos, rotation: rand() * Math.PI * 2, scale: 0.8 + rand() * 0.5, seed: fossils.length });
   }
 
-  return { halfSize, houses, trees, rocks, fossils };
+  return { halfSize, houses, trees, rocks, fossils, pond, trader };
 }
 
 export const GAME_MAP: GameMap = generateMap();
 
-/** Toate obstacolele ca cercuri: {pos, radius}. */
-export const OBSTACLES: ReadonlyArray<{ pos: Vec2; radius: number }> = [
-  ...GAME_MAP.houses,
-  ...GAME_MAP.trees,
+/** Un obstacol ca cerc. `tree` = indexul bradului (brazii pot fi tăiați cu târnăcopul). */
+export interface Obstacle {
+  pos: Vec2;
+  radius: number;
+  tree?: number;
+}
+
+/** Toate obstacolele fixe ca cercuri (case, brazi, taraba). */
+export const OBSTACLES: ReadonlyArray<Obstacle> = [
+  ...GAME_MAP.houses.map((h) => ({ pos: h.pos, radius: h.radius })),
+  ...GAME_MAP.trees.map((t, i) => ({ pos: t.pos, radius: t.radius, tree: i })),
+  { pos: GAME_MAP.trader.pos, radius: GAME_MAP.trader.radius },
 ];
+
+/** Bradul cu indexul dat a fost tăiat (a căzut și a dispărut)? */
+export function treeFelled(state: { treeHits: number[] }, index: number): boolean {
+  return (state.treeHits[index] ?? 0) >= CONFIG.gather.treeHits;
+}
+
+/** Obstacolul mai există? (Brazii tăiați nu mai opresc nimic.) */
+export function obstacleActive(state: { treeHits: number[] }, o: Obstacle): boolean {
+  return o.tree === undefined || !treeFelled(state, o.tree);
+}

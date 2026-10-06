@@ -4,7 +4,7 @@
 // Turnurile au HP: zombii pe care îi lovesc vin să le dărâme.
 
 import { CONFIG, type TowerKind, type TowerStats } from "../config";
-import { OBSTACLES } from "../map";
+import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, angleOf, dist } from "../math";
 import type { EntityId, GameEvent, GameState, PlayerId, Shell, Tower, Zombie } from "../types";
 import { distToBarricade } from "./barricades";
@@ -55,7 +55,7 @@ export function canBuildTower(state: GameState, playerId: PlayerId, pos: Vec2): 
   const edge = CONFIG.map.halfSize - r;
   if (Math.abs(pos.x) > edge || Math.abs(pos.z) > edge) return "În afara hărții";
   if (dist(pos, state.shelter.pos) < state.shelter.radius + r + 0.5) return "Prea aproape de mină";
-  for (const o of OBSTACLES) if (dist(pos, o.pos) < o.radius + r) return "Loc ocupat";
+  for (const o of OBSTACLES) if (obstacleActive(state, o) && dist(pos, o.pos) < o.radius + r) return "Loc ocupat";
   for (const t of state.towers) if (dist(pos, t.pos) < r * 2 + 0.1) return "Loc ocupat";
   for (const b of state.barricades) if (distToBarricade(pos, b) < r) return "Loc ocupat";
   for (const h of state.heroes) if (h.alive && dist(pos, h.pos) < r + CONFIG.heroes[h.heroClass].radius) return "Stai pe locul ăsta";

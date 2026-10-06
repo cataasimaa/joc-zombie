@@ -1195,9 +1195,29 @@ button {
   margin: 2px 0 0;
 }
 
+.world-bar {
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+
+/* Puls fără transform (altfel eticheta sărea pe ecran): doar marginea strălucește. */
 .world-bar.low {
   border-color: #e2553d;
-  animation: pulse 0.8s infinite;
+  animation: barGlow 0.8s infinite;
+}
+
+@keyframes barGlow {
+  50% {
+    box-shadow: 0 0 10px 2px rgba(226, 85, 61, 0.8);
+  }
+}
+
+.fire-bar {
+  border-color: rgba(255, 138, 61, 0.55);
+}
+
+.fill.fire {
+  background: linear-gradient(90deg, #ff6a2b, #ffb15c);
 }
 
 /* ---------- Resursele (jos, centru) ---------- */
@@ -1840,4 +1860,123 @@ i.coin {
   background: #ff6b5a;
   transform: rotate(-40deg);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Butonul de acțiune (târnăcop / undiță / vânzare) ---------- */
+
+.action.act {
+  position: relative;
+  background: rgba(60, 70, 80, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  touch-action: none;
+}
+
+.action.act small {
+  font-size: 9px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.action.act.held {
+  background: var(--good);
+}
+
+/* Peștele a mușcat: butonul pulsează (strălucire, fără transform). */
+.action.act.alert {
+  background: #d8483a;
+  animation: barGlow 0.4s infinite;
+}
+
+.qb-slot.bag {
+  border-color: #8a7a5a;
+}
+
+/* ---------- Inventarul ---------- */
+
+.inventory {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 62px);
+  transform: translateX(-50%);
+  min-width: 260px;
+  max-width: 92vw;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--panel-strong);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  pointer-events: auto;
+  z-index: 6;
+  font-size: 13px;
+}
+
+.inventory h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.inv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inv-row .inv-ico {
+  font-size: 20px;
+  width: 26px;
+  text-align: center;
+}
+
+.inv-row .inv-name {
+  flex: 1;
+}
+
+.inv-row .inv-name small {
+  display: block;
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.inv-row b {
+  min-width: 34px;
+  text-align: right;
+}
+
+.inv-row button {
+  border: none;
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-weight: 800;
+  background: var(--good);
+  color: #fff;
+}
+
+.inv-row button:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- Căzut: reînvierea de către un coleg ---------- */
+
+.revive {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(40, 10, 14, 0.75);
+  border: 1px solid rgba(255, 90, 90, 0.5);
+  font-weight: 800;
+  text-align: center;
+  pointer-events: none;
+}
+
+.revive .bar {
+  height: 7px;
+  margin-top: 6px;
 }

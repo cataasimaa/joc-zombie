@@ -6,6 +6,7 @@ import "./style.css";
 import { Sfx } from "./audio/Sfx";
 import {
   CONFIG,
+  GAME_MAP,
   type Command,
   type Difficulty,
   type EntityId,
@@ -41,8 +42,8 @@ import {
 import { FireStick } from "./input/FireStick";
 import { Keyboard } from "./input/Keyboard";
 import { VirtualJoystick } from "./input/VirtualJoystick";
+import type { Quality } from "./render/ModelKit";
 import { Renderer } from "./render/Renderer";
-import { KillAnnouncer } from "./ui/announcer";
 import { Hud, type MenuOption, type PickKind } from "./ui/Hud";
 import { recordRun } from "./ui/leaderboard";
 
@@ -52,6 +53,19 @@ const ROTATE_STEP = Math.PI / 4;
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const renderer = new Renderer(canvas);
+
+// Calitatea grafică: Înaltă pe calculator, Medie pe telefon (se schimbă din meniu, se salvează).
+const QUALITY_NAMES: Record<Quality, string> = { high: "Înaltă", medium: "Medie", low: "Mică" };
+let quality: Quality = (() => {
+  try {
+    const saved = localStorage.getItem("im.quality");
+    if (saved === "high" || saved === "medium" || saved === "low") return saved;
+  } catch {
+    // ignorăm
+  }
+  return window.matchMedia("(pointer: coarse)").matches ? "medium" : "high";
+})();
+renderer.setQuality(quality);
 const keyboard = new Keyboard();
 const joystick = new VirtualJoystick(document.getElementById("joystick-zone")!);
 const fireStick = new FireStick(document.getElementById("fire-stick")!, document.getElementById("fire-knob")!);
@@ -62,7 +76,6 @@ let paused = false;
 let playerName = "";
 let difficulty: Difficulty = "easy";
 let mode: GameMode = "defend";
-const announcer = new KillAnnouncer();
 let accumulator = 0;
 let lastMove = { x: 0, z: 0 };
 let lastAim = "";
@@ -79,7 +92,6 @@ function startGame(heroClass: HeroClass): void {
   menuScene = null;
   renderer.menuCamera = false;
   sfx.setMenu(false);
-  announcer.reset();
   paused = false;
   accumulator = 0;
   lastMove = { x: 0, z: 0 };
@@ -313,8 +325,8 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
     ];
     if (b.level < CONFIG.barricade.levels.length) {
       options.push({
-        label: "🛡 Întărește",
-        detail: `🪵 ${CONFIG.barricade.levels[b.level].cost} · palisadă pe piatră`,
+        label: b.level === 1 ? "🛡 Forjează" : "🔩 Fă-l de metal",
+        detail: `🪵 ${CONFIG.barricade.levels[b.level].cost} · ❤ ${CONFIG.barricade.levels[b.level].maxHp}`,
         blocked: canUpgradeBarricade(s, LOCAL_PLAYER, b.id, "reinforce"),
         onClick: act({ type: "upgradeBarricade", playerId: LOCAL_PLAYER, barricadeId: b.id, to: "reinforce" }),
       });
@@ -392,11 +404,23 @@ const hud = new Hud({
     hud.showHeroSelect(name);
   },
   onUseItem: (item) => send({ type: "useItem", playerId: LOCAL_PLAYER, item }),
+  onAction: (on) => send({ type: "action", playerId: LOCAL_PLAYER, on }),
   onPickHero: startGame,
   onToggleSound: () => {
     sfx.setMuted(!sfx.muted);
     saveSetting("im.sound", !sfx.muted);
     return !sfx.muted;
+  },
+  onCycleQuality: () => {
+    const order: Quality[] = ["high", "medium", "low"];
+    quality = order[(order.indexOf(quality) + 1) % order.length];
+    try {
+      localStorage.setItem("im.quality", quality);
+    } catch {
+      // fără salvare (mod privat)
+    }
+    renderer.setQuality(quality);
+    return QUALITY_NAMES[quality];
   },
   onToggleMusic: () => {
     sfx.setMusicOn(!sfx.musicOn);
@@ -586,6 +610,14 @@ keyboard.onPress("Digit1", () => buildMode !== "off" && pick("tower"));
 keyboard.onPress("Digit2", () => buildMode !== "off" && pick("wall"));
 keyboard.onPress("Digit3", () => buildMode !== "off" && pick("mine"));
 keyboard.onPress("Digit4", () => buildMode !== "off" && sim?.state.mode === "survival" && pick("campfire"));
+// G = acțiune (ții apăsat: târnăcop; apeși: undiță / vânzare), I = inventar.
+keyboard.onPress("KeyI", () => sim && hud.toggleInventory());
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyG" && !e.repeat && sim && !paused) send({ type: "action", playerId: LOCAL_PLAYER, on: true });
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "KeyG" && sim) send({ type: "action", playerId: LOCAL_PLAYER, on: false });
+});
 keyboard.onPress("KeyE", () => send({ type: "useItem", playerId: LOCAL_PLAYER, item: "cookedMeat" }));
 keyboard.onPress("KeyF", () => send({ type: "useItem", playerId: LOCAL_PLAYER, item: "rawMeat" }));
 
@@ -676,19 +708,10 @@ function showMenu(): void {
   hud.showMainMenu();
 }
 
-/** Anunțurile (Double Kill, Rampage…) și salvarea rezultatului în clasament. */
+/** Salvarea rezultatului în clasament la finalul rundei. */
 function handleRunEvents(state: GameState, events: ReturnType<GameSimulation["drainEvents"]>): void {
-  const heroId = state.players[LOCAL_PLAYER].heroId;
   for (const e of events) {
-    if (e.type === "zombieDied" && e.killerHeroId === heroId) {
-      const a = announcer.kill(state.time, e.zombieType);
-      if (a) {
-        hud.announce(a);
-        sfx.announce(a.text, a.tier);
-      }
-    } else if (e.type === "heroDied" && e.id === heroId) {
-      announcer.died();
-    } else if (e.type === "gameOver" || e.type === "victory") {
+    if (e.type === "gameOver" || e.type === "victory") {
       const p = state.players[LOCAL_PLAYER];
       recordRun({
         name: p.name, mode: state.mode, difficulty: state.difficulty, heroClass: localHero(state).heroClass,
@@ -739,6 +762,14 @@ renderer.engine.runRenderLoop(() => {
     const mineAt = renderer.projectToScreen(state.shelter.pos, 2.6);
     const onScreen = mineAt.x > 0 && mineAt.x < window.innerWidth && mineAt.y > 40 && mineAt.y < window.innerHeight;
     hud.setMineScreen(state.mode === "defend" && onScreen ? mineAt : null);
+    // Etichetele focurilor (în Supraviețuire focul arde lemn): cât mai ține fiecare.
+    const me = localHero(state);
+    hud.setFireLabels(
+      state.mode !== "survival" ? [] : state.campfires
+        .filter((f) => Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) < 30)
+        .map((f) => ({ ...renderer.projectToScreen(f.pos, 1.7), ratio: f.fuel / CONFIG.survival.campfireFuel }))
+        .filter((p) => p.x > 0 && p.x < window.innerWidth && p.y > 40 && p.y < window.innerHeight),
+    );
     sfx.update({
       events,
       localPlayer: LOCAL_PLAYER,
@@ -780,7 +811,8 @@ function saveSetting(key: string, on: boolean): void {
 sfx.setMuted(!loadSetting("im.sound"));
 sfx.setMusicOn(loadSetting("im.music"));
 hud.setAudioLabels(!sfx.muted, sfx.musicOn);
+hud.setQualityLabel(QUALITY_NAMES[quality]);
 showMenu();
 
 // Pentru depanare în consola browserului: game().state, renderer.setCameraOffset(...)
-if (import.meta.env.DEV) Object.assign(window, { game: () => sim, renderer });
+if (import.meta.env.DEV) Object.assign(window, { game: () => sim, renderer, __map: GAME_MAP });

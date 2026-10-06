@@ -195,6 +195,16 @@ export function buildWall(scene: Scene, mats: Materials, level: number, door: bo
         const tilt = cracked && i === 0 ? 0.18 : k.rand(-0.04, 0.04);
         k.box(L + 0.1, 0.18, 0.1, { p: [0, y, 0.2], r: [0, 0, tilt] }, { color: PAL.darkWood, wear: 0.22, frost: 0.7, frostNormal: 0.7 });
       });
+      if (level >= 3) {
+        // Zid de metal: table de fier nituite peste pari, cu rugină scursă din nituri.
+        const plates = cracked ? [-0.85, 0.85] : [-0.85, 0, 0.85];
+        for (const x of plates) {
+          k.box(0.86, stakeH - 0.3, 0.08, { p: [x, (stakeH - 0.3) / 2 + 0.12, 0.3], r: [0, 0, k.rand(-0.015, 0.015)] }, { color: mix(PAL.iron, PAL.rust, k.rand(0.1, 0.4)), mat: "metal", wear: 0.4, frost: 0.5, frostNormal: 0.8 });
+          for (const y of [0.3, stakeH - 0.35]) for (const dx of [-0.34, 0.34]) k.sphere(0.07, 4, { p: [x + dx, y, 0.35] }, { color: PAL.rust, mat: "metal" });
+          k.box(0.06, 0.5, 0.02, { p: [x + 0.2, 0.55, 0.345] }, { color: PAL.rust, wear: 0.3 });
+        }
+        if (cracked) k.box(0.8, 0.06, 0.6, { p: [0.1, 0.05, 0.7], r: [0, 0.4, 0.1] }, { color: PAL.iron, mat: "metal", wear: 0.4 });
+      }
       if (strong) {
         // Benzi de fier peste pari și țepi îndreptați spre exterior.
         for (const y of [0.7, stakeH - 0.6]) k.box(L, 0.08, 0.4, { p: [0, y, 0.12] }, { color: PAL.iron, mat: "metal", wear: 0.35 });

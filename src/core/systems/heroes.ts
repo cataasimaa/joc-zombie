@@ -1,6 +1,6 @@
 import { CONFIG, type HeroStats } from "../config";
 import { WEAPONS, type WeaponDef } from "../items";
-import { OBSTACLES } from "../map";
+import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, angleOf, dist, distSq, nextRandom } from "../math";
 import type { Animal, Chest, EntityId, GameEvent, GameState, Hero, Player, Zombie } from "../types";
 import { distToBarricade } from "./barricades";
@@ -87,10 +87,11 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
     const player = playerOf(state, hero);
 
     if (!hero.alive) {
-      // În Supraviețuire nu reînvii pe loc: doar în zori (dacă a mai rămas cineva în viață).
-      if (state.mode === "survival") continue;
-      hero.respawnTimer -= dt;
-      if (hero.respawnTimer <= 0) respawnHero(state, hero, events);
+      // Ai căzut = ai murit. Te ridici doar dacă un coleg stă lângă tine câteva secunde.
+      const c = CONFIG.heroCommon;
+      const helper = state.heroes.some((h) => h !== hero && h.alive && dist(h.pos, hero.pos) <= c.reviveRadius);
+      hero.reviveProgress = helper ? hero.reviveProgress + dt : Math.max(0, hero.reviveProgress - dt);
+      if (hero.reviveProgress >= c.reviveTime) reviveHero(state, hero, events);
       continue;
     }
 
@@ -126,7 +127,8 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
 
     // 4. Tragere în direcția în care ochește jucătorul.
     hero.fireTimer -= dt;
-    if (!hero.firing) continue;
+    // Cu târnăcopul sau undița în mână nu tragi.
+    if (!hero.firing || hero.action || hero.fishTimer >= 0) continue;
     if (hero.autoAim) {
       // Ochire automată: zombii întâi, apoi vânatul sălbatic (niciodată animalele de la fermă).
       const target: { pos: Vec2 } | null = findNearestZombie(state, hero.pos, gun.range) ?? nearestWildAnimal(state, hero.pos, gun.range);
@@ -188,7 +190,7 @@ export function traceBullet(
 ): { hits: Zombie[]; animals: Animal[]; chest: Chest | null; end: Vec2 } {
   // Unde se oprește glonțul în obstacole.
   let maxT = range;
-  const blockers = [...OBSTACLES, state.shelter];
+  const blockers = [...OBSTACLES.filter((o) => obstacleActive(state, o)), state.shelter];
   for (const o of blockers) {
     const t = rayCircle(from, dir, o.pos, o.radius);
     if (t !== null && t < maxT) maxT = t;
@@ -352,9 +354,22 @@ export function damageHero(hero: Hero, amount: number, events: GameEvent[], from
     hero.hp = 0;
     hero.alive = false;
     hero.firing = false;
-    hero.respawnTimer = CONFIG.heroCommon.respawnTime;
+    hero.respawnTimer = 0;
+    hero.reviveProgress = 0;
+    hero.action = false;
+    hero.fishTimer = -1;
     events.push({ type: "heroDied", id: hero.id });
   }
+}
+
+/** Un coleg te-a ridicat: te ridici pe loc, cu o parte din viață. */
+export function reviveHero(state: GameState, hero: Hero, events: GameEvent[]): void {
+  hero.alive = true;
+  hero.hp = Math.round(hero.maxHp * CONFIG.heroCommon.reviveHp);
+  hero.reviveProgress = 0;
+  hero.reloadTimer = 0;
+  hero.ammo = Math.max(hero.ammo, Math.min(gunStats(state, hero).magazine, hero.reserve));
+  events.push({ type: "heroRespawned", id: hero.id });
 }
 
 export function respawnHero(state: GameState, hero: Hero, events: GameEvent[]): void {

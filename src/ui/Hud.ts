@@ -2,8 +2,10 @@
 // Ca și randarea, doar CITEȘTE starea. Acțiunile jucătorului ies prin callback-uri.
 
 import {
+  type ActionHint,
   CONFIG,
   DEFAULT_SKIN_COLOR,
+  actionHint,
   type Difficulty,
   type GameMode,
   type ItemKind,
@@ -26,7 +28,6 @@ import {
   towersOf,
   xpToNextLevel,
 } from "../core";
-import type { Announcement } from "./announcer";
 import { type RunResult, bestRuns, lastRuns } from "./leaderboard";
 
 export interface HudCallbacks {
@@ -34,10 +35,14 @@ export interface HudCallbacks {
   onMenuStart(name: string, difficulty: Difficulty, mode: GameMode): void;
   /** Bara rapidă: mănânci / pui carnea pe foc. */
   onUseItem(item: ItemKind): void;
+  /** Butonul de acțiune: apăsat (true) / eliberat (false). */
+  onAction(on: boolean): void;
   onPickHero(heroClass: HeroClass): void;
   /** Sunetul și muzica (doar din meniu). Returnează noua stare (true = pornit). */
   onToggleSound(): boolean;
   onToggleMusic(): boolean;
+  /** Trece la următoarea calitate grafică; întoarce eticheta nouă. */
+  onCycleQuality(): string;
   onPause(paused: boolean): void;
   onQuitToMenu(): void;
   onToggleBuild(): void;
@@ -148,7 +153,6 @@ export class Hud {
   private difficulty: Difficulty = "easy";
   private mode: GameMode = "defend";
   private boardTab: { mode: GameMode; difficulty: Difficulty } = { mode: "defend", difficulty: "easy" };
-  private announceTimer = 0;
 
   private el = {
     hud: $("hud"),
@@ -195,7 +199,6 @@ export class Hud {
     qbRaw: $<HTMLButtonElement>("qb-rawMeat"),
     qbAmmo: $("qb-ammo"),
     weather: $("weather-chip"),
-    announce: $("announce"),
     modeBox: $("mode"),
     placeBar: $("place-bar"),
     placeHint: $("place-hint"),
@@ -231,6 +234,17 @@ export class Hud {
     $("pig-cost").textContent = `🪵 ${CONFIG.survival.farmCost}`;
     this.el.qbCooked.addEventListener("click", () => cb.onUseItem("cookedMeat"));
     this.el.qbRaw.addEventListener("click", () => cb.onUseItem("rawMeat"));
+    $("qb-fish").addEventListener("click", () => cb.onUseItem("fish"));
+    $("qb-bag").addEventListener("click", () => this.toggleInventory());
+    // Butonul de acțiune: ții apăsat (târnăcop), sau apeși o dată (undiță, vânzare).
+    const act = $("act-btn");
+    const press = (on: boolean) => (e: Event) => {
+      e.preventDefault();
+      act.classList.toggle("held", on);
+      cb.onAction(on);
+    };
+    act.addEventListener("pointerdown", press(true));
+    for (const ev of ["pointerup", "pointercancel", "pointerleave"]) act.addEventListener(ev, press(false));
     $("menu-board").addEventListener("click", () => this.showBoard(true));
     $("board-close").addEventListener("click", () => this.showBoard(false));
     $("palette-close").addEventListener("click", () => cb.onToggleBuild());
@@ -263,6 +277,7 @@ export class Hud {
     $("menu-sound").addEventListener("click", sound);
     $("pause-sound").addEventListener("click", sound);
     $("menu-music").addEventListener("click", music);
+    $("menu-quality").addEventListener("click", () => this.setQualityLabel(cb.onCycleQuality()));
     $("pause-music").addEventListener("click", music);
     $("menu-btn").addEventListener("click", () => this.setPaused(true));
     $("pause-resume").addEventListener("click", () => this.setPaused(false));
@@ -358,11 +373,9 @@ export class Hud {
   }
 
   /** Anunț mare pe mijlocul ecranului (Double Kill, Rampage...). */
-  announce(a: Announcement): void {
-    const el = this.el.announce;
-    el.textContent = a.text;
-    el.className = `announce show tier${a.tier}`;
-    this.announceTimer = 1.6 + a.tier * 0.3;
+
+  setQualityLabel(label: string): void {
+    $("menu-quality").textContent = `🖥 Grafică: ${label}`;
   }
 
   /** Etichetele butoanelor de sunet și muzică (null = nu se schimbă). */
@@ -449,7 +462,10 @@ export class Hud {
     // Personajul: nume, nivel, viață (roșu) și experiență (galben).
     this.text(this.el.heroName, `${this.el.heroName.dataset.icon ?? ""} ${player.name}`);
     this.text(this.el.heroLevel, String(hero.level));
-    this.text(this.el.heroText, hero.alive ? `❤ ${Math.ceil(hero.hp)} / ${hero.maxHp}` : `căzut · ${Math.ceil(hero.respawnTimer)}s`);
+    this.text(this.el.heroText, hero.alive ? `❤ ${Math.ceil(hero.hp)} / ${hero.maxHp}` : "căzut");
+    this.updateActionButton(state, hero);
+    this.updateRevive(state, hero);
+    if (this.invOpen) this.renderInventory(state, playerId);
     this.width(this.el.heroBar, hero.hp / hero.maxHp);
     const need = xpToNextLevel(hero.level);
     this.text(this.el.xpText, `XP ${Math.floor(hero.xp)} / ${need} → nv. ${hero.level + 1}`);
@@ -502,8 +518,9 @@ export class Hud {
       this.el.warmthBar.parentElement!.classList.toggle("alert", hero.warmth < 20);
     }
     this.el.quickbar.classList.toggle("hidden", false);
-    this.el.qbCooked.classList.toggle("hidden", !survival && player.inventory.cookedMeat <= 0);
-    this.el.qbRaw.classList.toggle("hidden", !survival && player.inventory.rawMeat <= 0);
+    const fishBtn = $<HTMLButtonElement>("qb-fish");
+    this.text(fishBtn.querySelector(".qb-n") as HTMLElement, String(player.inventory.fish));
+    fishBtn.disabled = player.inventory.fish <= 0;
     this.text(this.el.qbCooked.querySelector(".qb-n") as HTMLElement, String(player.inventory.cookedMeat));
     this.text(this.el.qbRaw.querySelector(".qb-n") as HTMLElement, String(player.inventory.rawMeat));
     this.el.qbCooked.disabled = player.inventory.cookedMeat <= 0;
@@ -527,10 +544,6 @@ export class Hud {
     const lowHp = hero.alive && hero.hp / hero.maxHp < 0.3 ? 0.35 + Math.sin(performance.now() / 180) * 0.1 : 0;
     this.el.damage.style.opacity = String(Math.min(1, Math.max(this.damageFlash, lowHp)));
 
-    if (this.announceTimer > 0) {
-      this.announceTimer -= dt;
-      if (this.announceTimer <= 0) this.el.announce.classList.remove("show");
-    }
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) this.el.toast.classList.remove("show");
@@ -839,7 +852,103 @@ export class Hud {
       return;
     }
     el.style.display = "";
-    el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px) translate(-50%, -100%)`;
+    // Poziția prin left/top (nu prin transform): animațiile CSS nu o mai pot strica.
+    el.style.left = `${Math.round(pos.x)}px`;
+    el.style.top = `${Math.round(pos.y)}px`;
+  }
+
+  private fireLabels: HTMLElement[] = [];
+  /** Etichetele focurilor de tabără (ca la mină): cât lemn mai au, deasupra fiecăruia. */
+  setFireLabels(list: { x: number; y: number; ratio: number }[]): void {
+    while (this.fireLabels.length < list.length) {
+      const el = document.createElement("div");
+      el.className = "world-bar fire-bar";
+      el.innerHTML = `<div class="wb-label">🔥 Foc <b></b></div><div class="bar"><div class="fill fire"></div></div>`;
+      this.el.hud.appendChild(el);
+      this.fireLabels.push(el);
+    }
+    this.fireLabels.forEach((el, i) => {
+      const f = list[i];
+      if (!f) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "";
+      el.style.left = `${Math.round(f.x)}px`;
+      el.style.top = `${Math.round(f.y)}px`;
+      const pct = Math.round(f.ratio * 100);
+      this.text(el.querySelector("b")!, pct > 0 ? `${pct}%` : "stins");
+      this.width(el.querySelector(".fill") as HTMLElement, f.ratio);
+      el.classList.toggle("low", f.ratio < 0.25);
+    });
+  }
+
+  // ---------- Butonul de acțiune, reînvierea, inventarul ----------
+
+  private actKey = "";
+  private updateActionButton(state: GameState, hero: GameState["heroes"][number]): void {
+    const hint: ActionHint = actionHint(state, hero);
+    const bite = hero.biteTimer > 0;
+    const look: Record<Exclude<ActionHint, null>, [string, string]> = {
+      chop: ["🪓", "taie"],
+      mine: ["⛏️", "minează"],
+      hunt: ["🔪", "taie"],
+      fish: ["🎣", "pescuiește"],
+      reel: [bite ? "❗" : "🎣", bite ? "TRAGE!" : "așteaptă"],
+      sell: ["💰", "vinde"],
+    };
+    const key = `${hint}|${bite}`;
+    const btn = $("act-btn");
+    btn.classList.toggle("hidden", hint === null);
+    btn.classList.toggle("alert", bite);
+    if (key === this.actKey || !hint) return;
+    this.actKey = key;
+    $("act-ico").textContent = look[hint][0];
+    $("act-label").textContent = look[hint][1];
+  }
+
+  private updateRevive(state: GameState, hero: GameState["heroes"][number]): void {
+    const el = $("revive");
+    const show = !hero.alive && state.phase !== "gameover";
+    el.classList.toggle("hidden", !show);
+    if (!show) return;
+    const p = hero.reviveProgress / CONFIG.heroCommon.reviveTime;
+    el.innerHTML = p > 0
+      ? `Un coleg te ridică…<div class="bar"><div class="fill" style="width:${Math.round(p * 100)}%"></div></div>`
+      : "Ai căzut. Doar un coleg te poate ridica (să stea lângă tine).";
+  }
+
+  private invOpen = false;
+  toggleInventory(open = !this.invOpen): void {
+    this.invOpen = open;
+    $("inventory").classList.toggle("hidden", !open);
+    if (open && this.lastState && this.playerId) this.renderInventory(this.lastState, this.playerId);
+  }
+
+  private invKey = "";
+  private renderInventory(state: GameState, playerId: PlayerId): void {
+    const p = state.players[playerId];
+    const hero = state.heroes.find((h) => h.id === p.heroId)!;
+    const inv = p.inventory;
+    const key = `${inv.cookedMeat}|${inv.rawMeat}|${inv.fish}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}`;
+    if (key === this.invKey) return;
+    this.invKey = key;
+    const row = (ico: string, name: string, help: string, n: number, btn?: [string, ItemKind]) =>
+      `<div class="inv-row"><span class="inv-ico">${ico}</span><span class="inv-name">${name}<small>${help}</small></span><b>${n}</b>${
+        btn ? `<button data-item="${btn[1]}" ${n <= 0 ? "disabled" : ""}>${btn[0]}</button>` : ""
+      }</div>`;
+    const el = $("inventory");
+    el.innerHTML = `<h3>🎒 Inventar</h3>` +
+      row("🍗", "Carne friptă", "+45 foame, +10 viață", inv.cookedMeat, ["Mănâncă", "cookedMeat"]) +
+      row("🥩", "Carne crudă", "o pui pe foc (15 s) sau o mănânci crudă", inv.rawMeat, ["Folosește", "rawMeat"]) +
+      row("🐟", "Pește", `se vinde la tarabă cu ${CONFIG.gather.fishPrice} 🪙 bucata`, inv.fish, ["Mănâncă", "fish"]) +
+      row("📦", "Gloanțe", "în rezervă", hero.reserve) +
+      row("🪵", "Lemn", "construcții; tai brazi cu târnăcopul", p.wood) +
+      row("🪙", "Aur", "magazinul norocului", p.coins) +
+      row("💣", "Mine", "le pui cu M / 💣", p.mines);
+    for (const b of el.querySelectorAll<HTMLButtonElement>("button[data-item]")) {
+      b.addEventListener("click", () => this.cb.onUseItem(b.dataset.item as ItemKind));
+    }
   }
 
   private endTimer = 0;

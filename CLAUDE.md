@@ -34,9 +34,12 @@ pauză automată (noaptea și păcănelele stau pe loc).
 Controale în browser: **WASD / săgeți** mișcare, **click ținut** trage spre cursor,
 **Space** trage (spre cursor sau automat), **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
 (**1/2/3/4** turn / zid / mină / foc), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
-**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc.
+**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **G** acțiune (ții apăsat:
+târnăcop; apeși: undiță / vânzare), **I** inventar.
 Pe telefon: joystick în stânga; ții degetul oriunde pe ecran = tragi acolo; în dreapta 2 butoane —
-🔨 construcție și ✛ tragere (ții apăsat = ochire automată, tragi cu degetul = ochești tu).
+🔨 construcție și ✛ tragere (ții apăsat = ochire automată, tragi cu degetul = ochești tu); lângă un
+brad / zăcământ / animal / copcă / tarabă apare al treilea buton, de acțiune (🪓 ⛏️ 🔪 🎣 💰).
+Bara de jos = inventarul rapid (🍗 🥩 🐟 📦) + 🎒 inventarul complet. Meniul: 🖥 Grafică Înaltă / Medie / Mică.
 În consola din dev: `game().state`, `renderer.setCameraOffset(x, y, z)`.
 
 ## Arhitectură (REGULĂ IMPORTANTĂ)
@@ -53,20 +56,25 @@ src/
     config.ts      TOATE numerele de echilibrare (eroi, zombi, turnuri, ziduri, zi/noapte, magazin)
     heroDefs.ts    Clasele de eroi (pasiva fiecăruia) și skin-urile. Abilitățile sunt scoase în beta.
     items.ts       Armele (damage, încărcător, reîncărcare, alice) și recompensele magazinului
-    map.ts         Harta (case cu variante, brazi, pietre) – generată determinist
+    map.ts         Harta (case, brazi care se pot tăia, pietre, lacul cu copcă, taraba) – deterministă
     navigation.ts  Flow field: drumul cel mai scurt spre mină (sau spre eroi, în Supraviețuire)
     math.ts        Vec2 pe planul solului (x, z), segmente (ziduri), RNG determinist
     systems/       waves (zi/noapte, vreme, ardere în zori, aprovizionare), heroes (ochit, muniție
                    cu rezervă, gloanțe care se opresc la punctul ochit, cufărul împușcat),
                    survival (foame, frig, focuri, gătit, animale, ferme, obiecte pe jos, inventar),
+                   gather (târnăcop: brazi / zăcăminte / animale, pescuit la copcă, vânzare la tarabă),
                    zombies (aggro pe turnuri, răcire/înghețare, proiectile scuipate, zburători),
                    towers (5 tipuri, niveluri, abilități, proiectile `Shell`, foc pe jos, HP),
                    barricades, mines, shop (+ cufărul boss-ului), coins (+ cufere), physics
   render/      Babylon.js — doar CITEȘTE starea și desenează
-    ModelKit.ts    Trusa de modele: primitive → flat shading → culoare pe vârfuri (uzură,
-                   zăpadă pe fețele de sus) → unite într-un mesh per material (PBR mat/metal/glow)
+    ModelKit.ts    Trusa de modele: primitive → culoare pe vârfuri (uzură, zăpadă pe fețele de sus)
+                   → unite într-un mesh per material. Suprafața (lemn, piatră, zăpadă, pânză, piele,
+                   ace) se ghicește după culoare și primește o hartă de relief CC0 reală; formele
+                   organice au umbrire netedă (pietrele deformate cu zgomot), lemnul și fierul plate
+  assets/normals/  Hărți de relief CC0 din `@pmndrs/assets` (vezi README-ul din folder)
     palette.ts     Paleta „Northrend survival”
-    models/        environment (brazi, pietre, case, mina de plasmă), characters (eroi cu glugă
+    models/        gathering (lac cu copcă, tarabă, zăcăminte, târnăcop, undiță),
+                   environment (brazi, pietre, case, mina de plasmă), characters (eroi cu glugă
                    și mantie + 12 skin-uri amuzante, zombi), structures (turnuri, proiectile,
                    ziduri în 3 stări, cufăr cu capac), survival (animale, ferme, foc, obiecte,
                    schelete de dinozaur, copaci morți)
@@ -89,7 +97,6 @@ src/
   input/       Tastatură, joystick virtual (mișcare), FireStick (buton de tras + ochire) → comenzi
   ui/Hud.ts    HUD + ecrane (meniu, pauză, alegere erou, magazin, clasament, final) în HTML/CSS
   ui/leaderboard.ts  Clasamentul (localStorage): cei mai buni 5 și ultimele 5, pe mod și dificultate
-  ui/announcer.ts    Anunțuri „Double Kill / Rampage / Monster Kill / Godlike…” (text + voce)
   main.ts      Leagă totul + modul de construcție + ochirea spre mouse / deget + pauza
 ```
 
@@ -165,8 +172,11 @@ sau texturi din acele jocuri.
   accent (maxim două accente calde pe ecran, restul rece). Ceață joasă la marginea hărții.
 - **Paletă**: zăpadă `#e7eef2`, umbră de zăpadă `#8aa0b0`, lemn ars `#5a3a28`, fier `#3c4650`,
   os `#d9d0bf`, sânge închis `#6b1d24`, foc `#ff8a3d`, gheață magică `#7ec8ff` (în `render/palette.ts`).
-- **Tehnic**: doar primitive Babylon + PBR simplu (roughness mare, puțin metal doar pe arme),
-  culoare pe vârfuri, 2–3 lumini, fără modele sau texturi externe. Detaliul vine din formă.
+- **Tehnic**: primitive Babylon + PBR (roughness mare, puțin metal), culoare pe vârfuri, 2–3 lumini.
+  Singurele resurse externe: hărți de relief CC0 (`src/assets/normals`), fără modele 3D externe.
+  Calitate Înaltă: umbre 2048 moi, SSAO, claritate, DPR până la 2; Medie (implicit pe telefon):
+  umbre 1024, fără SSAO; Mică: umbre 512, fără bloom/granulație, DPR 1. Gradare de culoare: umbre
+  reci, lumini calde.
 - Eroii își schimbă înfățișarea cu nivelul (mai multă blană la 3+, bandă de fier pe umăr la 5+,
   pe ambii umeri la 8+) și cu arma. La moarte îngenunchează.
 - Zombii (după imaginile de referință ale proprietarului): (1) strigoi înghețat înfășurat în
@@ -184,13 +194,25 @@ sau texturi din acele jocuri.
   răspândite în primele 75% din noapte. În zori, zombii rămași ard. 10 nopți = victorie.
 - **Meniu**: nume (apare în HUD), mod, dificultate, sunet și muzică (salvate în localStorage). Pauză cu ☰ / Esc.
 - **Moduri**: *Apără mina* (mina cade = pierzi) și *Supraviețuire* (zombii te vânează pe tine oriunde,
-  flow field spre eroi; mina e decor; cine cade reapare în zori, toți căzuți = pierzi; hoarde ×0,8, HP ×0,85).
+  flow field spre eroi; mina e decor; hoarde ×0,8, HP ×0,85). Zi / noapte în ambele moduri.
+- **Moartea**: cine cade NU reînvie singur. Doar un coleg care stă lângă el 4 s îl ridică (cu 40%
+  viață). Toți căzuți = pierzi (în ambele moduri); singur = mori = game over.
 - **Supraviețuire** (`CONFIG.survival`): foamea (−0,32/s) și căldura (−0,45/s, ×vreme, ziua ×0,6);
   la 0 pierzi 3 HP/s. Focul (15 lemn, max 3) încălzește în 4,5 m, arde lemnul (1/s ×vreme; +5 lemn =
-  +30%), gătește carnea în 15 s (apare pe jos). Căprioare (fug), urși (atacă), coteț / țarc (40 lemn,
-  max 2, max 3 animale fiecare). Carne crudă: +12 foame, −6 HP; friptă: +45 foame, +10 HP.
-- **Muniție** (`CONFIG.ammo`): încărcător + rezervă (4 încărcătoare la start, max 8). Zombii lasă
-  cutii (30%, 0,6 încărcător), plus 2 încărcătoare în fiecare zori și din cufărul boss-ului.
+  +30%), gătește carnea în 15 s (apare pe jos). Eticheta de deasupra focului arată cât lemn mai are
+  (ca la mină). Coteț / țarc mic (40 lemn, max 2, max 3 animale; încape în baza ta); găinile și
+  porcii se taie cu târnăcopul pentru carne. Carne crudă: +12 foame, −6 HP; friptă: +45 foame,
+  +10 HP; pește: +18 foame.
+- **Animale sălbatice** (ambele moduri, ziua, la 16–34 m de mină, departe de eroi): căprioare (fug,
+  12 aur), urși (atacă, max 2, 40 aur). Aurul cade pe jos ca monede, plus carne.
+- **Unelte** (`CONFIG.gather`, butonul de acțiune / G): târnăcopul lovește la 0,4 s ținta din raza
+  brațului (animal > zăcământ > brad). Brad: +1 lemn pe lovitură, cade după 50 și dispare.
+  Zăcăminte de argint (8 lovituri, 18 aur) și aur (12 lovituri, 45 aur) apar ziua aleator (3 pe zi,
+  max 6). Pescuit ziua la copca din lacul înghețat: arunci, peștele mușcă după 4–10 s, ai 1,6 s să
+  tragi. Peștele se vinde la taraba negustorului de lângă mină cu 14 aur bucata.
+  Cu târnăcopul / undița în mână nu tragi.
+- **Muniție** (`CONFIG.ammo`): încărcător + rezervă (8 încărcătoare la start, max 12). Zombii lasă
+  cutii (30%, 0,6 încărcător), plus 3 încărcătoare în fiecare zori și din cufărul boss-ului.
 - **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe
   ecran; turnurile bat la 70% din rază, Tesla nu; urmele zombilor se văd),
   ger (frigul ×2,2), lapoviță (focul arde ×2), vânt (mergi mai greu). Afișată sub cronometru.
@@ -201,8 +223,8 @@ sau texturi din acele jocuri.
   Turnurile singure NU țin o noapte de la Medium în sus: trebuie să tragi și tu. Hard: noaptea ceața
   se strânge spre mină. Nightmare: fugarii sunt invizibili în întuneric (îi vezi doar lângă un foc
   aprins, în raza unui Tesla sau la 3,5 m de un erou; urmele lor se văd).
-- **Două resurse**: 🪵 *lemn* pentru construcții (start 70 + venit în fiecare zori) și
-  🪙 *monede* pentru magazin (cad din zombi).
+- **Două resurse**: 🪵 *lemn* pentru construcții (start 80 + venit în fiecare zori + brazi tăiați) și
+  🪙 *aur / monede* pentru magazin (zombi, vânat, zăcăminte, pește vândut).
 - **Magazinul norocului** (păcănele, 30 monede) — riscant, dar merită: Nimic 38%, Comun 40%,
   Rar 15%, Epic 6%, Legendar 1%. Bonusurile sunt mici (viață max +5% / +10%, viteză +4% / +6%);
   premiile mari: arme, nivelul 3 al turnurilor, loc de turn, câștig în monede (75 / 150 / 400).
@@ -219,8 +241,10 @@ sau texturi din acele jocuri.
 - **Gloanțe pe clasă**: pușca = glonț scurt de fier cu urmă caldă; sniper = trasor lung și rece;
   alicele Tank-ului = undă de praf și zăpadă la izbitură. Glonțul eroului se oprește la punctul
   apăsat, în primul zombi sau în zăpadă. Sunetul turnurilor e la impact (Tesla: la atingere).
-- **Anunțuri**: kill-uri multiple (Double / Triple / Ultra Kill / Rampage, fereastră 1,6 s) și serii
-  fără să mori (Killing Spree 10 … Godlike 100), „Boss Slain!” — text mare + voce (Web Speech).
+- **Fără anunțuri** de tip „Triple Kill / Rampage” (scoase: sunau urât).
+- **Vocea zombilor**: sintetizată ca o voce reală (ton aspru cu tremur neregulat + respirație, prin 3
+  formanți „aaah→uh”, horcăit); la atac: răget + șuieratul ghearelor / bâtei + lovitură surdă (carne
+  sau lemn). Gem tot mai des și mai tare cu cât se apropie.
 - **Arme** (`items.ts`): țeava ruginită → pușcă de vânătoare / flintă cu alice (rar) →
   mitralieră din țevi / arbaletă de os (epic) → lancea de gheață (legendar, încetinește).
 - **Beta fără abilități**: doar 2 butoane (construcție + tragere). Fiecare clasă are o pasivă
@@ -228,7 +252,7 @@ sau texturi din acele jocuri.
 - **Tragere**: ochești tu (drag pe buton / mouse) sau automat (ții apăsat); gloanțele se opresc
   în case, copaci, pietre. Fiecare armă are încărcător și timp de reîncărcare (auto la 0).
   Mergi mai încet cât tragi.
-- **Turnuri** (`CONFIG.tower`): construiești o arbaletă (30 lemn); upgrade de nivel 2 (45) și 3 (80,
+- **Turnuri** (`CONFIG.tower`): construiești o arbaletă (50 lemn); upgrade de nivel 2 (45) și 3 (80,
   doar după deblocare din magazin/cufăr) sau transformare (păstrează nivelul):
   Arbaletă (o țintă; abilitate: săgeată grea prin 3 zombi), Rachete (damage mare; racheta mare
   se sparge în mini-rachete), Tun (explozie pe zonă, lent; ghiuleaua lasă foc), Tesla (fulger;
@@ -248,8 +272,8 @@ sau texturi din acele jocuri.
 - **Mina cade**: crapă, plasma pâlpâie și se stinge, capacul de fier se trântește; ecranul final
   apare după 3 s (sunet: plasma care se stinge, apoi un singur trosnet). Victorie: scârțâit de
   capac care se deschide, apoi liniște.
-- **Ziduri = segmente** (2,6 m) care se lipesc cap la cap; pot fi mutate, rotite (45°), întărite
-  (palisadă pe piatră) sau transformate în **ușă** (eroii trec, zombii nu). Zidurile opresc și
+- **Ziduri = segmente** (2,6 m) care se lipesc cap la cap; pot fi mutate, rotite (45°), îmbunătățite
+  (lemn 5 lemn / 250 HP → forjat 10 / 600 HP → metal 20 / 1200 HP, table nituite) sau transformate în **ușă** (eroii trec, zombii nu). Zidurile opresc și
   eroii. Demolarea dă înapoi 70% din lemn ziua, jumătate din asta noaptea. Zombii sparg zidul din drumul lor; eroii din
   apropiere îl repară automat (Tank ×3, plus bonusul din magazin).
 - **Mine**: din magazin; le pui unde stai (M / 💣); explodează când trece un zombie.

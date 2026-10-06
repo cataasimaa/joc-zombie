@@ -16,6 +16,7 @@ import { type AnimalKind, CONFIG, type EntityId, type GameState } from "../core"
 import type { Fx } from "./Fx";
 import type { Materials } from "./ModelKit";
 import { AMBER, buildChest, buildFlame } from "./models/structures";
+import { buildOre } from "./models/gathering";
 import { type AnimalModel, buildAnimal, buildCampfire, buildDrop, buildEmbers, buildFarm } from "./models/survival";
 import { PAL } from "./palette";
 import { terrainHeight } from "./Terrain";
@@ -56,7 +57,9 @@ export class SurvivalView {
   private meat: Prefab;
   private farms: Record<"chicken" | "pig", Prefab>;
   private animals = {} as Record<AnimalKind, { model: AnimalModel; body: Prefab; leg: Prefab }>;
-  private drops: Record<"ammo" | "rawMeat" | "cookedMeat", Prefab>;
+  private drops: Record<"ammo" | "rawMeat" | "cookedMeat" | "fish", Prefab>;
+  private ores: Record<"silver" | "gold", Prefab>;
+  private oreViews = new Map<EntityId, TransformNode>();
   private chestBase: Prefab;
   private chestLid: Prefab;
   private chestGlow: Prefab;
@@ -85,7 +88,9 @@ export class SurvivalView {
       ammo: new Prefab(buildDrop(scene, mats, "ammo")),
       rawMeat: new Prefab(buildDrop(scene, mats, "rawMeat")),
       cookedMeat: new Prefab(buildDrop(scene, mats, "cookedMeat")),
+      fish: new Prefab(buildDrop(scene, mats, "fish")),
     };
+    this.ores = { silver: cast(new Prefab(buildOre(scene, mats, "silver"))), gold: cast(new Prefab(buildOre(scene, mats, "gold"))) };
     this.meat = this.drops.rawMeat;
     const chest = buildChest(scene, mats);
     this.chestBase = cast(new Prefab(chest.base));
@@ -103,6 +108,7 @@ export class SurvivalView {
     this.syncFarms(state);
     this.syncAnimals(state, dt);
     this.syncDrops(state);
+    this.syncOres(state);
     this.syncChests(state, dt);
   }
 
@@ -153,6 +159,8 @@ export class SurvivalView {
   private syncFarms(state: GameState): void {
     sync(this.farmViews, state.farms, (f) => {
       const root = new TransformNode("farm", this.scene);
+      // Țarcul e mic (încape în baza ta, între ziduri).
+      root.scaling.setAll(0.65);
       this.farms[f.kind].instance("farmMesh", root);
       return root;
     }, (root, f) => {
@@ -207,6 +215,22 @@ export class SurvivalView {
     });
   }
 
+  // ---------- Zăcăminte de argint / aur ----------
+
+  private syncOres(state: GameState): void {
+    sync(this.oreViews, state.ores, (o) => {
+      const root = new TransformNode("ore", this.scene);
+      this.ores[o.kind].instance("oreMesh", root);
+      root.rotation.y = o.id * 1.3;
+      return root;
+    }, (root, o) => {
+      // Se micșorează pe măsură ce îl spargi.
+      const k = 0.55 + 0.45 * (o.hits / CONFIG.gather.ore[o.kind].hits);
+      root.scaling.setAll(k);
+      root.position.copyFrom(this.at(o.pos.x, o.pos.z, -0.05));
+    });
+  }
+
   // ---------- Cufărul boss-ului ----------
 
   private syncChests(state: GameState, dt: number): void {
@@ -238,7 +262,7 @@ export class SurvivalView {
   }
 
   reset(): void {
-    for (const map of [this.fireViews, this.farmViews, this.animalViews, this.dropViews, this.chestViews] as Map<EntityId, Disposable>[]) {
+    for (const map of [this.fireViews, this.farmViews, this.animalViews, this.dropViews, this.chestViews, this.oreViews] as Map<EntityId, Disposable>[]) {
       for (const v of map.values()) v.dispose();
       map.clear();
     }
