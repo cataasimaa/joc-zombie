@@ -50,9 +50,9 @@ iconițe) **tragi cu degetul** un obiect pe un loc din bară (sau tap pe obiect,
 un loc din bară în afara ei = îl golești; între locuri = se schimbă între ele.
 HUD stânga sus: nume, nivel, viață, XP, lemn și aur. **Nivelul e un buton**: când ai puncte de pus,
 pulsează auriu cu „+1”; apăsat = meniul de nivel (tăiat / minerit / pescuit / tras, cu pasivele de la
-treptele 3 și 5 și ce mai deblochezi). În 🎒, în dreapta: **armura** (4 locuri, butoane Piele / Metal). Sus: ceas zi / noapte ca în Warcraft 3 (soare
-sau lună într-un inel auriu care se umple), „Ziua 2” / „Noaptea 1/10” și timpul — fără numărul de
-zombi. Animalele rănite au bară de viață deasupra.
+treptele 3 și 5 și ce mai deblochezi). În 🎒, în dreapta: **armura** (4 locuri, butoane Piele / Metal). Sus: un singur ceas ca în Warcraft 3 — soare
+sau lună într-un inel auriu care se umple cât trece ziua / noaptea, iar lângă el un singur timp care
+scade (cele 30 de minute); fără „Ziua 2” / „Noaptea 1” și fără numărul de zombi. Animalele rănite au bară de viață deasupra.
 Meniul: 🖥 Grafică Înaltă / Medie / Mică.
 În consola din dev: `game().state`, `renderer.setCameraOffset(x, y, z)`.
 
@@ -222,16 +222,16 @@ sau texturi din acele jocuri.
 ## Decizii de implementare
 
 - **Runda** (`CONFIG.run`, `systems/waves.ts`, `state.stage`), după ideea lui Andrei (Survival din Warframe):
-  1. **Campania — 30 de minute**: ceasul mare de sus („⏳ 29:12”) numără invers; între timp zi și
+  1. **Campania — 30 de minute**: timpul de lângă ceasul de sus („29:12”) numără invers; între timp zi și
      noapte ca înainte: ziua 45 s (prima 30 s) construiești, noaptea 150 s + 5 s pe noapte (~8 nopți
      încap). Zombii vin în **hoarde** (3 + noapte/2) în primele 75% din noapte; în zori ard.
      Boșii campaniei: Matca (noaptea 3), Lich-ul (noaptea 6). Sub un minut, ceasul clipește roșu.
   2. **Asaltul boșilor — fără limită de timp**: la 0:00 se face noapte și boșii vin unul după altul
      (Yeti → Vrăjitoarea → Colosul → **Regele Iernii**, cel mai greu), fiecare cu escortă și zombi
      care tot vin cât trăiește. Între boși: 25 s de pauză (zi scurtă: lemn, gloanțe, reparat).
-     Sus: „☠ BOȘI ÎNVINȘI 2/4”.
+     Lângă ceas: „☠ 2/4” (boși învinși).
   3. **Valul fără sfârșit**: după ultimul boss, un val nou la 35 s, tot mai mare și mai puternic,
-     cu un boss la întâmplare la fiecare 5 valuri. Sus: „∞ 4:37” — cât reziști. Nu mai există
+     cu un boss la întâmplare la fiecare 5 valuri. Ceasul arată ♾ și „4:37” — cât reziști. Nu mai există
      victorie: jocul se termină doar când cazi (sau cade mina).
   **Clasamentul** pune întâi rundele ajunse în valul final (după timpul de acolo), apoi pe cele din
   asalt (după boșii învinși), apoi campania (după cât timp au rezistat).

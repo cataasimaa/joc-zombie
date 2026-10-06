@@ -44,15 +44,11 @@
 
       <!-- Sus centru: zi/noapte și cronometrul -->
       <div class="top-center">
-        <!-- Ceasul mare al rundei: 30 de minute de campanie → asaltul boșilor → valul fără sfârșit -->
-        <div id="run-timer" class="run-timer">⏳ 30:00</div>
-        <!-- Ceasul zi / noapte (ca în Warcraft 3): soare sau lună într-un inel care se umple -->
+        <!-- Ceasul (ca în Warcraft 3): soare / lună într-un inel care se umple cât trece ziua / noaptea,
+             iar lângă el un singur timp: cât mai e din cele 30 de minute (apoi boșii / valul fără sfârșit) -->
         <div class="wave-panel clock-panel">
           <div id="clock" class="clock"><span id="clock-icon" class="clock-icon">☀</span></div>
-          <div class="clock-info">
-            <div id="wave-text"></div>
-            <div id="timer-text"></div>
-          </div>
+          <div id="run-timer" class="run-timer">30:00</div>
           <button id="start-wave" class="small-btn clock-skip" title="Începe noaptea acum">🌙▸</button>
         </div>
         <div id="boss-panel" class="panel boss-panel hidden">

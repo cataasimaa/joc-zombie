@@ -231,8 +231,6 @@ export class Hud {
     nameInput: $<HTMLInputElement>("player-name"),
     difficulty: $("difficulty"),
     heroSubtitle: $("hero-subtitle"),
-    waveText: $("wave-text"),
-    timerText: $("timer-text"),
     startWave: $<HTMLButtonElement>("start-wave"),
     bossPanel: $("boss-panel"),
     bossBar: $("boss-bar"),
@@ -579,20 +577,14 @@ export class Hud {
     // Ceasul: doar ziua / noaptea și timpul rămas (câți zombi vin rămâne un mister).
     const R = CONFIG.run;
     const rushTotal = R.rushBosses.length;
-    const bossNow = state.rushIndex + (state.rushBossId !== null ? 1 : 0);
     let clockP = state.phaseDuration > 0 ? 1 - state.phaseTimer / state.phaseDuration : 0;
+    // Un singur timp lângă ceas: campania numără invers, asaltul arată boșii, valul final cât reziști.
     if (state.stage === "campaign") {
-      this.text(this.el.waveText, state.phase === "day" ? `Ziua ${state.wave + 1}` : `Noaptea ${state.wave}`);
-      this.text(this.el.timerText, fmtTime(state.phaseTimer));
-      this.text(this.el.runTimer, `⏳ ${fmtTime(state.runTimer)}`);
+      this.text(this.el.runTimer, fmtTime(state.runTimer));
     } else if (state.stage === "bossRush") {
-      this.text(this.el.waveText, state.phase === "day" ? "Pauză" : `Boss ${Math.max(1, bossNow)}/${rushTotal}`);
-      this.text(this.el.timerText, state.phase === "day" ? fmtTime(state.phaseTimer) : "fără limită");
-      this.text(this.el.runTimer, `☠ BOȘI ÎNVINȘI ${state.rushIndex}/${rushTotal}`);
+      this.text(this.el.runTimer, `☠ ${state.rushIndex}/${rushTotal}`);
     } else {
-      this.text(this.el.waveText, `Valul ${state.endlessWave}`);
-      this.text(this.el.timerText, `următorul: ${Math.ceil(state.endlessTimer)} s`);
-      this.text(this.el.runTimer, `∞ ${fmtTime(state.endlessTime)}`);
+      this.text(this.el.runTimer, fmtTime(state.endlessTime));
       clockP = 1 - state.endlessTimer / R.endlessEvery;
     }
     this.el.runTimer.classList.toggle("final", state.stage === "campaign" && state.runTimer < 60);
