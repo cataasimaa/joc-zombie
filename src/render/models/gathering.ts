@@ -7,40 +7,45 @@ import { PAL, hex, mix } from "../palette";
 
 const SMOOTH = { smooth: true } as const;
 
-/** Lacul înghețat: gheață albăstruie lucioasă, margini de zăpadă, copca cu un scăunel și o găleată. */
+/**
+ * Balta: apă închisă la culoare, lucioasă (metal = reflexe), cu o margine de gheață subțire
+ * spartă în bucăți, stuf uscat, un ponton mic de lemn, un scăunel, o găleată și un semn.
+ */
 export function buildPond(scene: Scene, mats: Materials, radius: number): Mesh[] {
   const k = new ModelKit(scene, mats, 4100);
-  k.cyl(0.06, radius * 2, radius * 2, 28, { p: [0, 0.03, 0] }, { color: mix(PAL.ice, PAL.snowShadow, 0.55), mat: "metal", wear: 0.08 });
-  // Fisuri și petice de zăpadă pe gheață.
-  for (let i = 0; i < 9; i++) {
+  // Apa: un disc întunecat, puțin sub nivelul malului.
+  k.cyl(0.05, radius * 2 + 0.6, radius * 2 + 0.6, 40, { p: [0, -0.25, 0] }, { color: hex("#14303c"), mat: "metal", wear: 0.05, smooth: true });
+  // Malul de gheață: plăci rupte pe margine.
+  for (let i = 0; i < 34; i++) {
+    const a = (i / 34) * Math.PI * 2 + k.rand(-0.05, 0.05);
+    const r = radius - k.rand(0.2, 0.9);
+    k.box(k.rand(0.7, 1.4), 0.07, k.rand(0.5, 1.0), { p: [Math.cos(a) * r, -0.2, Math.sin(a) * r], r: [k.rand(-0.06, 0.06), -a, k.rand(-0.06, 0.06)] }, { color: mix(PAL.ice, PAL.snow, k.rand(0.5, 0.8)), wear: 0.08 });
+  }
+  // Mal de zăpadă moale în jur.
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2 + k.rand(-0.08, 0.08);
+    k.sphere(1, 6, { p: [Math.cos(a) * (radius + 0.3), 0.02, Math.sin(a) * (radius + 0.3)], s: [1.9, 0.14, 0.9], r: [0, -a, 0] }, { color: PAL.snow, wear: 0.05, ...SMOOTH });
+  }
+  // Stuf uscat în smocuri pe mal.
+  for (let g = 0; g < 7; g++) {
     const a = k.rand(0, Math.PI * 2);
-    const r = k.rand(0.8, radius - 0.6);
-    k.box(k.rand(0.6, 1.6), 0.02, 0.04, { p: [Math.cos(a) * r, 0.065, Math.sin(a) * r], r: [0, k.rand(0, 3), 0] }, { color: hex("#d6ecf6") });
+    const r = radius - 0.3;
+    for (let i = 0; i < 6; i++) {
+      const h = k.rand(0.6, 1.2);
+      k.cyl(h, 0.01, 0.04, 3, { p: [Math.cos(a) * r + k.rand(-0.3, 0.3), h / 2, Math.sin(a) * r + k.rand(-0.3, 0.3)], r: [k.rand(-0.2, 0.2), 0, k.rand(-0.2, 0.2)] }, { color: hex("#8a7a55"), wear: 0.2 });
+    }
   }
-  for (let i = 0; i < 5; i++) {
-    const a = k.rand(0, Math.PI * 2);
-    const r = k.rand(1.5, radius - 0.4);
-    k.sphere(1, 6, { p: [Math.cos(a) * r, 0.04, Math.sin(a) * r], s: [k.rand(0.8, 1.6), 0.08, k.rand(0.5, 1)] }, { color: PAL.snow, ...SMOOTH });
-  }
-  // Mal de zăpadă în jur.
-  for (let i = 0; i < 18; i++) {
-    const a = (i / 18) * Math.PI * 2 + k.rand(-0.1, 0.1);
-    k.sphere(1, 6, { p: [Math.cos(a) * (radius + 0.15), 0.05, Math.sin(a) * (radius + 0.15)], s: [1.7, 0.16, 0.8], r: [0, -a, 0] }, { color: PAL.snow, wear: 0.05, ...SMOOTH });
-  }
-  // Copca: apă neagră, cu margine de gheață spartă.
-  k.cyl(0.07, 1.0, 1.0, 14, { p: [0, 0.035, 0] }, { color: hex("#0b1a22"), mat: "metal" });
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    k.box(0.28, 0.08, 0.16, { p: [Math.cos(a) * 0.58, 0.08, Math.sin(a) * 0.58], r: [0, -a, k.rand(-0.2, 0.2)] }, { color: hex("#cfe6f2"), wear: 0.1 });
-  }
-  // Scăunel de lemn și găleată ruginită lângă copcă.
-  k.box(0.45, 0.06, 0.35, { p: [1.15, 0.42, 0.3] }, { color: PAL.oldWood, wear: 0.3, frost: 0.6 });
-  for (const [x, z] of [[0.97, 0.17], [1.33, 0.17], [0.97, 0.43], [1.33, 0.43]]) k.cyl(0.4, 0.05, 0.05, 5, { p: [x, 0.2, z] }, { color: PAL.darkWood });
-  k.cyl(0.38, 0.4, 0.32, 10, { p: [1.1, 0.19, -0.55] }, { color: PAL.rust, mat: "metal", wear: 0.35, frost: 0.4 });
-  // Un semn înfipt în zăpadă: un pește pictat pe o scândură.
-  k.cyl(1.3, 0.07, 0.08, 5, { p: [-1.4, 0.65, 0.9] }, { color: PAL.darkWood, wear: 0.25 });
-  k.box(0.7, 0.4, 0.06, { p: [-1.4, 1.2, 0.9] }, { color: PAL.oldWood, wear: 0.3, frost: 0.7 });
-  k.sphere(0.3, 6, { p: [-1.45, 1.2, 0.94], s: [1.4, 0.5, 0.2] }, { color: hex("#9fb3bb"), ...SMOOTH });
+  // Ponton de scânduri care intră puțin în apă (spre +x).
+  for (let i = 0; i < 5; i++) k.box(0.3, 0.06, 1.3, { p: [radius - 0.9 + i * 0.32, 0.18, 0], r: [0, 0, k.rand(-0.03, 0.03)] }, { color: mix(PAL.oldWood, PAL.burntWood, k.rand(0, 0.6)), wear: 0.3, frost: 0.6 });
+  for (const [x, z] of [[radius - 0.9, -0.55], [radius - 0.9, 0.55], [radius + 0.4, -0.55], [radius + 0.4, 0.55]]) k.cyl(0.6, 0.1, 0.1, 5, { p: [x, -0.05, z] }, { color: PAL.darkWood });
+  // Scăunel, găleată ruginită și un semn cu un pește pictat.
+  const sx = radius + 1.4;
+  k.box(0.45, 0.06, 0.35, { p: [sx, 0.42, 1.0] }, { color: PAL.oldWood, wear: 0.3, frost: 0.6 });
+  for (const [x, z] of [[sx - 0.18, 0.87], [sx + 0.18, 0.87], [sx - 0.18, 1.13], [sx + 0.18, 1.13]]) k.cyl(0.4, 0.05, 0.05, 5, { p: [x, 0.2, z] }, { color: PAL.darkWood });
+  k.cyl(0.38, 0.4, 0.32, 10, { p: [sx, 0.19, -1.0] }, { color: PAL.rust, mat: "metal", wear: 0.35, frost: 0.4 });
+  k.cyl(1.3, 0.07, 0.08, 5, { p: [sx + 0.6, 0.65, 1.9] }, { color: PAL.darkWood, wear: 0.25 });
+  k.box(0.7, 0.4, 0.06, { p: [sx + 0.6, 1.2, 1.9] }, { color: PAL.oldWood, wear: 0.3, frost: 0.7 });
+  k.sphere(0.3, 6, { p: [sx + 0.55, 1.2, 1.94], s: [1.4, 0.5, 0.2] }, { color: hex("#9fb3bb"), ...SMOOTH });
   return k.build("pond");
 }
 

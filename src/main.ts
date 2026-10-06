@@ -405,6 +405,8 @@ const hud = new Hud({
   },
   onUseItem: (item) => send({ type: "useItem", playerId: LOCAL_PLAYER, item }),
   onAction: (on) => send({ type: "action", playerId: LOCAL_PLAYER, on }),
+  onUseSlot: (slot) => send({ type: "useSlot", playerId: LOCAL_PLAYER, slot }),
+  onSetSlot: (slot, item) => send({ type: "setSlot", playerId: LOCAL_PLAYER, slot, item }),
   onPickHero: startGame,
   onToggleSound: () => {
     sfx.setMuted(!sfx.muted);
@@ -606,10 +608,12 @@ keyboard.onPress("Escape", () => {
 keyboard.onPress("KeyR", () => (placing ? rotateWall() : send({ type: "reload", playerId: LOCAL_PLAYER })));
 keyboard.onPress("Enter", () => (placing ? confirmPlace() : send({ type: "startNightNow", playerId: LOCAL_PLAYER })));
 keyboard.onPress("KeyC", () => sim && !paused && hud.setShopOpen(!hud.shopOpen));
-keyboard.onPress("Digit1", () => buildMode !== "off" && pick("tower"));
-keyboard.onPress("Digit2", () => buildMode !== "off" && pick("wall"));
-keyboard.onPress("Digit3", () => buildMode !== "off" && pick("mine"));
-keyboard.onPress("Digit4", () => buildMode !== "off" && sim?.state.mode === "survival" && pick("campfire"));
+// 1–4: în modul construcție alegi ce construiești; altfel folosești locul din bara rapidă.
+const slotKey = (slot: number) => sim && !paused && send({ type: "useSlot", playerId: LOCAL_PLAYER, slot });
+keyboard.onPress("Digit1", () => (buildMode !== "off" ? pick("tower") : slotKey(0)));
+keyboard.onPress("Digit2", () => (buildMode !== "off" ? pick("wall") : slotKey(1)));
+keyboard.onPress("Digit3", () => (buildMode !== "off" ? pick("mine") : slotKey(2)));
+keyboard.onPress("Digit4", () => (buildMode !== "off" ? sim?.state.mode === "survival" && pick("campfire") : slotKey(3)));
 // G = acțiune (ții apăsat: târnăcop; apeși: undiță / vânzare), I = inventar.
 keyboard.onPress("KeyI", () => sim && hud.toggleInventory());
 window.addEventListener("keydown", (e) => {

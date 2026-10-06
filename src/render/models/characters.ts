@@ -18,6 +18,8 @@ export interface HeroLook {
   weapon: WeaponId;
   /** Accesoriul skin-ului (Moș Crăciun, vârcolac…), dacă are. */
   accessory?: SkinAccessory;
+  /** Ține târnăcopul în mână: fără armă (târnăcopul e o piesă separată, animată). */
+  noGun?: boolean;
 }
 
 /** Un picior din două bucăți: coapsa (pivot în șold) și gamba (pivot în genunchi). */
@@ -142,14 +144,14 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
   if (cls === "assault" || cls === "sniper") {
     arm(0.4, 0);
     arm(-0.4, 1);
-    muzzle = gun(k, look.weapon, cls === "sniper");
+    if (!look.noGun) muzzle = gun(k, look.weapon, cls === "sniper");
   } else if (tank) {
     // Pușcă cu alice grea + scut rotund de lemn pe spate.
     arm(0.42, 0);
     arm(-0.42, 1);
     k.cyl(0.12, 1.1, 1.1, 14, { p: [0, 1.3, -0.5], r: [Math.PI / 2, 0, 0] }, { color: PAL.oldWood, wear: 0.22 });
     k.cyl(0.14, 1.16, 1.16, 14, { p: [0, 1.3, -0.51], r: [Math.PI / 2, 0, 0], s: [1, 0.5, 1] }, { color: PAL.iron, mat: "metal", wear: 0.25 });
-    muzzle = gun(k, look.weapon === "rusty" ? "scattergun" : look.weapon, false);
+    if (!look.noGun) muzzle = gun(k, look.weapon === "rusty" ? "scattergun" : look.weapon, false);
   } else {
     // Healer: robă lungă, pușcă ușoară, felinar de gheață la șold și toiag cu cristal de chihlimbar pe spate.
     k.cyl(2.1, 0.07, 0.09, 6, { p: [0.2, 1.25, -0.42], r: [0, 0, -0.3] }, { color: PAL.oldWood, wear: 0.25 });
@@ -160,7 +162,7 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
     k.cyl(0.6, 0.8, 1.05, 12, { p: [0, 0.55, 0] }, { color: coat, wear: 0.12, frost: 0.4, frostNormal: 0.6, ...SMOOTH });
     arm(0.4, 0);
     arm(-0.4, 1);
-    muzzle = gun(k, look.weapon, false);
+    if (!look.noGun) muzzle = gun(k, look.weapon, false);
     k.box(0.2, 0.26, 0.2, { p: [-0.42, 0.98, 0.1] }, { color: PAL.iron, mat: "metal", wear: 0.2 });
     k.box(0.13, 0.18, 0.13, { p: [-0.42, 0.98, 0.1] }, { color: PAL.ice, mat: "glow" });
   }

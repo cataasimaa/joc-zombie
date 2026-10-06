@@ -12,7 +12,10 @@ export type Difficulty = "easy" | "medium" | "hard" | "nightmare";
 export type GameMode = "defend" | "survival";
 export type Weather = "clear" | "snow" | "blizzard" | "frost" | "rain" | "wind";
 export type AnimalKind = "deer" | "bear" | "chicken" | "pig";
-export type ItemKind = "rawMeat" | "cookedMeat" | "fish";
+/** Peștii din baltă: de la cel mai des (biban) la cel mai rar și mai greu de scos (somn). */
+export type FishKind = "perch" | "trout" | "pike" | "catfish";
+export const FISH_KINDS: FishKind[] = ["perch", "trout", "pike", "catfish"];
+export type ItemKind = "rawMeat" | "cookedMeat" | FishKind;
 
 export interface WeatherStats {
   name: string;
@@ -158,7 +161,6 @@ export const CONFIG = {
     fireWarmRadius: 4.5,
     fireWarmPerSec: 9,
     rawMeatFood: 12,
-    fishFood: 18,
     rawMeatHurt: 6,
     cookedMeatFood: 45,
     cookTime: 15,
@@ -364,7 +366,8 @@ export const CONFIG = {
   gather: {
     /** Cât de departe ajungi cu târnăcopul și cât de des lovești cât ții apăsat. */
     reach: 2.3,
-    hitInterval: 0.4,
+    /** Secunde între lovituri (cât ții apăsat): lemnul și piatra merg greu. */
+    hitInterval: { tree: 0.7, ore: 1.0, animal: 0.6 },
     /** Un brad cade după atâtea lovituri; fiecare lovitură dă atâta lemn. */
     treeHits: 50,
     woodPerHit: 1,
@@ -378,13 +381,20 @@ export const CONFIG = {
     orePerDay: 3,
     oreMax: 6,
     goldChance: 0.3,
-    /** Pescuit (doar ziua, la copcă): peștele mușcă după 4–10 s; ai atâtea secunde să tragi. */
-    fishReach: 2.6,
+    /** Pescuit (doar ziua, de pe malul bălții): peștele mușcă după 4–10 s. */
+    fishReach: 2.2,
     biteMin: 4,
     biteMax: 10,
-    biteWindow: 1.6,
-    /** Peștele se vinde la tarabă (casa principală): monede pe bucată. */
-    fishPrice: 14,
+    /**
+     * Peștii: șansă (pondere), preț la tarabă, de câte ori trebuie să tragi ca să-l scoți și cât
+     * timp ai (secunde). Cu cât e mai rar, cu atât se zbate mai tare.
+     */
+    fish: {
+      perch: { name: "Biban", icon: "🐟", weight: 45, price: 8, pulls: 2, time: 1.8, food: 14 },
+      trout: { name: "Păstrăv", icon: "🐠", weight: 30, price: 15, pulls: 3, time: 2.2, food: 18 },
+      pike: { name: "Știucă", icon: "🦈", weight: 18, price: 28, pulls: 5, time: 2.8, food: 22 },
+      catfish: { name: "Somn", icon: "🐋", weight: 7, price: 60, pulls: 8, time: 3.6, food: 30 },
+    } satisfies Record<FishKind, { name: string; icon: string; weight: number; price: number; pulls: number; time: number; food: number }>,
     sellReach: 2.8,
   },
 

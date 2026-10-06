@@ -1,7 +1,7 @@
 // Starea completă a jocului: doar date simple (fără clase, fără Babylon).
 // Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
-import type { AnimalKind, Difficulty, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
+import type { AnimalKind, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
 import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
@@ -10,6 +10,12 @@ export type PlayerId = string;
 
 /** day = zi (construiești), night = noapte (atacă zombii). */
 export type Phase = "day" | "night" | "victory" | "gameover";
+
+/**
+ * Ce poate sta într-un loc din bara rapidă (4 locuri, le aranjezi cum vrei):
+ * o armă pe care o ai, târnăcopul, lanterna, minele sau mâncare / pește.
+ */
+export type SlotItem = `weapon:${WeaponId}` | "pickaxe" | "lantern" | "mine" | ItemKind;
 
 export interface Player {
   id: PlayerId;
@@ -37,8 +43,14 @@ export interface Player {
   unlocked: string[];
   /** Zombi omorâți (pentru scor și clasament). */
   kills: number;
-  /** Inventarul (bara rapidă de jos): carne crudă, carne friptă. */
+  /** Inventarul: carne crudă, carne friptă și peștii prinși (pe specii). */
   inventory: Record<ItemKind, number>;
+  /** Armele pe care le ai (cea din mână e `weapon`). */
+  weapons: WeaponId[];
+  /** Bara rapidă: 4 locuri, fiecare cu ce vrei tu (sau gol). */
+  hotbar: (SlotItem | null)[];
+  /** Ce ții în mână: arma sau târnăcopul. */
+  tool: "gun" | "pickaxe";
 }
 
 export interface Hero {
@@ -81,8 +93,13 @@ export interface Hero {
   actionTimer: number;
   /** Pescuit: secunde până mușcă peștele (-1 = nu pescuiește). */
   fishTimer: number;
-  /** Peștele a mușcat: secunde rămase ca să tragi. */
+  /** Peștele a mușcat: secunde rămase ca să-l scoți. */
   biteTimer: number;
+  /** Peștele agățat și de câte ori ai tras deja de el. */
+  hooked: FishKind | null;
+  reel: number;
+  /** Lanterna aprinsă (o stingi / aprinzi din bara rapidă). */
+  lantern: boolean;
   /** Căzut: cât l-a ridicat un coleg (0..CONFIG.heroCommon.reviveTime). */
   reviveProgress: number;
 }
@@ -369,9 +386,11 @@ export type GameEvent =
   | { type: "oreSpawned"; id: EntityId; kind: Ore["kind"]; pos: Vec2 }
   | { type: "oreMined"; id: EntityId; kind: Ore["kind"]; pos: Vec2; playerId: PlayerId; coins: number }
   | { type: "fishCast"; heroId: EntityId; pos: Vec2 }
-  | { type: "fishBite"; heroId: EntityId; pos: Vec2 }
-  | { type: "fishCaught"; heroId: EntityId; playerId: PlayerId; pos: Vec2 }
+  | { type: "fishBite"; heroId: EntityId; pos: Vec2; fish: FishKind }
+  | { type: "fishReel"; heroId: EntityId; pos: Vec2; reel: number; pulls: number }
+  | { type: "fishCaught"; heroId: EntityId; playerId: PlayerId; pos: Vec2; fish: FishKind }
   | { type: "fishLost"; heroId: EntityId; pos: Vec2 }
   | { type: "sold"; playerId: PlayerId; fish: number; coins: number; pos: Vec2 }
+  | { type: "equipped"; playerId: PlayerId; item: SlotItem }
   | { type: "gameOver" }
   | { type: "victory" };

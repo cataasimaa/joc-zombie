@@ -128,7 +128,7 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
     // 4. Tragere în direcția în care ochește jucătorul.
     hero.fireTimer -= dt;
     // Cu târnăcopul sau undița în mână nu tragi.
-    if (!hero.firing || hero.action || hero.fishTimer >= 0) continue;
+    if (!hero.firing || hero.action || hero.fishTimer >= 0 || player.tool === "pickaxe") continue;
     if (hero.autoAim) {
       // Ochire automată: zombii întâi, apoi vânatul sălbatic (niciodată animalele de la fermă).
       const target: { pos: Vec2 } | null = findNearestZombie(state, hero.pos, gun.range) ?? nearestWildAnimal(state, hero.pos, gun.range);
@@ -190,7 +190,7 @@ export function traceBullet(
 ): { hits: Zombie[]; animals: Animal[]; chest: Chest | null; end: Vec2 } {
   // Unde se oprește glonțul în obstacole.
   let maxT = range;
-  const blockers = [...OBSTACLES.filter((o) => obstacleActive(state, o)), state.shelter];
+  const blockers = [...OBSTACLES.filter((o) => !o.water && obstacleActive(state, o)), state.shelter];
   for (const o of blockers) {
     const t = rayCircle(from, dir, o.pos, o.radius);
     if (t !== null && t < maxT) maxT = t;

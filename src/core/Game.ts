@@ -15,6 +15,7 @@ import {
 import { updateChests, updateCoins } from "./systems/coins";
 import { addFuel, buildBuilding, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
 import { spawnDayOres, updateGather } from "./systems/gather";
+import { defaultHotbar, setSlot, useSlot } from "./systems/hotbar";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
@@ -168,6 +169,12 @@ export class GameSimulation {
         hero.action = cmd.on;
         break;
       }
+      case "setSlot":
+        setSlot(s, cmd.playerId, cmd.slot, cmd.item);
+        break;
+      case "useSlot":
+        useSlot(s, cmd.playerId, cmd.slot, this.events);
+        break;
       case "startNightNow":
         startNight(s, this.events);
         break;
@@ -237,7 +244,10 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       skin: null,
       unlocked: [],
       kills: 0,
-      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, fish: 0 },
+      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, perch: 0, trout: 0, pike: 0, catfish: 0 },
+      weapons: ["rusty"],
+      hotbar: defaultHotbar(mode),
+      tool: "gun",
     };
     state.heroes.push({
       id: heroId,
@@ -268,6 +278,9 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       actionTimer: 0,
       fishTimer: -1,
       biteTimer: 0,
+      hooked: null,
+      reel: 0,
+      lantern: true,
       reviveProgress: 0,
     });
     const hero = state.heroes[state.heroes.length - 1];
@@ -275,8 +288,11 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
     hero.reserve = hero.ammo * CONFIG.ammo.startMagazines;
   });
 
-  // Focul de tabără de lângă mină (în Apără mina e doar decor și nu se stinge).
-  state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 1.6, z: -3.7 }, fuel: CONFIG.survival.campfireFuel, cooking: [] });
+  // Supraviețuire: un foc de tabără de start, la câțiva pași de mină (lângă mină e loc liber de
+  // construit ziduri). În Apără mina nu mai e foc lângă mină.
+  if (mode === "survival") {
+    state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 2.5, z: -8.5 }, fuel: CONFIG.survival.campfireFuel, cooking: [] });
+  }
   // Primele zăcăminte de argint / aur, ca să ai ce mina din prima zi.
   spawnDayOres(state, []);
   return state;

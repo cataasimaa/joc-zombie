@@ -204,7 +204,8 @@ export class SurvivalView {
   private syncDrops(state: GameState): void {
     sync(this.dropViews, state.drops, (d) => {
       const root = new TransformNode("drop", this.scene);
-      this.drops[d.kind].instance("dropMesh", root);
+      const kind = d.kind === "ammo" || d.kind === "rawMeat" || d.kind === "cookedMeat" ? d.kind : "fish";
+      this.drops[kind].instance("dropMesh", root);
       return root;
     }, (root, d) => {
       root.position.copyFrom(this.at(d.pos.x, d.pos.z, 0.1 + Math.sin(this.time * 3 + d.id) * 0.06));

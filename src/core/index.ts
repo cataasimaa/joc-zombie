@@ -3,7 +3,8 @@ export { GameSimulation } from "./Game";
 export type { GameOptions, PlayerSetup } from "./Game";
 export type { BuildKind, Command } from "./commands";
 export { CONFIG } from "./config";
-export type { AnimalKind, Difficulty, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
+export type { AnimalKind, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
+export { FISH_KINDS } from "./config";
 export { DEFAULT_SKIN_COLOR, HERO_DEFS, SKINS } from "./heroDefs";
 export type { HeroDef, SkinAccessory, SkinDef } from "./heroDefs";
 export { CHEST_POOL, REPEATABLE, SHOP_POOLS, WEAPONS, rewardKey } from "./items";
@@ -26,7 +27,8 @@ export {
   snapBarricade,
 } from "./systems/barricades";
 export { gunStats, heroById, heroRange, traceBullet, xpToNextLevel } from "./systems/heroes";
-export { actionHint, nearFishingHole, nearTrader } from "./systems/gather";
+export { actionHint, bobberPos, fishCount, nearFishingHole, nearTrader } from "./systems/gather";
+export { HOTBAR_SIZE, canHold } from "./systems/hotbar";
 export type { ActionHint } from "./systems/gather";
 export type { GunStats } from "./systems/heroes";
 export { canPlaceMine } from "./systems/mines";

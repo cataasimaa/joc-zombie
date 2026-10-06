@@ -9,6 +9,21 @@
 import type { EntityId, GameEvent, PlayerId, ShopRarity, TowerKind, WeaponId } from "../core";
 import { Music } from "./Music";
 
+// Vocile înregistrate (generate de tools/zombie_voices.py cu un sintetizator de vorbire): gemete,
+// răgete de atac, țipete, horcăit de moarte, gemetele eroului lovit. Vite le dă ca URL-uri.
+const VOICE_URLS = import.meta.glob("../assets/sfx/*.mp3", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const VOICE_GROUPS = {
+  moan: ["moan1", "moan2", "moan3", "moan4"],
+  attack: ["attack1", "attack2", "attack3"],
+  bruteAttack: ["brute_attack"],
+  bruteMoan: ["brute_moan"],
+  shriek: ["shriek"],
+  gurgle: ["gurgle"],
+  death: ["death1", "death2"],
+  hurt: ["hurt1", "hurt2", "hurt3"],
+} as const;
+type VoiceGroup = keyof typeof VOICE_GROUPS;
+
 export interface SfxFrame {
   events: GameEvent[];
   localPlayer: PlayerId;
@@ -62,11 +77,63 @@ export class Sfx {
     window.addEventListener("keydown", unlock);
   }
 
+  private voices = new Map<string, AudioBuffer>();
+
+  /** Încarcă vocile (în fundal); până se încarcă, se folosește vocea sintetizată din cod. */
+  private loadVoices(ctx: AudioContext): void {
+    for (const [path, url] of Object.entries(VOICE_URLS)) {
+      const name = path.split("/").pop()!.replace(".mp3", "");
+      fetch(url)
+        .then((r) => r.arrayBuffer())
+        .then((buf) => ctx.decodeAudioData(buf))
+        .then((audio) => this.voices.set(name, audio))
+        .catch(() => {
+          // fără fișier: rămâne vocea sintetizată
+        });
+    }
+  }
+
+  /**
+   * Redă o voce din grup (aleasă la întâmplare), cu mică variație de înălțime ca să nu sune la fel.
+   * `distant` = înfundată și cu ecou (departe). Întoarce false dacă vocile nu s-au încărcat încă.
+   */
+  private voice(group: VoiceGroup, vol: number, opts: { pitch?: number; distant?: boolean; delay?: number } = {}): boolean {
+    const names = VOICE_GROUPS[group];
+    const buf = this.voices.get(names[Math.floor(Math.random() * names.length)]);
+    if (!buf || !this.ctx) return false;
+    const ctx = this.ctx;
+    const t = ctx.currentTime + (opts.delay ?? 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = (opts.pitch ?? 1) * (0.9 + Math.random() * 0.2);
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    let node: AudioNode = src.connect(g);
+    if (opts.distant) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 1100;
+      node = node.connect(lp);
+      node.connect(this.reverbSend);
+      const dry = ctx.createGain();
+      dry.gain.value = 0.4;
+      node.connect(dry).connect(this.sfxBus);
+    } else {
+      node.connect(this.sfxBus);
+      const wet = ctx.createGain();
+      wet.gain.value = 0.35;
+      node.connect(wet).connect(this.reverbSend);
+    }
+    src.start(t);
+    return true;
+  }
+
   private init(): void {
     if (this.ctx) return;
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     const ctx = (this.ctx = new Ctx());
+    this.loadVoices(ctx);
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.7;
     // Compresor: sunetele puternice (explozii) nu „sparg” difuzorul telefonului.
@@ -303,7 +370,12 @@ export class Sfx {
         break;
       case "zombieDied":
         if (e.burned) this.noiseHit({ type: "highpass", freq: 1500, dur: 0.5, vol: 0.08 });
-        else if (this.throttle("die", 0.08)) this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
+        else if (this.throttle("die", 0.12)) {
+          const big = e.zombieType === "boss" || e.zombieType === "brute";
+          if (!this.voice("death", big ? 0.9 : 0.55, { pitch: big ? 0.7 : e.zombieType === "runner" ? 1.2 : 1 })) {
+            this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
+          }
+        }
         break;
       case "zombieAttack":
         if (this.throttle("snarl", 0.12)) this.zombieAttack(e.zombieType, !!e.wall);
@@ -316,6 +388,8 @@ export class Sfx {
         break;
       case "heroHit":
         if (mine(e.id) && this.throttle("hurt", 0.25)) {
+          // Eroul geme de durere („ugh!”) + lovitura surdă.
+          if (this.throttle("hurtVoice", 0.6)) this.voice("hurt", 0.8);
           this.thunk(120, 0.35);
           this.tone(220, 140, 0.25, "triangle", 0.12, 0.02, 700);
         }
@@ -414,6 +488,11 @@ export class Sfx {
         this.noiseHit({ type: "lowpass", freq: 1600, dur: 0.35, vol: 0.4 });
         this.tone(400, 160, 0.15, "sine", 0.3, 0.05);
         if (e.playerId === f.localPlayer) [784, 988, 1319].forEach((fr, i) => this.bell(fr, 0.16, 0.2 + i * 0.09));
+        break;
+      case "fishReel":
+        // Mulineta: un „zrrr” scurt și pește care se zbate.
+        this.noiseHit({ type: "bandpass", freq: 2600, sweepTo: 1800, dur: 0.18, vol: 0.18 });
+        this.noiseHit({ type: "lowpass", freq: 900, dur: 0.12, vol: 0.25, delay: 0.05 });
         break;
       case "fishLost":
         this.tone(300, 140, 0.18, "sine", 0.15);
@@ -753,7 +832,14 @@ export class Sfx {
   private zombieAttack(type: string, wall: boolean): void {
     const big = type === "brute" || type === "boss";
     const pitch = type === "boss" ? 0.55 : type === "brute" ? 0.65 : type === "runner" ? 1.35 : type === "flyer" ? 1.8 : type === "spitter" ? 1.1 : 1;
-    this.zombieVoice({ pitch, len: big ? 0.9 : type === "runner" ? 0.35 : 0.55, vol: big ? 0.5 : 0.38, open: 1.15, gurgle: type === "spitter" });
+    const played = big
+      ? this.voice("bruteAttack", 1.0, { pitch: type === "boss" ? 0.85 : 1 })
+      : type === "runner" || type === "flyer"
+        ? this.voice("shriek", 0.7, { pitch: type === "flyer" ? 1.2 : 1 })
+        : type === "spitter"
+          ? this.voice("gurgle", 0.75)
+          : this.voice("attack", 0.8);
+    if (!played) this.zombieVoice({ pitch, len: big ? 0.9 : type === "runner" ? 0.35 : 0.55, vol: big ? 0.5 : 0.38, open: 1.15, gurgle: type === "spitter" });
     // Șuieratul: zgomot care urcă rapid în frecvență (brațul / bâta trece prin aer).
     this.noiseHit({ type: "bandpass", freq: big ? 300 : 600, sweepTo: big ? 1200 : 2600, dur: big ? 0.22 : 0.13, vol: big ? 0.18 : 0.12, delay: 0.08 });
     // Impactul: lemn (zid) sau carne (erou / turn).
@@ -889,6 +975,9 @@ export class Sfx {
 
   /** Geamăt de zombi: vocea, mai lentă, cu gura închisă („uuuh”). Departe = înfundat, cu ecou. */
   private groan(vol: number, speed: number, distant: boolean): void {
+    // Geamăt înregistrat (uneori al unei brute, mai gros); dacă nu s-au încărcat, cel sintetizat.
+    const group: VoiceGroup = Math.random() < 0.15 ? "bruteMoan" : "moan";
+    if (this.voice(group, Math.min(1, vol * 3.2), { distant, pitch: 0.95 + (speed - 1) * 0.2 })) return;
     this.zombieVoice({ pitch: 0.8 + Math.random() * 0.35, len: 0.9 / speed + Math.random() * 0.4, vol, open: 0.75, distant });
   }
 

@@ -3,12 +3,12 @@
 // (pe server în multiplayer), cu RNG-ul din stare.
 
 import { CONFIG, type Rarity, type ShopRarity } from "../config";
-import { CHEST_POOL, REPEATABLE, SHOP_POOLS, type ShopReward, WEAPONS, rewardKey } from "../items";
+import { CHEST_POOL, REPEATABLE, SHOP_POOLS, type ShopReward, rewardKey } from "../items";
 import { nextRandom } from "../math";
 import type { Chest, GameEvent, GameState, Hero, Player, PlayerId } from "../types";
 import { gunStats, heroById, recomputeMaxHp } from "./heroes";
+import { giveWeapon } from "./hotbar";
 
-const RARITY_RANK = { start: 0, common: 1, rare: 2, epic: 3, legendary: 4 } as const;
 
 export function canShopRoll(state: GameState, playerId: PlayerId): string | null {
   const player = state.players[playerId];
@@ -81,8 +81,8 @@ function isUseful(player: Player, r: ShopReward): boolean {
     case "towerTier":
       return r.tier > player.towerTier;
     case "weapon":
-      return RARITY_RANK[WEAPONS[r.weaponId].rarity] > RARITY_RANK[WEAPONS[player.weapon].rarity] ||
-        (RARITY_RANK[WEAPONS[r.weaponId].rarity] === RARITY_RANK[WEAPONS[player.weapon].rarity] && r.weaponId !== player.weapon);
+      // O armă pe care n-o ai încă (o pui în bara rapidă unde vrei).
+      return !player.weapons.includes(r.weaponId);
     case "skin":
       return !player.skins.includes(r.skinId);
     default:
@@ -133,13 +133,10 @@ function applyReward(state: GameState, player: Player, r: ShopReward): void {
       player.towerTier = Math.max(player.towerTier, r.tier);
       break;
     case "weapon": {
-      player.weapon = r.weaponId;
+      giveWeapon(state, player, r.weaponId);
       // Arma nouă vine cu încărcătorul plin.
       const hero = heroById(state, player.heroId);
-      if (hero) {
-        hero.reloadTimer = 0;
-        hero.ammo = gunStats(state, hero).magazine;
-      }
+      if (hero) hero.ammo = gunStats(state, hero).magazine;
       break;
     }
     case "skin":

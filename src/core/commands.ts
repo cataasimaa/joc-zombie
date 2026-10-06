@@ -2,7 +2,7 @@
 // Acum le trimite input-ul local; în multiplayer le va trimite clientul la server.
 
 import type { ItemKind, TowerKind } from "./config";
-import type { EntityId, PlayerId } from "./types";
+import type { EntityId, PlayerId, SlotItem } from "./types";
 
 export type BuildKind = "tower" | "barricade" | "campfire" | "farmChicken" | "farmPig";
 
@@ -42,5 +42,9 @@ export type Command =
    * vânzarea peștelui la tarabă. Acțiunea depinde de ce e lângă erou.
    */
   | { type: "action"; playerId: PlayerId; on: boolean }
+  /** Pune ceva într-un loc din bara rapidă (sau îl golește cu null). */
+  | { type: "setSlot"; playerId: PlayerId; slot: number; item: SlotItem | null }
+  /** Folosește locul din bara rapidă: ia arma / târnăcopul în mână, aprinde lanterna, pune o mină, mănâncă. */
+  | { type: "useSlot"; playerId: PlayerId; slot: number }
   /** Sare peste restul zilei și începe noaptea. */
   | { type: "startNightNow"; playerId: PlayerId };

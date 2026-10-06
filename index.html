@@ -28,11 +28,10 @@
           <div class="bar small" title="Foame"><div id="hunger-bar" class="fill hunger"></div><span class="bar-text">🍖</span></div>
           <div class="bar small" title="Căldură"><div id="warmth-bar" class="fill warmth"></div><span class="bar-text">🔥</span></div>
         </div>
-        <!-- Resursele: lemn, turnuri, ziduri -->
+        <!-- Resursele: lemn și aur -->
         <div class="resources left-res">
           <span title="Lemn (pentru construcții)">🪵 <b id="wood-text">0</b></span>
-          <span title="Turnuri">🗼 <b id="towers-text">0/0</b></span>
-          <span title="Ziduri">🧱 <b id="barricades-text">0/0</b></span>
+          <span title="Aur (pentru magazinul norocului)"><i class="coin"></i> <b id="gold-text">0</b></span>
         </div>
       </div>
 
@@ -50,7 +49,6 @@
           <div class="bar thin"><div id="phase-bar" class="fill phase"></div></div>
           <button id="start-wave" class="small-btn">🌙 Începe noaptea</button>
         </div>
-        <div id="weather-chip" class="weather-chip"></div>
         <div id="boss-panel" class="panel boss-panel hidden">
           <div class="bar-label">☠ Lich-ul de gheață</div>
           <div class="bar"><div id="boss-bar" class="fill boss"></div></div>
@@ -65,11 +63,11 @@
 
       <!-- Jos: bara rapidă (inventar). Apeși ca să folosești. -->
       <div id="quickbar" class="quickbar hidden">
-        <button id="qb-cookedMeat" class="qb-slot" title="Carne friptă: mănânci"><span class="qb-ico">🍗</span><b class="qb-n">0</b></button>
-        <button id="qb-rawMeat" class="qb-slot" title="Carne crudă: o pui pe focul de lângă tine (sau o mănânci crudă)"><span class="qb-ico">🥩</span><b class="qb-n">0</b></button>
-        <button id="qb-fish" class="qb-slot" title="Pește: îl vinzi la tarabă pe aur (sau îl mănânci)"><span class="qb-ico">🐟</span><b class="qb-n">0</b></button>
-        <div class="qb-slot info" title="Gloanțe în rezervă"><span class="qb-ico">📦</span><b id="qb-ammo" class="qb-n">0</b></div>
-        <button id="qb-bag" class="qb-slot bag" title="Inventar (I)"><span class="qb-ico">🎒</span></button>
+        <button id="qb-0" class="qb-slot"><i class="qb-k">1</i><span class="qb-ico"></span><b class="qb-n"></b></button>
+        <button id="qb-1" class="qb-slot"><i class="qb-k">2</i><span class="qb-ico"></span><b class="qb-n"></b></button>
+        <button id="qb-2" class="qb-slot"><i class="qb-k">3</i><span class="qb-ico"></span><b class="qb-n"></b></button>
+        <button id="qb-3" class="qb-slot"><i class="qb-k">4</i><span class="qb-ico"></span><b class="qb-n"></b></button>
+        <button id="qb-bag" class="qb-slot bag" title="Inventar (I): aici alegi ce pui în fiecare loc"><span class="qb-ico">🎒</span></button>
       </div>
 
       <!-- Inventarul complet (se deschide din 🎒) -->

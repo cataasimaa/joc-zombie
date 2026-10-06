@@ -29,7 +29,7 @@ import {
   type TowerKind,
   type Vec2,
   type ZombieType,
-  GAME_MAP,
+  bobberPos,
   effectiveTowerStats,
   segmentEnds,
 } from "../core";
@@ -108,8 +108,13 @@ interface HeroView {
   pickaxe: TransformNode;
   rod: TransformNode;
   rodTip: TransformNode;
+  /** Secunde de la ultima lovitură cu târnăcopul (animația: izbește, apoi îl ridică din nou). */
   swing: number;
   toolShow: number;
+  /** Lovit: tresare, se apleacă pe spate și se smucește într-o parte (1 → 0). */
+  hurt: number;
+  hurtSide: number;
+  hurtDir: { x: number; z: number };
   reload: number;
   reloadTotal: number;
   dispose(): void;
@@ -221,6 +226,7 @@ export class Renderer {
   private destroyed = new Set<EntityId>();
   private killed = new Map<EntityId, boolean>();
   private shelterShake = 0;
+  private cameraShake = 0;
   /** Timpul de la căderea minei (pentru al doilea „crac” și praful la trântirea capacului). */
   private mineCrack = -1;
 
@@ -415,8 +421,16 @@ export class Renderer {
     } else {
       Vector3.LerpToRef(this.camera.position, focus.add(this.cameraOffset), Math.min(1, dt * 5), this.camera.position);
       this.camera.setTarget(this.camera.position.subtract(this.cameraOffset));
+      // Tresărirea camerei când ești lovit.
+      this.cameraShake = Math.max(0, this.cameraShake - dt * 3);
+      if (this.cameraShake > 0) {
+        const k = this.cameraShake * this.cameraShake * 0.22;
+        this.camera.position.x += (Math.random() - 0.5) * k;
+        this.camera.position.y += (Math.random() - 0.5) * k;
+      }
     }
     if (hero) this.world.lantern.position.set(hero.pos.x, focus.y + 2.6, hero.pos.z);
+    this.world.lanternOn = !!hero && hero.alive && hero.lantern;
     this.world.setWeather(state.weather);
     this.world.syncTrees(state.treeHits, CONFIG.gather.treeHits, dt);
     this.world.setFogCloseIn(state.difficulty === "nightmare" ? 0.75 : state.difficulty === "hard" ? 0.5 : 0);
@@ -600,7 +614,15 @@ export class Renderer {
         break;
       }
       case "heroHit": {
-        // Sânge din erou, în direcția opusă loviturii.
+        // Eroul tresare (și camera, dacă e eroul tău); sânge în direcția opusă loviturii.
+        const hv = this.heroViews.get(e.id);
+        if (hv && !(e.from.x === e.pos.x && e.from.z === e.pos.z)) {
+          hv.hurt = 1;
+          hv.hurtSide = Math.random() < 0.5 ? -1 : 1;
+          const len = Math.hypot(e.pos.x - e.from.x, e.pos.z - e.from.z) || 1;
+          hv.hurtDir = { x: (e.pos.x - e.from.x) / len, z: (e.pos.z - e.from.z) / len };
+          if (e.id === this.localHeroId) this.cameraShake = Math.min(1, this.cameraShake + 0.6);
+        }
         const dir = new Vector3(e.pos.x - e.from.x, 0.3, e.pos.z - e.from.z);
         this.fx.blood(this.at(e.pos, 1.3), dir.lengthSquared() > 0.01 ? dir : null, 0.8);
         if (Math.random() < 0.5) this.fx.decal(e.pos.x + (Math.random() - 0.5) * 0.6, e.pos.z + (Math.random() - 0.5) * 0.6, 0.45);
@@ -629,8 +651,8 @@ export class Renderer {
       case "toolHit": {
         const v = this.heroViews.get(e.heroId);
         if (v) {
-          v.swing = 1;
-          v.toolShow = 0.6;
+          v.swing = 0;
+          v.toolShow = 1.2;
         }
         const at = this.at(e.pos, e.target === "tree" ? 1.1 : 0.5);
         if (e.target === "tree") {
@@ -656,12 +678,15 @@ export class Renderer {
         this.fx.burst("spark", this.at(e.pos, 0.6), new Vector3(0, 1, 0), 18, 5, 0.06);
         this.fx.ring(this.at(e.pos, 0.15), 1.6, PAL.gold, 0.5);
         break;
+      case "fishReel":
+        this.fx.burst("ice", new Vector3(e.pos.x, -0.1, e.pos.z), new Vector3(0, 1, 0), 5, 3, 0.06);
+        break;
       case "fishCast":
       case "fishBite":
       case "fishCaught":
         // Stropi de apă din copcă (la prindere: și peștele care sare).
-        this.fx.burst("ice", this.at(e.pos, 0.2), new Vector3(0, 1, 0), e.type === "fishCast" ? 4 : 10, e.type === "fishCaught" ? 5 : 2.5, 0.07);
-        if (e.type === "fishCaught") this.fx.burst("snow", this.at(e.pos, 0.3), new Vector3(0, 1, 0), 12, 4, 0.08);
+        this.fx.burst("ice", new Vector3(e.pos.x, -0.1, e.pos.z), new Vector3(0, 1, 0), e.type === "fishCast" ? 4 : 10, e.type === "fishCaught" ? 5 : 2.5, 0.07);
+        if (e.type === "fishCaught") this.fx.burst("snow", new Vector3(e.pos.x, 0, e.pos.z), new Vector3(0, 1, 0), 12, 4, 0.08);
         break;
       case "sold":
         this.fx.burst("spark", this.at(e.pos, 1.4), new Vector3(0, 1, 0), 24, 4, 0.06);
@@ -718,14 +743,14 @@ export class Renderer {
   private heroLookKey(state: GameState, hero: Hero): string {
     const p = state.players[hero.playerId];
     const gear = hero.level >= 8 ? 3 : hero.level >= 5 ? 2 : hero.level >= 3 ? 1 : 0;
-    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}`;
+    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}|${p?.tool ?? "gun"}`;
   }
 
   private buildHeroView(state: GameState, hero: Hero): HeroView {
     const p = state.players[hero.playerId];
     const skin = p?.skin ? SKINS.find((s) => s.id === p.skin) : null;
     const coat = new Color3(...(skin ? skin.color : DEFAULT_SKIN_COLOR[hero.heroClass]));
-    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory });
+    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory, noGun: p?.tool === "pickaxe" });
     const root = new TransformNode("hero", this.scene);
     const body = new TransformNode("heroBody", this.scene);
     body.parent = root;
@@ -749,8 +774,11 @@ export class Renderer {
       reload: 0,
       reloadTotal: 1,
       ...this.heroTools(root),
-      swing: 0,
+      swing: 9,
       toolShow: 0,
+      hurt: 0,
+      hurtSide: 1,
+      hurtDir: { x: 0, z: 0 },
       dispose: () => root.dispose(),
     };
   }
@@ -759,7 +787,8 @@ export class Renderer {
   private heroTools(root: TransformNode): { pickaxe: TransformNode; rod: TransformNode; rodTip: TransformNode } {
     const pickaxe = new TransformNode("pickaxe", this.scene);
     pickaxe.parent = root;
-    pickaxe.position.set(0.42, 1.05, 0.15);
+    pickaxe.position.set(0.32, 1.22, 0.45);
+    pickaxe.scaling.setAll(1.3);
     this.pickaxePrefab.instance("pickaxeMesh", pickaxe);
     pickaxe.setEnabled(false);
     const rod = new TransformNode("rod", this.scene);
@@ -830,17 +859,28 @@ export class Renderer {
 
       // Unelte: târnăcopul cât ții apăsat acțiunea (se ridică și lovește), undița cât pescuiești.
       const fishing = hero.alive && hero.fishTimer >= 0;
-      view.toolShow = hero.alive && hero.action && !fishing ? 0.6 : Math.max(0, view.toolShow - dt);
-      view.swing = Math.max(0, view.swing - dt * 3.2);
-      view.pickaxe.setEnabled(view.toolShow > 0 || view.swing > 0);
-      view.pickaxe.rotation.x = 0.9 - 2.9 * view.swing * view.swing;
+      const holding = state.players[hero.playerId]?.tool === "pickaxe";
+      const working = hero.alive && !fishing && (hero.action || (holding && hero.firing));
+      view.toolShow = working ? 1.2 : Math.max(0, view.toolShow - dt);
+      view.swing += dt;
+      view.pickaxe.setEnabled(hero.alive && !fishing && (holding || view.toolShow > 0));
+      // Lovitura: izbește repede (0,12 s), apoi ridică încet târnăcopul deasupra capului (0,5 s)
+      // și așteaptă acolo lovitura următoare. Fără lucru: îl ține pe umăr.
+      const RAISED = -2.0;
+      const STRUCK = 1.05;
+      const REST = -0.5;
+      const t = view.swing;
+      const swingAngle = t < 0.12 ? RAISED + (STRUCK - RAISED) * (t / 0.12) : t < 0.62 ? STRUCK + (RAISED - STRUCK) * ((t - 0.12) / 0.5) : working ? RAISED : REST;
+      view.pickaxe.rotation.x = swingAngle;
+      const strikeLean = t < 0.25 ? Math.sin((t / 0.25) * Math.PI) * 0.25 : 0;
       view.rod.setEnabled(fishing);
       if (fishing) {
         const bite = hero.biteTimer > 0;
         view.rod.rotation.x = 0.95 + (bite ? Math.sin(this.time * 40) * 0.08 : Math.sin(this.time * 1.7) * 0.03);
         // Firul: de la vârful undiței până la plută, în copcă.
-        const hole = GAME_MAP.pond.pos;
-        const bob = this.at(hole, 0.12 + (bite ? -0.12 + Math.sin(this.time * 30) * 0.05 : Math.sin(this.time * 3) * 0.03));
+        // Pluta plutește pe apă (apa e la -0,25 m, sub mal).
+        const bp = bobberPos(hero);
+        const bob = new Vector3(bp.x, -0.18 + (bite ? -0.1 + Math.sin(this.time * 30) * 0.05 : Math.sin(this.time * 3) * 0.03), bp.z);
         this.fx.tracer(view.rodTip.getAbsolutePosition(), bob, PAL.bone, 0.012, 0.04);
         this.fx.muzzle(bob, bite ? PAL.fire : hex("#d8483a"), 0.12, 0.04);
       }
@@ -852,10 +892,15 @@ export class Renderer {
       const reloadPose = view.reload > 0 ? Math.sin(r * Math.PI) : 0;
       view.kneel += ((hero.alive ? 0 : 1) - view.kneel) * Math.min(1, dt * 6);
       const k = view.kneel;
-      view.body.position.y = bob + breathe - k * 0.5;
-      view.body.position.z = -view.recoil * 0.06;
-      view.body.rotation.x = amp * 0.12 - view.recoil * 0.08 + reloadPose * 0.35 + k * 0.45;
-      view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp;
+      // Lovit: tresare puternic (se apleacă pe spate, se smucește într-o parte, e împins înapoi).
+      view.hurt = Math.max(0, view.hurt - dt * 4);
+      const hurt = Math.sin(view.hurt * Math.PI * 0.5) * view.hurt;
+      view.body.position.y = bob + breathe - k * 0.5 - hurt * 0.08;
+      view.body.position.z = -view.recoil * 0.06 - hurt * 0.12;
+      view.body.rotation.x = amp * 0.12 - view.recoil * 0.08 + reloadPose * 0.35 + k * 0.45 - hurt * 0.55 + strikeLean;
+      view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp + hurt * 0.35 * view.hurtSide;
+      view.root.position.x += view.hurtDir.x * hurt * 0.25;
+      view.root.position.z += view.hurtDir.z * hurt * 0.25;
       if (k > 0.01) {
         legL.hip.rotation.x = -k * 1.4;
         legL.knee.rotation.x = k * 1.5;

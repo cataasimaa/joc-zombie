@@ -37,7 +37,7 @@ export interface Fossil {
   seed: number;
 }
 
-/** Lacul înghețat cu copca de pescuit (gheața se poate călca; pescuiești doar la copcă). */
+/** Balta: apă deschisă cu mal de gheață. Pescuiești de pe mal; în apă nu poți intra. */
 export interface Pond {
   pos: Vec2;
   radius: number;
@@ -91,15 +91,24 @@ function generateMap(): GameMap {
   }
 
   // Lacul înghețat: între case, cam la 29 m de mină, unde nu e nicio casă.
-  let pond: Pond = { pos: { x: -29, z: 8 }, radius: 4.2 };
+  const PR = 7;
+  let pond: Pond = { pos: { x: -29, z: 8 }, radius: PR };
   for (let a = 0; a < Math.PI * 2; a += 0.15) {
     const pos = { x: Math.cos(a + 2.6) * 29, z: Math.sin(a + 2.6) * 29 };
-    if (houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + 4.2 + 3)) {
-      pond = { pos, radius: 4.2 };
+    if (houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + PR + 3)) {
+      pond = { pos, radius: PR };
       break;
     }
   }
-  const trader: Trader = { pos: { x: -4.8, z: -4.6 }, radius: 1.1, rotation: 0.75 };
+  // Taraba stă la ~12 m de mină (în jurul minei rămâne loc liber pentru ziduri și turnuri).
+  let trader: Trader = { pos: { x: -8.5, z: -8.5 }, radius: 1.1, rotation: 0.75 };
+  for (let a = 3.9; a < 3.9 + Math.PI * 2; a += 0.2) {
+    const pos = { x: Math.cos(a) * 12, z: Math.sin(a) * 12 };
+    if (houses.every((h) => Math.hypot(h.pos.x - pos.x, h.pos.z - pos.z) > h.radius + 3.5)) {
+      trader = { pos, radius: 1.1, rotation: 0.75 };
+      break;
+    }
+  }
 
   // Brazi, mai deși spre marginea hărții.
   const trees: Tree[] = [];
@@ -117,7 +126,8 @@ function generateMap(): GameMap {
     const blocked =
       houses.some((h) => Math.hypot(h.pos.x - x, h.pos.z - z) < h.radius + radius + PASSAGE) ||
       trees.some((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + radius + PASSAGE) ||
-      Math.hypot(pond.pos.x - x, pond.pos.z - z) < pond.radius + radius + 1.5;
+      Math.hypot(pond.pos.x - x, pond.pos.z - z) < pond.radius + radius + 1.5 ||
+      Math.hypot(trader.pos.x - x, trader.pos.z - z) < trader.radius + radius + PASSAGE;
     if (blocked) continue;
     trees.push({ pos: { x, z }, scale, radius });
   }
@@ -154,6 +164,8 @@ export interface Obstacle {
   pos: Vec2;
   radius: number;
   tree?: number;
+  /** Apa bălții: nu intri în ea, dar gloanțele trec pe deasupra. */
+  water?: boolean;
 }
 
 /** Toate obstacolele fixe ca cercuri (case, brazi, taraba). */
@@ -161,6 +173,7 @@ export const OBSTACLES: ReadonlyArray<Obstacle> = [
   ...GAME_MAP.houses.map((h) => ({ pos: h.pos, radius: h.radius })),
   ...GAME_MAP.trees.map((t, i) => ({ pos: t.pos, radius: t.radius, tree: i })),
   { pos: GAME_MAP.trader.pos, radius: GAME_MAP.trader.radius },
+  { pos: GAME_MAP.pond.pos, radius: GAME_MAP.pond.radius - 0.4, water: true },
 ];
 
 /** Bradul cu indexul dat a fost tăiat (a căzut și a dispărut)? */

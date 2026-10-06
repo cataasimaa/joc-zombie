@@ -124,10 +124,10 @@ export function useItem(state: GameState, playerId: PlayerId, item: ItemKind, ev
   const player = state.players[playerId];
   const hero = player && heroById(state, player.heroId);
   if (!player || !hero || !hero.alive || player.inventory[item] <= 0) return false;
-  if (item === "fish") {
+  if (item !== "cookedMeat" && item !== "rawMeat") {
     // Peștele se poate și mânca (crud, dar nu te doare burta); mai bine îl vinzi la tarabă.
-    player.inventory.fish--;
-    hero.hunger = Math.min(100, hero.hunger + S.fishFood);
+    player.inventory[item]--;
+    hero.hunger = Math.min(100, hero.hunger + CONFIG.gather.fish[item].food);
     events.push({ type: "ate", playerId, cooked: true });
     return true;
   }

@@ -3,7 +3,7 @@
 // Relieful e doar vizual: logica jocului rămâne pe plan (înălțimile în zona de joc sunt mici).
 
 import { Mesh, MeshBuilder, type Scene, VertexBuffer } from "@babylonjs/core";
-import { CONFIG } from "../core";
+import { CONFIG, GAME_MAP } from "../core";
 import type { Materials } from "./ModelKit";
 import { fbm, noise2, smoothstep } from "./noise";
 import { PAL, mix } from "./palette";
@@ -45,6 +45,13 @@ export function terrainHeight(x: number, z: number): number {
   h *= smoothstep(5, 12, r);
   // Potecile sunt puțin adâncite (zăpadă bătătorită).
   h -= pathAmount(x, z) * 0.12;
+  // Albia bălții: malul coboară lin spre apă (apa stă la -0,25 m).
+  const p = GAME_MAP.pond;
+  const dp = Math.hypot(x - p.pos.x, z - p.pos.z);
+  if (dp < p.radius + 2) {
+    const k = smoothstep(p.radius + 1.8, p.radius - 0.8, dp);
+    h = h * (1 - k) + -0.6 * k;
+  }
   // Dincolo de margine: dealuri și troiene.
   const edge = Math.max(Math.abs(x), Math.abs(z));
   const outside = smoothstep(HALF - 2, HALF + 14, edge);

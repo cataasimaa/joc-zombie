@@ -61,6 +61,8 @@ export class World {
   readonly shelter: TransformNode;
   /** Felinarul eroului local (se aprinde noaptea). */
   readonly lantern: PointLight;
+  /** Lanterna eroului e aprinsă (se stinge / aprinde din bara rapidă). */
+  lanternOn = true;
   private hemi: HemisphericLight;
   private sun: DirectionalLight;
   private plasmaLight: PointLight;
@@ -354,7 +356,8 @@ export class World {
   private placeGathering(mats: Materials): void {
     const p = GAME_MAP.pond;
     const pond = new TransformNode("pond", this.scene);
-    pond.position.set(p.pos.x, terrainHeight(p.pos.x, p.pos.z), p.pos.z);
+    // Balta stă pe nivelul 0 (malul), apa puțin mai jos; terenul de sub ea e săpat (vezi Terrain).
+    pond.position.set(p.pos.x, 0, p.pos.z);
     for (const m of buildPond(this.scene, mats, p.radius)) {
       m.parent = pond;
       m.receiveShadows = true;
@@ -449,14 +452,17 @@ export class World {
 
   /** Bancuri de ceață joasă la marginea hărții (plăci semi-transparente, mereu cu fața la cameră). */
   private createEdgeFog(): void {
-    const tex = new DynamicTexture("fogTex", { width: 128, height: 64 }, this.scene, false);
+    // Pată de ceață care se stinge complet spre TOATE marginile (altfel marginile drepte ale
+    // plăcii se vedeau ca niște dungi albe care se mișcă pe ecran).
+    const tex = new DynamicTexture("fogTex", { width: 128, height: 128 }, this.scene, false);
     const ctx = tex.getContext() as CanvasRenderingContext2D;
-    const g = ctx.createRadialGradient(64, 40, 4, 64, 40, 64);
-    g.addColorStop(0, "rgba(255,255,255,0.85)");
-    g.addColorStop(0.6, "rgba(255,255,255,0.35)");
+    const g = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
+    g.addColorStop(0, "rgba(255,255,255,0.7)");
+    g.addColorStop(0.5, "rgba(255,255,255,0.3)");
     g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.clearRect(0, 0, 128, 128);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillRect(0, 0, 128, 128);
     tex.update();
     tex.hasAlpha = true;
     tex.wrapU = tex.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -620,7 +626,7 @@ export class World {
       c.scaling.set(k, 0.95 + Math.sin(t * 2.2 + i) * 0.07, k);
     });
     if (this.mineDead >= 0) this.updateMineFall(dt);
-    this.lantern.intensity = night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05);
+    this.lantern.intensity = this.lanternOn ? night * 1.4 * (0.95 + Math.sin(t * 9) * 0.05) : 0;
     if (this.traderLamp) this.traderLamp.intensity = 0.2 + night * 1.2 * (0.93 + Math.sin(t * 7 + 1) * 0.07);
     // Noaptea bloom-ul e mai puternic: focul și ferestrele „ard” în întuneric.
     this.pipeline.bloomWeight = 0.25 + night * 0.45;

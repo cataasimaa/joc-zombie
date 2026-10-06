@@ -33,13 +33,17 @@ Degetul de pe joystick nu deschide niciodată meniuri. Telefonul sună / aplica�
 pauză automată (noaptea și păcănelele stau pe loc).
 Controale în browser: **WASD / săgeți** mișcare, **click ținut** trage spre cursor,
 **Space** trage (spre cursor sau automat), **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
-(**1/2/3/4** turn / zid / mină / foc), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
+(**1/2/3/4** turn / zid / mină / foc; în afara construcției 1–4 = locurile din bara rapidă), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
 **C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **G** acțiune (ții apăsat:
 târnăcop; apeși: undiță / vânzare), **I** inventar.
 Pe telefon: joystick în stânga; ții degetul oriunde pe ecran = tragi acolo; în dreapta 2 butoane —
 🔨 construcție și ✛ tragere (ții apăsat = ochire automată, tragi cu degetul = ochești tu); lângă un
 brad / zăcământ / animal / copcă / tarabă apare al treilea buton, de acțiune (🪓 ⛏️ 🔪 🎣 💰).
-Bara de jos = inventarul rapid (🍗 🥩 🐟 📦) + 🎒 inventarul complet. Meniul: 🖥 Grafică Înaltă / Medie / Mică.
+Bara de jos = 4 locuri pe care le aranjezi tu (armă, târnăcop, lanternă, mine, mâncare, pește):
+în 🎒 apeși 1–4 pe un obiect (sau atingi obiectul, apoi locul). Apăsat pe loc: armă / târnăcop în
+mână, lanterna aprinsă / stinsă, mina pusă, mâncarea mâncată. Cu târnăcopul în mână, ✛ lovește.
+HUD stânga sus: nume, nivel, viață, XP, lemn și aur (fără vreme, fără contoare de turnuri / ziduri).
+Meniul: 🖥 Grafică Înaltă / Medie / Mică.
 În consola din dev: `game().state`, `renderer.setCameraOffset(x, y, z)`.
 
 ## Arhitectură (REGULĂ IMPORTANTĂ)
@@ -56,13 +60,14 @@ src/
     config.ts      TOATE numerele de echilibrare (eroi, zombi, turnuri, ziduri, zi/noapte, magazin)
     heroDefs.ts    Clasele de eroi (pasiva fiecăruia) și skin-urile. Abilitățile sunt scoase în beta.
     items.ts       Armele (damage, încărcător, reîncărcare, alice) și recompensele magazinului
-    map.ts         Harta (case, brazi care se pot tăia, pietre, lacul cu copcă, taraba) – deterministă
+    map.ts         Harta (case, brazi care se pot tăia, pietre, balta, taraba la ~12 m de mină) – deterministă
     navigation.ts  Flow field: drumul cel mai scurt spre mină (sau spre eroi, în Supraviețuire)
     math.ts        Vec2 pe planul solului (x, z), segmente (ziduri), RNG determinist
     systems/       waves (zi/noapte, vreme, ardere în zori, aprovizionare), heroes (ochit, muniție
                    cu rezervă, gloanțe care se opresc la punctul ochit, cufărul împușcat),
                    survival (foame, frig, focuri, gătit, animale, ferme, obiecte pe jos, inventar),
-                   gather (târnăcop: brazi / zăcăminte / animale, pescuit la copcă, vânzare la tarabă),
+                   gather (târnăcop: brazi / zăcăminte / animale, pescuit în baltă, vânzare la tarabă),
+                   hotbar (bara rapidă: 4 locuri configurabile, armele tale, unealta din mână),
                    zombies (aggro pe turnuri, răcire/înghețare, proiectile scuipate, zburători),
                    towers (5 tipuri, niveluri, abilități, proiectile `Shell`, foc pe jos, HP),
                    barricades, mines, shop (+ cufărul boss-ului), coins (+ cufere), physics
@@ -72,6 +77,7 @@ src/
                    ace) se ghicește după culoare și primește o hartă de relief CC0 reală; formele
                    organice au umbrire netedă (pietrele deformate cu zgomot), lemnul și fierul plate
   assets/normals/  Hărți de relief CC0 din `@pmndrs/assets` (vezi README-ul din folder)
+  assets/sfx/      Vocile zombilor și ale eroului (MP3), generate de `tools/zombie_voices.py`
     palette.ts     Paleta „Northrend survival”
     models/        gathering (lac cu copcă, tarabă, zăcăminte, târnăcop, undiță),
                    environment (brazi, pietre, case, mina de plasmă), characters (eroi cu glugă
@@ -86,7 +92,8 @@ src/
     Renderer.ts    Entitățile animate (mers cu genunchi, recul, reîncărcare, ardere, cădere,
                    înghețare), proiectilele turnurilor în arc, prăbușirea construcțiilor,
                    camera, fantomele de construcție (cu „amprenta” pe sol)
-  audio/Sfx.ts   Sunete generate din cod (Web Audio): împușcături pe armă, sunet pe tip de turn,
+  audio/Sfx.ts   Sunete generate din cod (Web Audio) + vocile MP3 (gemete, răgete, țipete, horcăit,
+                 „ugh” când ești lovit): împușcături pe armă, sunet pe tip de turn,
                  explozii, dărâmare, pași, reîncărcare, atac zombi, păcănele (clopote, sirenă,
                  monede), vânt, foc
   audio/Music.ts Muzică procedurală: temă eroică în meniu (cor, alămuri, tobe de război);
@@ -94,6 +101,8 @@ src/
                  acord rar; în val puls jos și energic (tobă mare, bas în optimi/șaisprezecimi,
                  tom-uri, „BRAAM”); tobă rară când o brută lovește un zid; boss = vântul tace +
                  notă ținută; victorie / game over = stinger, apoi liniște
+tools/zombie_voices.py  Sintetizator de voce (formanți, ca Klatt): puls de glotă cu jitter, horcăit,
+                 respirație, 5 rezonatoare care se mută între vocale → MP3 (numpy, scipy, ffmpeg)
   input/       Tastatură, joystick virtual (mișcare), FireStick (buton de tras + ochire) → comenzi
   ui/Hud.ts    HUD + ecrane (meniu, pauză, alegere erou, magazin, clasament, final) în HTML/CSS
   ui/leaderboard.ts  Clasamentul (localStorage): cei mai buni 5 și ultimele 5, pe mod și dificultate
@@ -195,6 +204,9 @@ sau texturi din acele jocuri.
 - **Meniu**: nume (apare în HUD), mod, dificultate, sunet și muzică (salvate în localStorage). Pauză cu ☰ / Esc.
 - **Moduri**: *Apără mina* (mina cade = pierzi) și *Supraviețuire* (zombii te vânează pe tine oriunde,
   flow field spre eroi; mina e decor; hoarde ×0,8, HP ×0,85). Zi / noapte în ambele moduri.
+- **Lovit**: eroul tresare (se apleacă pe spate, se smucește, e împins), camera tresare, geme.
+- **Lângă mină** nu e nicio construcție a hărții (taraba e la ~12 m, focul de start doar în
+  Supraviețuire, la ~9 m): acolo îți faci zidurile și turnurile.
 - **Moartea**: cine cade NU reînvie singur. Doar un coleg care stă lângă el 4 s îl ridică (cu 40%
   viață). Toți căzuți = pierzi (în ambele moduri); singur = mori = game over.
 - **Supraviețuire** (`CONFIG.survival`): foamea (−0,32/s) și căldura (−0,45/s, ×vreme, ziua ×0,6);
@@ -205,17 +217,20 @@ sau texturi din acele jocuri.
   +10 HP; pește: +18 foame.
 - **Animale sălbatice** (ambele moduri, ziua, la 16–34 m de mină, departe de eroi): căprioare (fug,
   12 aur), urși (atacă, max 2, 40 aur). Aurul cade pe jos ca monede, plus carne.
-- **Unelte** (`CONFIG.gather`, butonul de acțiune / G): târnăcopul lovește la 0,4 s ținta din raza
-  brațului (animal > zăcământ > brad). Brad: +1 lemn pe lovitură, cade după 50 și dispare.
+- **Unelte** (`CONFIG.gather`, butonul de acțiune / G, sau târnăcopul ținut în mână + ✛): lovește
+  ținta din raza brațului (animal > zăcământ > brad) la 0,7 s (brad), 1 s (piatră), 0,6 s (animal);
+  se vede cum ridică târnăcopul și izbește. Brad: +1 lemn pe lovitură, cade după 50 și dispare.
   Zăcăminte de argint (8 lovituri, 18 aur) și aur (12 lovituri, 45 aur) apar ziua aleator (3 pe zi,
-  max 6). Pescuit ziua la copca din lacul înghețat: arunci, peștele mușcă după 4–10 s, ai 1,6 s să
-  tragi. Peștele se vinde la taraba negustorului de lângă mină cu 14 aur bucata.
-  Cu târnăcopul / undița în mână nu tragi.
+  max 6); se micșorează la fiecare lovitură și se sparg. Cu târnăcopul / undița în mână nu tragi.
+- **Pescuit** (ziua, de pe malul bălții — apă deschisă, 7 m rază, cu ponton și stuf): arunci undița,
+  peștele mușcă după 4–10 s, apoi trebuie să tragi de mai multe ori până nu scapă: biban (2 trageri
+  în 1,8 s, 8 aur), păstrăv (3 / 2,2 s, 15), știucă (5 / 2,8 s, 28), somn (8 / 3,6 s, 60, rar).
+  Butonul arată „TRAGE! 2/5”. Peștii se vând la taraba negustorului (la ~12 m de mină).
 - **Muniție** (`CONFIG.ammo`): încărcător + rezervă (8 încărcătoare la start, max 12). Zombii lasă
   cutii (30%, 0,6 încărcător), plus 3 încărcătoare în fiecare zori și din cufărul boss-ului.
 - **Vremea** se schimbă la fiecare zi / noapte: senin, ninsoare, viscol (ninsoare deasă, nu filtru pe
   ecran; turnurile bat la 70% din rază, Tesla nu; urmele zombilor se văd),
-  ger (frigul ×2,2), lapoviță (focul arde ×2), vânt (mergi mai greu). Afișată sub cronometru.
+  ger (frigul ×2,2), lapoviță (focul arde ×2), vânt (mergi mai greu). Nu se mai afișează (se vede în joc).
 - **Clasament**: la final de rundă se salvează nume, mod, dificultate, nopți, kill-uri.
 - **Dificultate** (`CONFIG.difficulty`, HP / număr / damage zombi, lemn, damage turnuri): Easy ×0,9 /
   ×0,9 / ×1, 100% lemn, turnuri ×1; Medium ×1,1 / ×1,08 / ×1,08, turnuri ×0,85; Hard ×1,12 / ×1,1 /
@@ -242,11 +257,13 @@ sau texturi din acele jocuri.
   alicele Tank-ului = undă de praf și zăpadă la izbitură. Glonțul eroului se oprește la punctul
   apăsat, în primul zombi sau în zăpadă. Sunetul turnurilor e la impact (Tesla: la atingere).
 - **Fără anunțuri** de tip „Triple Kill / Rampage” (scoase: sunau urât).
-- **Vocea zombilor**: sintetizată ca o voce reală (ton aspru cu tremur neregulat + respirație, prin 3
-  formanți „aaah→uh”, horcăit); la atac: răget + șuieratul ghearelor / bâtei + lovitură surdă (carne
-  sau lemn). Gem tot mai des și mai tare cu cât se apropie.
+- **Vocea zombilor**: fișiere MP3 generate offline de `tools/zombie_voices.py` (sinteză de vorbire cu
+  formanți: gemete „mmm-uuu-aaa”, răgete „AAARGH”, brute cu gât uriaș, țipete de fugar, bolborosit de
+  scuipător, horcăit de moarte); la atac + șuieratul ghearelor / bâtei + lovitură surdă. Gem tot mai
+  des și mai tare cu cât se apropie. Dacă fișierele nu s-au încărcat, cântă vocea sintetizată din cod.
 - **Arme** (`items.ts`): țeava ruginită → pușcă de vânătoare / flintă cu alice (rar) →
   mitralieră din țevi / arbaletă de os (epic) → lancea de gheață (legendar, încetinește).
+  Armele câștigate se păstrează toate (`player.weapons`); schimbi între ele din bara rapidă.
 - **Beta fără abilități**: doar 2 butoane (construcție + tragere). Fiecare clasă are o pasivă
   (Healer: aură de vindecare; Sniper: critice + străpunge; Tank: armură, pușcă cu alice, repară ×3).
 - **Tragere**: ochești tu (drag pe buton / mouse) sau automat (ții apăsat); gloanțele se opresc
