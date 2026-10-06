@@ -25,6 +25,10 @@ npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
 
+**Publicare**: `.github/workflows/pages.yml` construiește și urcă jocul pe GitHub Pages la fiecare push
+(https://cataasimaa.github.io/joc-zombie/). Pe iPhone: Safari → Partajează → „Adaugă pe ecranul
+principal” = pornește ca aplicație, pe tot ecranul (`public/manifest.webmanifest` + iconițe).
+
 Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică, fulgi): logo de
 gheață în stânga sus, în dreapta un panou de sticlă cu nume, mod de joc (carduri), dificultate
 Easy/Medium/Hard/Nightmare (verde → roșu) și butonul auriu JOACĂ; jos: 🏆 clasament, sunet, muzică,

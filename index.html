@@ -6,9 +6,16 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <!-- Pe iPhone: Safari → Partajează → „Adaugă pe ecranul principal” = jocul pornește ca o aplicație,
+         pe tot ecranul, fără bara browserului. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#c7d9ed" />
-    <link rel="icon" href="data:," />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Iarna Morților" />
+    <meta name="theme-color" content="#07111d" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Iarna Morților</title>
     <!-- Fontul siglei (dacă nu se încarcă, sigla folosește un font serif de rezervă) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
