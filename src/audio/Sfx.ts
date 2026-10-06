@@ -92,6 +92,18 @@ const VOICE_GROUPS = {
   step: ["step1", "step2", "step3", "step4"],
 } as const;
 
+/** Vocile și loviturile zombilor sună mai încet decât restul (să nu acopere armele și muzica). */
+const ZOMBIE_VOLUME = 0.5;
+const ZOMBIE_GROUPS = new Set<string>([
+  "moan", "attack", "bruteAttack", "bruteMoan", "bruteDeath", "shriek", "gurgle", "death",
+  "runnerAttack", "spit", "flyer", "scream", "screamerMoan", "bloaterMoan", "bloaterAttack",
+  "burrowerChitter", "burrowerAttack", "shamanChant", "shamanCast", "broodHiss", "broodScreech",
+  "yetiRoar", "yetiGrunt", "witchCackle", "witchWhisper", "witchCast", "colossusGroan", "colossusRoar",
+  "lichRoar", "kingRoar", "kingLaugh", "kingMoan", "claw", "club", "bite",
+]);
+/** Volumul muzicii (0..1). */
+const MUSIC_VOLUME = 0.8;
+
 /**
  * Vocea fiecărui tip de zombi: geamătul (când se apropie), atacul, moartea și înălțimea vocii.
  * Așa îi recunoști după auz: urlătoarea țipă subțire, umflatul râgâie, săpătorul țăcăne...
@@ -213,7 +225,7 @@ export class Sfx {
     const vary = opts.vary ?? 0.1;
     src.playbackRate.value = (opts.pitch ?? 1) * (1 - vary + Math.random() * vary * 2);
     const g = ctx.createGain();
-    g.gain.value = vol;
+    g.gain.value = ZOMBIE_GROUPS.has(group) ? vol * ZOMBIE_VOLUME : vol;
     let node: AudioNode = src.connect(g);
     if (opts.distant) {
       const lp = ctx.createBiquadFilter();
@@ -282,7 +294,7 @@ export class Sfx {
 
     this.startWind();
     const musicBus = (this.musicBus = ctx.createGain());
-    musicBus.gain.value = this.musicOn ? 0.55 : 0;
+    musicBus.gain.value = this.musicOn ? MUSIC_VOLUME : 0;
     musicBus.connect(this.master);
     const proc = (this.procMusic = ctx.createGain());
     proc.connect(musicBus);
@@ -306,7 +318,7 @@ export class Sfx {
 
   setMusicOn(on: boolean): void {
     this.musicOn = on;
-    if (this.ctx && this.musicBus) this.musicBus.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.1);
+    if (this.ctx && this.musicBus) this.musicBus.gain.setTargetAtTime(on ? MUSIC_VOLUME : 0, this.ctx.currentTime, 0.1);
   }
 
   // ---------- Ambient: vânt, foc, gemete ----------
@@ -966,7 +978,7 @@ export class Sfx {
     if (!this.ctx || !this.musicBus || !this.musicOn) return;
     const t = this.ctx.currentTime;
     this.musicBus.gain.setTargetAtTime(0.12, t, 0.05);
-    this.musicBus.gain.setTargetAtTime(0.55, t + time, 0.6);
+    this.musicBus.gain.setTargetAtTime(MUSIC_VOLUME, t + time, 0.6);
   }
 
   /** Clopoțel metalic (ton + armonicele „strâmbe” ale unui clopot). */
@@ -1048,6 +1060,7 @@ export class Sfx {
     const dur = o.len * (0.85 + Math.random() * 0.3);
     const p = o.pitch * (0.92 + Math.random() * 0.16);
     const open = o.open ?? 1;
+    o = { ...o, vol: o.vol * ZOMBIE_VOLUME };
     const out = ctx.createGain();
     out.gain.setValueAtTime(0.0001, t);
     out.gain.exponentialRampToValueAtTime(o.vol, t + 0.05);
