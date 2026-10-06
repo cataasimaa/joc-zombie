@@ -11,7 +11,7 @@ import { useItem } from "./survival";
 
 export const HOTBAR_SIZE = 4;
 
-const FOOD: ItemKind[] = ["cookedMeat", "rawMeat", "canteen", ...FISH_KINDS];
+const FOOD: ItemKind[] = ["cookedMeat", "rawMeat", "canteen", "oil", ...FISH_KINDS];
 
 /** Bara de start: arma, târnăcopul, apoi canistra + mâncare (Supraviețuire) sau undița + lanterna. */
 export function defaultHotbar(mode: GameMode): (SlotItem | null)[] {
@@ -21,6 +21,7 @@ export function defaultHotbar(mode: GameMode): (SlotItem | null)[] {
 /** Poate jucătorul să pună asta în bară? (Armele doar dacă le are.) */
 export function canHold(player: Player, item: SlotItem): boolean {
   if (item.startsWith("weapon:")) return player.weapons.includes(item.slice(7) as WeaponId);
+  if (item === "chainsaw") return player.chainsaw;
   return item === "pickaxe" || item === "rod" || item === "lantern" || item === "mine" || FOOD.includes(item as ItemKind);
 }
 
@@ -55,7 +56,8 @@ export function useSlot(state: GameState, playerId: PlayerId, slot: number, even
   if (!player || !item || !hero || !hero.alive) return false;
   if (item.startsWith("weapon:")) {
     equipWeapon(state, player, hero, item.slice(7) as WeaponId);
-  } else if (item === "pickaxe" || item === "rod" || item === "lantern") {
+  } else if (item === "pickaxe" || item === "chainsaw" || item === "rod" || item === "lantern") {
+    if (item === "chainsaw" && !player.chainsaw) return false;
     // Unealta în mână (butonul ✛ o folosește); încă o apăsare pe același loc = înapoi la armă.
     player.tool = player.tool === item ? "gun" : item;
     hero.firing = false;

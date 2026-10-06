@@ -179,9 +179,30 @@ export function buildEmbers(scene: Scene, mats: Materials): Mesh {
 
 // ---------- Obiecte pe jos ----------
 
-export function buildDrop(scene: Scene, mats: Materials, kind: "ammo" | "rawMeat" | "cookedMeat" | "fish"): Mesh[] {
+export type DropModel = "ammo" | "rawMeat" | "cookedMeat" | "fish" | "petrol" | "oil" | "leather" | "iron" | "canteen";
+
+export function buildDrop(scene: Scene, mats: Materials, kind: DropModel): Mesh[] {
   const k = new ModelKit(scene, mats, 3400 + kind.length);
-  if (kind === "ammo") {
+  if (kind === "petrol") {
+    // Bidon roșu de benzină, cu mâner și gură.
+    k.box(0.36, 0.46, 0.2, { p: [0, 0.23, 0] }, { color: hex("#b0302a"), wear: 0.35, frost: 0.3 });
+    k.box(0.22, 0.06, 0.06, { p: [-0.02, 0.5, 0] }, { color: hex("#7a1e1a") });
+    k.cyl(0.12, 0.06, 0.07, 6, { p: [0.14, 0.5, 0], r: [0, 0, -0.4] }, { color: PAL.iron, mat: "metal" });
+  } else if (kind === "oil") {
+    // Butoiaș negru cu țiței.
+    k.cyl(0.5, 0.36, 0.36, 10, { p: [0, 0.25, 0] }, { color: hex("#1b1d21"), mat: "metal", wear: 0.3, frost: 0.3 });
+    for (const y of [0.08, 0.42]) k.cyl(0.04, 0.38, 0.38, 10, { p: [0, y, 0] }, { color: PAL.rust, mat: "metal", wear: 0.4 });
+  } else if (kind === "leather") {
+    // Piele rulată, legată cu sfoară.
+    k.cyl(0.5, 0.22, 0.22, 8, { p: [0, 0.12, 0], r: [0, 0, Math.PI / 2] }, { color: hex("#8a5a38"), wear: 0.3, ...SMOOTH });
+    for (const x of [-0.14, 0.14]) k.cyl(0.04, 0.24, 0.24, 8, { p: [x, 0.12, 0], r: [0, 0, Math.PI / 2] }, { color: hex("#c8b48a") });
+  } else if (kind === "iron") {
+    // Două lingouri de fier.
+    k.box(0.38, 0.1, 0.16, { p: [0, 0.06, -0.06] }, { color: hex("#6d7882"), mat: "metal", wear: 0.35 });
+    k.box(0.38, 0.1, 0.16, { p: [0.03, 0.16, 0.04], r: [0, 0.3, 0] }, { color: hex("#5d6872"), mat: "metal", wear: 0.35 });
+  } else if (kind === "canteen") {
+    k.cyl(0.36, 0.2, 0.22, 10, { p: [0, 0.18, 0] }, { color: hex("#4a5a48"), mat: "metal", wear: 0.3 });
+  } else if (kind === "ammo") {
     // Lădiță de lemn legată cu fier, cu cartușe de alamă deasupra.
     k.box(0.6, 0.32, 0.4, { p: [0, 0.16, 0] }, { color: PAL.oldWood, wear: 0.3, frost: 0.4 });
     for (const x of [-0.22, 0.22]) k.box(0.05, 0.34, 0.42, { p: [x, 0.16, 0] }, { color: PAL.iron, mat: "metal" });

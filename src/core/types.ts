@@ -1,7 +1,7 @@
 // Starea completă a jocului: doar date simple (fără clase, fără Babylon).
 // Așa poate fi trimisă prin rețea / sincronizată de server în faza 3.
 
-import type { AnimalKind, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
+import type { AnimalKind, ArmorMaterial, ArmorSlot, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, SkillId, TowerKind, Weather, ZombieType } from "./config";
 import type { ShopReward, WeaponId } from "./items";
 import type { Vec2 } from "./math";
 
@@ -15,10 +15,10 @@ export type Phase = "day" | "night" | "victory" | "gameover";
  * Ce poate sta într-un loc din bara rapidă (4 locuri, le aranjezi cum vrei):
  * o armă pe care o ai, târnăcopul, lanterna, minele sau mâncare / pește.
  */
-export type SlotItem = `weapon:${WeaponId}` | "pickaxe" | "rod" | "lantern" | "mine" | ItemKind;
+export type SlotItem = `weapon:${WeaponId}` | "pickaxe" | "chainsaw" | "rod" | "lantern" | "mine" | ItemKind;
 
 /** Ce ții în mână: butonul principal (✛) face ce face unealta asta. */
-export type HeldTool = "gun" | "pickaxe" | "rod" | "lantern";
+export type HeldTool = "gun" | "pickaxe" | "chainsaw" | "rod" | "lantern";
 
 export interface Player {
   id: PlayerId;
@@ -56,6 +56,8 @@ export interface Player {
   hotbar: (SlotItem | null)[];
   /** Ce ții în mână: arma, târnăcopul, undița sau lanterna. */
   tool: HeldTool;
+  /** Drujba deblocată (la nivelul 5). */
+  chainsaw: boolean;
 }
 
 export interface Hero {
@@ -112,6 +114,13 @@ export interface Hero {
   battery: number;
   /** Căzut: cât l-a ridicat un coleg (0..CONFIG.heroCommon.reviveTime). */
   reviveProgress: number;
+  /** Abilitățile învățate la level up (0..5) și punctele încă nefolosite. */
+  skills: Record<SkillId, number>;
+  skillPoints: number;
+  /** Benzina din rezervorul drujbei (secunde de tăiat). */
+  sawFuel: number;
+  /** Armura purtată: pe fiecare loc piele, metal sau nimic. */
+  armor: Record<ArmorSlot, ArmorMaterial | null>;
 }
 
 export interface Zombie {
@@ -138,11 +147,25 @@ export interface Zombie {
   frozenTimer: number;
   /** Secunde în care nu mai poate fi înghețat din nou (două înghețări nu se adună). */
   freezeImmune: number;
+  /** Abilitatea lui (urlet, vindecare, pui, năpustire, teleport...): secunde până o folosește. */
+  abilityTimer: number;
+  /** A doua abilitate a boșilor (vrăjitoarea: înghețarea turnurilor; colosul: bolovanii). */
+  ability2Timer: number;
+  /** Yeti-ul: „wind” = se încordează, „charge” = se năpustește; secunde rămase și direcția. */
+  charge: { phase: "wind" | "charge"; time: number; dir: Vec2 } | null;
+  /** Săpătorul e sub zăpadă: nu poate fi lovit și trece pe sub ziduri. */
+  burrowed: boolean;
+  /** Înfuriat de urlătoare (secunde rămase): mai rapid, atacă mai des. */
+  rageTimer: number;
+  /** Colosul s-a înfuriat (sub jumătate de viață). */
+  enraged: boolean;
 }
 
 /** Scuipat de zombie (proiectil care zboară spre țintă). */
 export interface Projectile {
   id: EntityId;
+  /** Scuipat de zombie, țurțur de vrăjitoare sau bolovan de colos (lovește mai ales turnurile). */
+  kind: "spit" | "ice" | "boulder";
   pos: Vec2;
   vel: Vec2;
   damage: number;
@@ -162,6 +185,8 @@ export interface Tower {
   abilityTimer: number;
   hp: number;
   maxHp: number;
+  /** Înghețat de vrăjitoarea viscolului (secunde): nu trage. */
+  frozenTimer?: number;
 }
 
 /** Proiectil de turn (săgeată, rachetă, ghiulea, cristal de gheață). Lovește la sosire. */
@@ -210,12 +235,14 @@ export interface Campfire {
   fuel: number;
   /** Bucăți de carne pe foc: secunde rămase până se gătesc. */
   cooking: number[];
+  /** Ulei pus la rafinat: secunde rămase până devine benzină. */
+  refining: number[];
 }
 
 /** Zăcământ de argint sau aur: apare ziua, îl spargi cu târnăcopul și primești aur. */
 export interface Ore {
   id: EntityId;
-  kind: "silver" | "gold";
+  kind: "silver" | "gold" | "oil";
   pos: Vec2;
   /** Lovituri rămase până se sparge. */
   hits: number;
@@ -362,7 +389,7 @@ export type GameEvent =
   | { type: "zombieDied"; id: EntityId; pos: Vec2; zombieType: ZombieType; burned: boolean; killerHeroId: EntityId | null }
   | { type: "zombieAttack"; id: EntityId; zombieType: ZombieType; pos: Vec2; wall?: boolean }
   | { type: "spit"; id: EntityId; from: Vec2; to: Vec2 }
-  | { type: "projectileHit"; pos: Vec2 }
+  | { type: "projectileHit"; pos: Vec2; kind: Projectile["kind"] }
   | { type: "coinPicked"; playerId: PlayerId; value: number }
   | { type: "towerPlaced"; id: EntityId }
   | { type: "towerUpgraded"; id: EntityId; level: number; kind: TowerKind }
@@ -374,10 +401,11 @@ export type GameEvent =
   /** Construcție demolată de jucător (dispare, fără prăbușire). */
   | { type: "structureRemoved"; id: EntityId; pos: Vec2 }
   | { type: "mineExploded"; pos: Vec2; radius: number }
-  | { type: "nightStarted"; wave: number; boss: boolean }
+  | { type: "nightStarted"; wave: number; boss: boolean; bossType: ZombieType | null }
   | { type: "dawn"; wave: number; wood: number }
   | { type: "shelterHit" }
-  | { type: "heroHit"; id: EntityId; pos: Vec2; from: Vec2; amount: number }
+  /** `by` = zombiul care a lovit (pentru animația loviturii care „intră” în erou). */
+  | { type: "heroHit"; id: EntityId; pos: Vec2; from: Vec2; amount: number; by?: EntityId }
   | { type: "heroDied"; id: EntityId }
   | { type: "heroRespawned"; id: EntityId }
   | { type: "levelUp"; heroId: EntityId; level: number }
@@ -400,7 +428,7 @@ export type GameEvent =
   | { type: "freezing"; heroId: EntityId }
   | { type: "thirsty"; heroId: EntityId }
   | { type: "chestOpened"; playerId: PlayerId; pos: Vec2; rarity: Rarity; reward: ShopReward; wood: number; ammo: number; meat: number }
-  | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal" | "air"; pos: Vec2 }
+  | { type: "toolHit"; heroId: EntityId; target: "tree" | "ore" | "animal" | "zombie" | "air"; pos: Vec2; tool: "pickaxe" | "chainsaw" }
   | { type: "lantern"; heroId: EntityId; on: boolean }
   | { type: "treeFelled"; index: number; pos: Vec2 }
   | { type: "oreSpawned"; id: EntityId; kind: Ore["kind"]; pos: Vec2 }
@@ -415,5 +443,22 @@ export type GameEvent =
   | { type: "fishLost"; heroId: EntityId; pos: Vec2 }
   | { type: "sold"; playerId: PlayerId; fish: number; coins: number; pos: Vec2 }
   | { type: "equipped"; playerId: PlayerId; item: SlotItem }
+  | { type: "noPetrol"; heroId: EntityId }
+  | { type: "skillLearned"; heroId: EntityId; skill: SkillId; rank: number; passive: boolean }
+  | { type: "unlocked"; playerId: PlayerId; what: "pistol" | "rifle" | "assaultRifle" | "chainsaw" | "towerTier"; tier?: number }
+  | { type: "armorCrafted"; playerId: PlayerId; slot: ArmorSlot; material: ArmorMaterial }
+  | { type: "refined"; fireId: EntityId; pos: Vec2 }
+  | { type: "scream"; id: EntityId; pos: Vec2; radius: number }
+  | { type: "bloaterBurst"; pos: Vec2; radius: number }
+  | { type: "burrowUp"; id: EntityId; pos: Vec2 }
+  | { type: "shamanHeal"; id: EntityId; pos: Vec2; radius: number }
+  | { type: "broodSpawn"; id: EntityId; pos: Vec2; count: number }
+  | { type: "yetiWindup"; id: EntityId; pos: Vec2; dir: Vec2 }
+  | { type: "yetiCharge"; id: EntityId; pos: Vec2 }
+  | { type: "witchBlink"; id: EntityId; from: Vec2; to: Vec2 }
+  | { type: "towersFrozen"; id: EntityId; pos: Vec2; radius: number; count: number }
+  | { type: "stomp"; id: EntityId; pos: Vec2; radius: number }
+  | { type: "throw"; id: EntityId; kind: Projectile["kind"]; from: Vec2; to: Vec2 }
+  | { type: "bossEnraged"; id: EntityId; pos: Vec2 }
   | { type: "gameOver" }
   | { type: "victory" };

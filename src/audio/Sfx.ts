@@ -387,7 +387,7 @@ export class Sfx {
       case "zombieDied":
         if (e.burned) this.noiseHit({ type: "highpass", freq: 1500, dur: 0.5, vol: 0.08 });
         else if (this.throttle("die", 0.12)) {
-          const big = e.zombieType === "boss" || e.zombieType === "brute";
+          const big = ["boss", "brute", "broodmother", "yeti", "witch", "colossus"].includes(e.zombieType);
           if (!this.voice("death", big ? 0.9 : 0.55, { pitch: big ? 0.7 : e.zombieType === "runner" ? 1.2 : 1 })) {
             this.groan(e.zombieType === "boss" ? 0.35 : 0.13, e.zombieType === "boss" ? 0.5 : 1, false);
           }
@@ -462,6 +462,16 @@ export class Sfx {
         if (mine(e.id)) this.tone(400, 100, 0.7, "sawtooth", 0.15, 0, 900);
         break;
       case "toolHit":
+        if (e.tool === "chainsaw") {
+          // Drujba: motorul urlă și lanțul mușcă (în lemn: scrâșnet; în zombi: ceva mai umed).
+          if (this.throttle(`saw${e.heroId}`, 0.2)) {
+            this.tone(95 + Math.random() * 10, 110, 0.24, "sawtooth", 0.09, 0, 1400);
+            this.tone(190, 230, 0.24, "square", 0.025, 0, 2200);
+          }
+          if (e.target === "tree") this.noiseHit({ type: "bandpass", freq: 2400, dur: 0.2, vol: 0.14 });
+          else if (e.target === "zombie") this.noiseHit({ type: "lowpass", freq: 700, dur: 0.15, vol: 0.3 });
+          break;
+        }
         if (e.target === "tree") {
           // Topor în lemn înghețat: „toc” sec + scârțâitul trunchiului.
           this.thunk(220 + Math.random() * 40, 0.45);
@@ -475,6 +485,92 @@ export class Sfx {
         } else {
           this.noiseHit({ type: "lowpass", freq: 400, dur: 0.1, vol: 0.4 });
         }
+        break;
+      case "noPetrol":
+        if (mine(e.heroId)) {
+          // Demarorul trage în gol: „trrr-pfff”.
+          this.noiseHit({ type: "bandpass", freq: 300, sweepTo: 900, dur: 0.35, vol: 0.2 });
+          this.tone(120, 60, 0.3, "sawtooth", 0.05, 0.1, 800);
+        }
+        break;
+      case "levelUp":
+        if (mine(e.heroId)) [523, 659, 784, 1047].forEach((fr, i) => this.bell(fr, 0.16, i * 0.08));
+        break;
+      case "skillLearned":
+        if (mine(e.heroId)) {
+          this.bell(e.passive ? 1319 : 988, 0.2);
+          if (e.passive) [1568, 2093].forEach((fr, i) => this.bell(fr, 0.15, 0.1 + i * 0.1));
+        }
+        break;
+      case "unlocked":
+        if (e.playerId === f.localPlayer) [392, 523, 659, 784].forEach((fr, i) => this.bell(fr, 0.2, i * 0.11));
+        break;
+      case "armorCrafted":
+        if (e.playerId === f.localPlayer) {
+          if (e.material === "metal") [0, 0.12].forEach((d) => this.tone(1800, 1700, 0.25, "triangle", 0.12, d));
+          else this.noiseHit({ type: "bandpass", freq: 900, dur: 0.25, vol: 0.2 });
+          this.thunk(160, 0.3, 0.05);
+        }
+        break;
+      case "scream":
+        // Urletul: un țipăt lung, ascuțit, cu vibrato (vocea țipătului, mai sus).
+        if (!this.voice("shriek", 0.9, { pitch: 1.35 })) this.zombieVoice({ pitch: 2.2, len: 1.1, vol: 0.4, open: 1.3, gurgle: false });
+        this.tone(1400, 2100, 0.9, "sawtooth", 0.04, 0, 3000);
+        break;
+      case "bloaterBurst":
+        // Plesnește: o bufnitură umedă, gaz care șuieră.
+        this.noiseHit({ type: "lowpass", freq: 900, sweepTo: 120, dur: 0.5, vol: 0.7, dist: true });
+        this.tone(80, 35, 0.4, "sine", 0.6);
+        this.noiseHit({ type: "highpass", freq: 3000, dur: 1.0, vol: 0.08, delay: 0.1 });
+        break;
+      case "burrowUp":
+        this.noiseHit({ type: "lowpass", freq: 600, sweepTo: 2000, dur: 0.35, vol: 0.4 });
+        this.voice("attack", 0.7, { pitch: 0.9 });
+        break;
+      case "shamanHeal":
+        // Clopoței reci și un murmur jos.
+        [880, 1109, 1319].forEach((fr, i) => this.bell(fr, 0.06, i * 0.07));
+        this.tone(110, 98, 0.8, "triangle", 0.05, 0, 500);
+        break;
+      case "broodSpawn":
+        this.noiseHit({ type: "bandpass", freq: 1200, dur: 0.3, vol: 0.2 });
+        this.voice("gurgle", 0.5, { pitch: 1.4 });
+        break;
+      case "yetiWindup":
+        // Răgetul yeti-ului: vocea brutei, mai jos și mai lungă.
+        if (!this.voice("bruteMoan", 1.0, { pitch: 0.75 })) this.groan(0.5, 0.45, true);
+        break;
+      case "yetiCharge":
+        this.noiseHit({ type: "lowpass", freq: 300, dur: 1.0, vol: 0.4 });
+        this.thunk(60, 0.6);
+        break;
+      case "witchBlink":
+        this.tone(2400, 600, 0.35, "sine", 0.1);
+        this.noiseHit({ type: "highpass", freq: 4000, sweepTo: 1500, dur: 0.4, vol: 0.12 });
+        break;
+      case "towersFrozen":
+        // Trosnetul gheții care acoperă turnurile.
+        for (let i = 0; i < 4; i++) this.noiseHit({ type: "highpass", freq: 3500, dur: 0.05, vol: 0.25, delay: i * 0.08 });
+        this.tone(1760, 2637, 0.6, "sine", 0.05);
+        break;
+      case "stomp":
+        // Pasul colosului: bubuitură uriașă, pietre care cad.
+        this.tone(55, 25, 0.9, "sine", 0.9);
+        this.noiseHit({ type: "lowpass", freq: 400, sweepTo: 60, dur: 1.0, vol: 0.7, dist: true });
+        this.noiseHit({ type: "bandpass", freq: 900, dur: 0.6, vol: 0.12, delay: 0.15 });
+        this.music?.accent();
+        break;
+      case "throw":
+        if (e.kind === "boulder") this.noiseHit({ type: "lowpass", freq: 500, sweepTo: 200, dur: 0.6, vol: 0.25 });
+        else this.tone(1800, 900, 0.25, "sine", 0.06);
+        break;
+      case "bossEnraged":
+        if (!this.voice("bruteMoan", 1.0, { pitch: 0.6 })) this.groan(0.6, 0.4, true);
+        this.music?.accent();
+        break;
+      case "refined":
+        this.noiseHit({ type: "highpass", freq: 2500, dur: 0.4, vol: 0.1 });
+        this.bell(660, 0.08);
         break;
       case "treeFelled":
         // Trosnet lung, apoi bradul se prăbușește în zăpadă.
@@ -846,8 +942,8 @@ export class Sfx {
    * și lovitura surdă în carne sau lemn. Mai gros și mai lung la brută / boss.
    */
   private zombieAttack(type: string, wall: boolean): void {
-    const big = type === "brute" || type === "boss";
-    const pitch = type === "boss" ? 0.55 : type === "brute" ? 0.65 : type === "runner" ? 1.35 : type === "flyer" ? 1.8 : type === "spitter" ? 1.1 : 1;
+    const big = type === "brute" || type === "boss" || type === "yeti" || type === "colossus" || type === "broodmother";
+    const pitch = type === "boss" || type === "colossus" ? 0.55 : big ? 0.65 : type === "runner" || type === "screamer" ? 1.35 : type === "flyer" ? 1.8 : type === "spitter" || type === "witch" ? 1.1 : 1;
     const played = big
       ? this.voice("bruteAttack", 1.0, { pitch: type === "boss" ? 0.85 : 1 })
       : type === "runner" || type === "flyer"
@@ -891,6 +987,13 @@ export class Sfx {
     if (weapon === "hunting") this.noiseHit({ type: "highpass", freq: 5000, dur: 0.05, vol: 0.25 });
     if (weapon === "iceLance") [1568, 2349].forEach((f) => this.tone(f, f * 1.05, 0.25, "sine", 0.04));
     if (weapon === "boneBow") this.tone(260, 180, 0.12, "triangle", 0.15);
+    // Pistolul: pocnitură seacă și ascuțită; pușca: bubuitură lungă cu ecou; pușca de asalt: scurt și dur.
+    if (weapon === "pistol") this.noiseHit({ type: "bandpass", freq: 2600, dur: 0.04, vol: 0.25 });
+    if (weapon === "rifle") {
+      this.tone(110, 38, 0.3, "sine", 0.4);
+      this.noiseHit({ type: "lowpass", freq: 700, dur: 0.6, vol: 0.1, reverbOnly: true });
+    }
+    if (weapon === "assaultRifle") this.noiseHit({ type: "highpass", freq: 2000, dur: 0.03, vol: 0.2 });
   }
 
   /** Sunetul fiecărui tip de turn (tare, ca să se audă peste luptă). `heavy` = abilitatea. */

@@ -17,11 +17,13 @@ import {
   canAddFuel,
   canBuildBuilding,
   canCraftCanteen,
+  canRefineOil,
   GameSimulation,
   type GameState,
   type HeroClass,
   type Vec2,
   barricadeAt,
+  isBoss,
   barricadeEnds,
   canBuildBarricade,
   canBuildTower,
@@ -31,6 +33,7 @@ import {
   canUpgradeTower,
   defaultBarricadeRotation,
   type TowerKind,
+  type ZombieType,
   heroById,
   nextInChain,
   snapBarricade,
@@ -363,13 +366,19 @@ function onBuildTap(pos: Vec2, screenX: number, screenY: number): void {
         blocked: raw <= 0 ? "N-ai carne crudă (vânează)" : f.fuel <= 0 ? "Focul e stins" : f.cooking.length >= 3 ? "Frigarea e plină" : null,
         onClick: act({ type: "useItem", playerId: LOCAL_PLAYER, item: "rawMeat" }),
       },
+      {
+        label: "🛢️ Rafinează ulei",
+        detail: `${CONFIG.oil.refineTime} s → ⛽ · ai ${s.players[LOCAL_PLAYER].inventory.oil}`,
+        blocked: canRefineOil(s, LOCAL_PLAYER, f.id),
+        onClick: act({ type: "refineOil", playerId: LOCAL_PLAYER }),
+      },
     ];
     if (f.ownerId === LOCAL_PLAYER && s.campfires.indexOf(f) > 0) {
       options.push({ label: "🔨 Demolează", onClick: act({ type: "demolishBuilding", playerId: LOCAL_PLAYER, buildingId: f.id }) });
     }
     options.push(cancel);
     renderer.setSelection(f.pos, 1.2, f.id);
-    const cooking = f.cooking.length ? ` · 🍖 gata în ${Math.ceil(Math.min(...f.cooking))} s` : "";
+    const cooking = (f.cooking.length ? ` · 🍖 gata în ${Math.ceil(Math.min(...f.cooking))} s` : "") + (f.refining.length ? ` · ⛽ în ${Math.ceil(Math.min(...f.refining))} s` : "");
     hud.showBuildMenu(screenX, screenY, options, `🔥 Foc · ${f.fuel > 0 ? `${Math.ceil(f.fuel)}% lemn` : "stins"}${cooking}`);
     return;
   }
@@ -427,6 +436,8 @@ const hud = new Hud({
   onAction: (on) => send({ type: "action", playerId: LOCAL_PLAYER, on }),
   onUseSlot: (slot) => send({ type: "useSlot", playerId: LOCAL_PLAYER, slot }),
   onSetSlot: (slot, item) => send({ type: "setSlot", playerId: LOCAL_PLAYER, slot, item }),
+  onLearnSkill: (skill) => send({ type: "learnSkill", playerId: LOCAL_PLAYER, skill }),
+  onCraftArmor: (slot, material) => send({ type: "craftArmor", playerId: LOCAL_PLAYER, slot, material }),
   onPickHero: startGame,
   onToggleSound: () => {
     sfx.setMuted(!sfx.muted);
@@ -633,7 +644,8 @@ const slotKey = (slot: number) => sim && !paused && send({ type: "useSlot", play
 keyboard.onPress("Digit1", () => (buildMode !== "off" ? pick("tower") : slotKey(0)));
 keyboard.onPress("Digit2", () => (buildMode !== "off" ? pick("wall") : slotKey(1)));
 keyboard.onPress("Digit3", () => (buildMode !== "off" ? pick("mine") : slotKey(2)));
-keyboard.onPress("Digit4", () => (buildMode !== "off" ? sim?.state.mode === "survival" && pick("campfire") : slotKey(3)));
+keyboard.onPress("Digit4", () => (buildMode !== "off" ? pick("campfire") : slotKey(3)));
+keyboard.onPress("KeyL", () => sim && hud.toggleLevelMenu());
 // G = acțiune (ții apăsat: târnăcop; apeși: undiță / vânzare), I = inventar.
 keyboard.onPress("KeyI", () => sim && hud.toggleInventory());
 window.addEventListener("keydown", (e) => {
@@ -687,7 +699,7 @@ function danger(state: GameState): number {
   const hero = localHero(state);
   const near = state.zombies.filter((z) => !z.burning && Math.hypot(z.pos.x - hero.pos.x, z.pos.z - hero.pos.z) < 14).length;
   const atShelter = state.zombies.filter((z) => Math.hypot(z.pos.x, z.pos.z) < 10).length;
-  const boss = state.zombies.some((z) => z.type === "boss") ? 0.25 : 0;
+  const boss = state.zombies.some((z) => isBoss(z.type)) ? 0.25 : 0;
   const shelterLow = state.mode === "defend" && state.shelter.hp / state.shelter.maxHp < 0.4 ? 0.2 : 0;
   const hurt = hero.alive && hero.hp / hero.maxHp < 0.35 ? 0.15 : 0;
   // Noaptea muzica pornește deja alertă (0,5) și crește cu cât e mai aproape pericolul.
@@ -719,10 +731,11 @@ function startMenuScene(): void {
   sfx.setMenu(true);
 }
 
-function spawnZombieAt(s: GameState, type: "walker" | "runner" | "brute" | "boss", x: number, z: number, facing: number): void {
+function spawnZombieAt(s: GameState, type: ZombieType, x: number, z: number, facing: number): void {
   s.zombies.push({
     id: s.nextId++, type, pos: { x, z }, facing, hp: 1, maxHp: 1, attackTimer: 9, slowTimer: 0, stuckTime: 0,
     burning: false, aggroTowerId: null, lastHitBy: null, chillTimer: 0, frozenTimer: 0, freezeImmune: 0,
+    abilityTimer: 99, ability2Timer: 99, charge: null, burrowed: false, rageTimer: 0, enraged: false,
   });
 }
 
@@ -803,7 +816,7 @@ renderer.engine.runRenderLoop(() => {
       steps: renderer.drainSteps(),
       weaponOf: (heroId) => state.players[heroById(state, heroId)?.playerId ?? LOCAL_PLAYER]?.weapon ?? "rusty",
       dt,
-      boss: state.phase === "night" && state.zombies.some((z) => z.type === "boss" && !z.burning),
+      boss: state.phase === "night" && state.zombies.some((z) => isBoss(z.type) && !z.burning),
       nearestZombie: nearestZombie(state),
       running: state.phase === "day" || state.phase === "night",
     });

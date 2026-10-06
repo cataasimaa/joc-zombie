@@ -2,7 +2,20 @@
 // Schimbă valorile aici ca să faci jocul mai ușor sau mai greu.
 
 export type HeroClass = "assault" | "sniper" | "tank" | "healer";
-export type ZombieType = "walker" | "runner" | "spitter" | "flyer" | "brute" | "boss";
+export type ZombieType =
+  | "walker" | "runner" | "spitter" | "flyer" | "brute"
+  /** Noi: urlătoarea (înfurie zombii), umflatul (explodează), săpătorul (vine pe sub zăpadă), șamanul (vindecă). */
+  | "screamer" | "bloater" | "burrower" | "shaman"
+  /** Boșii: lich-ul, matca, yeti-ul turbat, vrăjitoarea viscolului, colosul. */
+  | "boss" | "broodmother" | "yeti" | "witch" | "colossus";
+export const BOSS_TYPES: ZombieType[] = ["boss", "broodmother", "yeti", "witch", "colossus"];
+export const isBoss = (t: ZombieType): boolean => BOSS_TYPES.includes(t);
+/** Ce poate învăța eroul la fiecare nivel: tăiat, minerit, pescuit, tras. */
+export type SkillId = "chop" | "mine" | "fish" | "shoot";
+export const SKILL_IDS: SkillId[] = ["chop", "mine", "fish", "shoot"];
+export type ArmorSlot = "head" | "chest" | "legs" | "feet";
+export const ARMOR_SLOTS: ArmorSlot[] = ["head", "chest", "legs", "feet"];
+export type ArmorMaterial = "leather" | "metal";
 export type Rarity = "common" | "rare" | "epic" | "legendary";
 export type ShopRarity = "nothing" | Rarity;
 /** Turnul de bază e arbaleta; din ea faci upgrade în celelalte. */
@@ -15,7 +28,8 @@ export type AnimalKind = "deer" | "bear" | "chicken" | "pig";
 /** Peștii din baltă: de la cel mai des (biban) la cel mai rar și mai greu de scos (somn). */
 export type FishKind = "perch" | "trout" | "pike" | "catfish";
 export const FISH_KINDS: FishKind[] = ["perch", "trout", "pike", "catfish"];
-export type ItemKind = "rawMeat" | "cookedMeat" | "canteen" | FishKind;
+/** oil = ulei brut (din zăcământ), petrol = benzină (uleiul rafinat pe foc, pentru drujbă). */
+export type ItemKind = "rawMeat" | "cookedMeat" | "canteen" | "oil" | "petrol" | "leather" | "iron" | FishKind;
 
 export interface WeatherStats {
   name: string;
@@ -113,6 +127,13 @@ export interface ZombieStats {
   /** Zboară: trece peste ziduri, case și brazi. */
   flying: boolean;
 }
+
+/** Numele afișat al fiecărui zombie (HUD: bara boss-ului, mesaje). */
+export const ZOMBIE_NAMES: Record<ZombieType, string> = {
+  walker: "Strigoi", runner: "Târâtor", spitter: "Scuipător", flyer: "Zburător", brute: "Trol",
+  screamer: "Urlătoarea", bloater: "Umflatul", burrower: "Săpătorul", shaman: "Șamanul",
+  boss: "Lich-ul", broodmother: "Matca", yeti: "Yeti-ul turbat", witch: "Vrăjitoarea viscolului", colossus: "Colosul de gheață",
+};
 
 export const CONFIG = {
   /** De câte ori pe secundă rulează simularea (pas fix). */
@@ -268,8 +289,66 @@ export const CONFIG = {
     spitter: { hp: 36, speed: 2.0, radius: 0.6, damage: 11, attackInterval: 2.2, coinChance: 0.2, coins: 6, xp: 6, rangedRange: 9, flying: false },
     flyer: { hp: 28, speed: 4.0, radius: 0.55, damage: 8, attackInterval: 1, coinChance: 0.15, coins: 5, xp: 5, rangedRange: 0, flying: true },
     brute: { hp: 200, speed: 1.6, radius: 0.95, damage: 30, attackInterval: 1.4, coinChance: 0.5, coins: 10, xp: 14, rangedRange: 0, flying: false },
+    screamer: { hp: 30, speed: 3.0, radius: 0.5, damage: 6, attackInterval: 1, coinChance: 0.3, coins: 7, xp: 8, rangedRange: 0, flying: false },
+    bloater: { hp: 70, speed: 1.7, radius: 0.8, damage: 0, attackInterval: 1, coinChance: 0.25, coins: 6, xp: 7, rangedRange: 0, flying: false },
+    burrower: { hp: 55, speed: 4.2, radius: 0.6, damage: 14, attackInterval: 0.9, coinChance: 0.3, coins: 7, xp: 9, rangedRange: 0, flying: false },
+    shaman: { hp: 60, speed: 2.0, radius: 0.6, damage: 8, attackInterval: 1.2, coinChance: 0.4, coins: 9, xp: 12, rangedRange: 8, flying: false },
     boss: { hp: 1700, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 100, rangedRange: 0, flying: false },
+    broodmother: { hp: 1100, speed: 1.6, radius: 1.4, damage: 40, attackInterval: 1.3, coinChance: 1, coins: 50, xp: 90, rangedRange: 0, flying: false },
+    yeti: { hp: 1500, speed: 2.2, radius: 1.3, damage: 55, attackInterval: 1.2, coinChance: 1, coins: 50, xp: 110, rangedRange: 0, flying: false },
+    witch: { hp: 1250, speed: 2.0, radius: 1.0, damage: 30, attackInterval: 1.4, coinChance: 1, coins: 50, xp: 120, rangedRange: 11, flying: false },
+    colossus: { hp: 3200, speed: 1.0, radius: 2.0, damage: 90, attackInterval: 2.0, coinChance: 1, coins: 80, xp: 160, rangedRange: 0, flying: false },
   } satisfies Record<ZombieType, ZombieStats>,
+
+  /** Abilitățile zombilor noi și ale boșilor (secunde, metri, damage). */
+  zombieAbilities: {
+    /** Urlătoarea: la câteva secunde urlă și înfurie zombii din jur (mai rapizi, atacă mai des). */
+    screamEvery: 6,
+    screamRadius: 7,
+    rageTime: 4,
+    rageSpeed: 1.5,
+    /** Umflatul: explodează când ajunge lângă țintă sau când moare (gaz înghețat). */
+    bloatRadius: 3,
+    bloatDamage: 34,
+    /** Săpătorul: merge pe sub zăpadă (nu-l poți lovi, trece pe sub ziduri) și iese lângă țintă. */
+    burrowEmerge: 3.5,
+    emergeDamage: 12,
+    /** Șamanul: vindecă zombii din jur. */
+    healEvery: 4,
+    healRadius: 6,
+    healPct: 0.2,
+    /** Matca: naște pui (târâtori) și la moarte îi scapă pe toți. */
+    broodEvery: 6,
+    broodCount: 2,
+    broodOnDeath: 6,
+    /** Nu mai naște dacă pe hartă sunt deja atâția zombi (să nu facă lag pe telefon). */
+    broodCap: 120,
+    /** Yeti-ul: se încordează, apoi se năpustește în linie dreaptă, dărâmă zidurile și te aruncă. */
+    chargeEvery: 7,
+    chargeRange: 15,
+    chargeWindup: 0.9,
+    chargeSpeed: 15,
+    chargeTime: 1.1,
+    chargeDamage: 45,
+    chargeWallDamage: 260,
+    knockback: 3,
+    /** Vrăjitoarea: se teleportează, aruncă țurțuri și îngheață turnurile din jur. */
+    blinkEvery: 6,
+    blinkDistance: 8,
+    towerFreezeEvery: 9,
+    towerFreezeRadius: 9,
+    towerFreezeTime: 4,
+    iceBoltDamage: 22,
+    /** Colosul: bate din picior (undă de șoc) și aruncă bolovani în turnuri; la jumătate se înfurie. */
+    stompEvery: 6,
+    stompRadius: 5,
+    stompDamage: 38,
+    boulderEvery: 5,
+    boulderRange: 16,
+    boulderDamage: 70,
+    enrageAt: 0.5,
+    enrageSpeed: 1.6,
+  },
 
   zombieCommon: {
     /** Zombii loviți de un turn îl atacă pe el întâi (dacă e mai aproape de atât), apoi merg spre mină. */
@@ -293,10 +372,15 @@ export const CONFIG = {
 
   tower: {
     radius: 0.8,
-    /** Fiecare turn are 3 niveluri. Nivelul 3 se deblochează din magazin sau din cufărul boss-ului. */
-    maxLevel: 3,
+    /**
+     * Fiecare turn are 5 niveluri. Nivelul 3 se deblochează din magazin / cufărul boss-ului sau la
+     * nivelul 4 al eroului; nivelul 4 (turn de elită) la eroul de nivel 6, nivelul 5 (legendar) la 8.
+     */
+    maxLevel: 5,
     /** Costul unui nivel în plus (lemn) și cât crește puterea pe nivel. */
-    levelCost: [0, 45, 80],
+    levelCost: [0, 45, 80, 140, 220],
+    /** Nivelul eroului de la care se deblochează nivelul de turn (index = nivelul turnului). */
+    tierAtHeroLevel: [0, 0, 0, 4, 6, 8],
     damagePerLevel: 0.45,
     rangePerLevel: 0.08,
     hpPerLevel: 0.4,
@@ -391,6 +475,7 @@ export const CONFIG = {
     ore: {
       silver: { hits: 8, coins: 18 },
       gold: { hits: 12, coins: 45 },
+      oil: { hits: 6, coins: 0 },
     },
     orePerDay: 3,
     oreMax: 6,
@@ -429,6 +514,84 @@ export const CONFIG = {
     lifetime: 30,
   },
 
+  /**
+   * Abilitățile eroului: la fiecare nivel primești un punct și alegi ce crești (max 5 trepte).
+   * Fiecare treaptă dă un bonus mic; treptele 3 și 5 dau și câte o pasivă (un bonus mare).
+   */
+  skills: {
+    maxRank: 5,
+    /** Tăiat: lovești mai des; la 3 = +1 lemn pe lovitură, la 5 = bradul cade de 2 ori mai repede. */
+    chopSpeed: 0.12,
+    /** Minerit: lovești mai des; la 3 = +50% aur din zăcăminte, la 5 = +1 ulei / fier. */
+    mineSpeed: 0.12,
+    goldBonus: 0.5,
+    /** Pescuit: mai mult timp și smucituri mai slabe; la 3 = smuciturile la jumătate, la 5 = peștele ×1,5 aur. */
+    fishTime: 0.1,
+    fishTug: 0.1,
+    fishPrice: 1.5,
+    /** Tras: +6% damage pe treaptă; la 3 = reîncarci cu 25% mai repede, la 5 = 15% lovituri critice ×2. */
+    shootDamage: 0.06,
+    shootReload: 0.25,
+    critChance: 0.15,
+    critMultiplier: 2,
+  },
+
+  /** Armele care vin cu nivelul (le primești singur): pistol, pușcă, pușcă de asalt. Drujba la 5. */
+  levelUnlocks: {
+    pistol: 2,
+    rifle: 4,
+    chainsaw: 5,
+    assaultRifle: 7,
+  },
+
+  /** Drujba: taie copacii foarte repede și tăie și zombii; merge cu benzină. */
+  chainsaw: {
+    hitInterval: 0.22,
+    zombieDamage: 22,
+    reach: 2.0,
+    /** Câte secunde de tăiat ține un bidon de benzină. */
+    secondsPerPetrol: 25,
+    tank: 50,
+  },
+
+  /** Uleiul brut se rafinează pe foc în benzină. */
+  oil: {
+    hits: 6,
+    /** Ulei primit când spargi zăcământul. */
+    amount: 3,
+    chance: 0.25,
+    refineTime: 12,
+  },
+
+  /**
+   * Armurile: cască, piept, pantaloni, papuci; din piele (de la animale) sau metal (fier din
+   * zăcăminte). Fiecare piesă reduce damage-ul; setul complet dă un bonus în plus.
+   */
+  armor: {
+    leather: {
+      name: "Piele",
+      reduction: { head: 0.03, chest: 0.06, legs: 0.04, feet: 0.02 },
+      cost: { head: { leather: 3, iron: 0 }, chest: { leather: 6, iron: 0 }, legs: { leather: 5, iron: 0 }, feet: { leather: 3, iron: 0 } },
+      /** Setul complet: îngheți mai greu și mergi puțin mai repede. */
+      setCold: 0.3,
+      setSpeed: 0.05,
+      setReduction: 0,
+    },
+    metal: {
+      name: "Metal",
+      reduction: { head: 0.06, chest: 0.12, legs: 0.08, feet: 0.04 },
+      cost: { head: { leather: 1, iron: 4 }, chest: { leather: 2, iron: 8 }, legs: { leather: 1, iron: 6 }, feet: { leather: 1, iron: 3 } },
+      setCold: 0,
+      setSpeed: -0.05,
+      setReduction: 0.1,
+    },
+  },
+  /** Piele din animale (căprioară, urs, porc) și fier din zăcăminte (argint / aur). */
+  loot: {
+    leather: { deer: 2, bear: 4, pig: 1, chicken: 0 },
+    iron: { silver: 2, gold: 1, oil: 0 },
+  },
+
   xp: {
     perLevel: 100,
     /** Cât XP în plus cere fiecare nivel următor. */
@@ -461,8 +624,18 @@ export const CONFIG = {
     flyerShare: 0.08,
     brutesFromWave: 4,
     bruteShare: 0.12,
-    /** Nopțile care au un boss. */
-    bossWaves: [5, 10],
+    /** Zombii noi: din ce noapte apar și cât din val sunt. */
+    bloatersFromWave: 2,
+    bloaterShare: 0.05,
+    screamersFromWave: 3,
+    screamerShare: 0.04,
+    burrowersFromWave: 5,
+    burrowerShare: 0.05,
+    shamansFromWave: 6,
+    shamanShare: 0.03,
+    /** Nopțile care au un boss, și ce boss vine (fiecare face altceva). */
+    bossWaves: [3, 5, 7, 9, 10],
+    bosses: { 3: ["broodmother"], 5: ["boss"], 7: ["yeti"], 9: ["witch"], 10: ["colossus", "boss"] } as Record<number, ZombieType[]>,
   },
 
   shop: {

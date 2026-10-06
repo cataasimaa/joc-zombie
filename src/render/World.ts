@@ -345,8 +345,10 @@ export class World {
         return;
       }
       if (t.shake > 0) {
-        t.shake = Math.max(0, t.shake - dt * 4);
-        const w = Math.sin(t.shake * 30) * t.shake * 0.05;
+        // Bradul se clatină la lovitură: o legănare amortizată (mai largă la început, apoi se liniștește).
+        t.shake = Math.max(0, t.shake - dt * 1.6);
+        const age = 1 - t.shake;
+        const w = Math.sin(age * Math.PI * 7) * t.shake * t.shake * 0.09;
         t.node.rotation.set(w, t.rotY, w * 0.6);
       }
     });

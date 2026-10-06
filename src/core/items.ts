@@ -2,12 +2,13 @@
 
 import type { Rarity, ShopRarity } from "./config";
 
-export type WeaponId = "rusty" | "hunting" | "scattergun" | "pipeGun" | "boneBow" | "iceLance";
+export type WeaponId = "rusty" | "pistol" | "rifle" | "assaultRifle" | "hunting" | "scattergun" | "pipeGun" | "boneBow" | "iceLance";
 
 export interface WeaponDef {
   id: WeaponId;
   name: string;
-  rarity: Rarity | "start";
+  /** "level" = o primești singur când crește nivelul eroului. */
+  rarity: Rarity | "start" | "level";
   /** Multiplicatori față de arma de bază a clasei. */
   damage: number;
   interval: number;
@@ -30,6 +31,21 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     id: "rusty", name: "Țeava ruginită", rarity: "start",
     damage: 1, interval: 1, range: 0, pellets: 0, pierce: 0, magazine: 1, reload: 1, slow: 0,
     description: "Arma cu care ai pornit.",
+  },
+  pistol: {
+    id: "pistol", name: "Pistol", rarity: "level",
+    damage: 1.2, interval: 0.85, range: -1, pellets: 0, pierce: 0, magazine: 0.7, reload: 0.6, slow: 0,
+    description: "Ușor și precis, se reîncarcă foarte repede. (Nivelul 2)",
+  },
+  rifle: {
+    id: "rifle", name: "Pușcă", rarity: "level",
+    damage: 1.65, interval: 1.2, range: 4, pellets: 0, pierce: 1, magazine: 0.55, reload: 1, slow: 0,
+    description: "Arma normală de luptă: lovituri grele, bate departe, trece prin doi zombi. (Nivelul 4)",
+  },
+  assaultRifle: {
+    id: "assaultRifle", name: "Pușcă de asalt", rarity: "level",
+    damage: 1.05, interval: 0.55, range: 2, pellets: 0, pierce: 0, magazine: 1.5, reload: 1.05, slow: 0,
+    description: "Rafale rapide, încărcător mare. (Nivelul 7)",
   },
   hunting: {
     id: "hunting", name: "Pușcă de vânătoare", rarity: "rare",

@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:smoke": "SMOKE=1 vitest run src/core/smoke.test.ts"
   },
   "dependencies": {
     "@babylonjs/core": "^9.29.0"

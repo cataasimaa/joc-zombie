@@ -462,7 +462,7 @@ describe("supraviețuire", () => {
     expect(s.phase).toBe("gameover");
   });
 
-  it("focul și ferma se construiesc doar în Supraviețuire", () => {
+  it("ferma doar în Supraviețuire; focul (pentru benzină) în ambele moduri", () => {
     const sim = survival();
     sim.state.players.p1.wood = 200;
     sim.enqueue({ type: "build", playerId: "p1", kind: "campfire", x: 10, z: -10 });
@@ -473,8 +473,10 @@ describe("supraviețuire", () => {
     const def = newGame();
     def.state.players.p1.wood = 200;
     def.enqueue({ type: "build", playerId: "p1", kind: "campfire", x: 10, z: -10 });
+    def.enqueue({ type: "build", playerId: "p1", kind: "farmChicken", x: -10, z: -10 });
     def.step(DT);
-    expect(def.state.campfires.length).toBe(0);
+    expect(def.state.campfires.length).toBe(1);
+    expect(def.state.farms.length).toBe(0);
   });
 });
 

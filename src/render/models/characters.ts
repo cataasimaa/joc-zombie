@@ -3,7 +3,7 @@
 // ca să le putem anima. Formele organice folosesc umbrire netedă (smooth) → aspect mai realist.
 
 import { type Color3, type Mesh, type Scene, TransformNode } from "@babylonjs/core";
-import type { HeroClass, SkinAccessory, WeaponId, ZombieType } from "../../core";
+import type { ArmorMaterial, ArmorSlot, HeroClass, SkinAccessory, WeaponId, ZombieType } from "../../core";
 import { type Materials, ModelKit } from "../ModelKit";
 import { PAL, hex, mix } from "../palette";
 
@@ -20,7 +20,15 @@ export interface HeroLook {
   accessory?: SkinAccessory;
   /** Ține târnăcopul în mână: fără armă (târnăcopul e o piesă separată, animată). */
   noGun?: boolean;
+  /** Armura purtată (cască, piept, pantaloni, papuci): piele sau metal. */
+  armor?: Partial<Record<ArmorSlot, ArmorMaterial | null>>;
 }
+
+/** Culorile armurilor: piele tăbăcită cu cusături, fier forjat cu nituri și rugină. */
+const LEATHER = hex("#7a5236");
+const LEATHER_DARK = hex("#4e3322");
+const STEEL = hex("#6d7882");
+const STEEL_DARK = hex("#454e57");
 
 /** Un picior din două bucăți: coapsa (pivot în șold) și gamba (pivot în genunchi). */
 export interface Leg {
@@ -40,7 +48,7 @@ export interface HeroModel {
 
 const SMOOTH = { smooth: true } as const;
 
-function buildLeg(scene: Scene, mats: Materials, seed: number, trousers: Color3, x: number, bulk: number): Leg {
+function buildLeg(scene: Scene, mats: Materials, seed: number, trousers: Color3, x: number, bulk: number, legs: ArmorMaterial | null = null, feet: ArmorMaterial | null = null): Leg {
   const hip = new TransformNode("hip", scene);
   hip.position.set(x, 0.92, 0);
   const knee = new TransformNode("knee", scene);
@@ -48,15 +56,31 @@ function buildLeg(scene: Scene, mats: Materials, seed: number, trousers: Color3,
   knee.position.set(0, -0.46, 0.02);
 
   const t = new ModelKit(scene, mats, seed);
-  t.capsule(0.5, 0.12 * bulk, { p: [0, -0.22, 0] }, { color: trousers, wear: 0.12, ...SMOOTH });
+  t.capsule(0.5, 0.12 * bulk, { p: [0, -0.22, 0] }, { color: legs === "leather" ? LEATHER : trousers, wear: 0.12, ...SMOOTH });
+  if (legs === "leather") {
+    // Pantaloni de piele: cusătură și curea la genunchi.
+    t.cyl(0.05, 0.27 * bulk, 0.27 * bulk, 8, { p: [0, -0.4, 0] }, { color: LEATHER_DARK, wear: 0.2, ...SMOOTH });
+  } else if (legs === "metal") {
+    // Apărătoare de fier pe coapsă.
+    t.box(0.22 * bulk, 0.34, 0.1, { p: [0, -0.2, 0.1] }, { color: STEEL, mat: "metal", wear: 0.3, frost: 0.3 });
+    t.sphere(0.06, 5, { p: [0, -0.08, 0.16] }, { color: STEEL_DARK, mat: "metal" });
+  }
   const thigh = t.buildOne("thigh");
   thigh.parent = hip;
 
   const s = new ModelKit(scene, mats, seed + 1);
-  s.capsule(0.44, 0.1 * bulk, { p: [0, -0.2, 0] }, { color: trousers.scale(0.9), wear: 0.12, ...SMOOTH });
-  // Bocanc de piele cu manșetă de blană.
-  s.box(0.2 * bulk, 0.16, 0.34, { p: [0, -0.4, 0.06] }, { color: PAL.leather, wear: 0.2, frost: 0.5, frostNormal: 0.7 });
-  s.cyl(0.1, 0.24 * bulk, 0.24 * bulk, 8, { p: [0, -0.28, 0] }, { color: PAL.fur, wear: 0.25, ...SMOOTH });
+  s.capsule(0.44, 0.1 * bulk, { p: [0, -0.2, 0] }, { color: legs === "leather" ? LEATHER.scale(0.9) : trousers.scale(0.9), wear: 0.12, ...SMOOTH });
+  if (legs === "metal") {
+    // Genunchere și apărătoare de fier pe gambă.
+    s.sphere(0.2, 6, { p: [0, 0, 0.1], s: [1, 0.8, 0.7] }, { color: STEEL_DARK, mat: "metal", wear: 0.3 });
+    s.box(0.2 * bulk, 0.3, 0.09, { p: [0, -0.2, 0.1] }, { color: STEEL, mat: "metal", wear: 0.3, frost: 0.3 });
+  }
+  // Bocanc de piele cu manșetă de blană (papucii de armură: piele groasă cu șireturi sau fier).
+  const boot = feet === "metal" ? STEEL : feet === "leather" ? LEATHER : PAL.leather;
+  s.box(0.2 * bulk * (feet ? 1.12 : 1), feet ? 0.2 : 0.16, feet ? 0.38 : 0.34, { p: [0, -0.4, 0.06] }, { color: boot, mat: feet === "metal" ? "metal" : undefined, wear: 0.2, frost: 0.5, frostNormal: 0.7 });
+  if (feet === "metal") s.box(0.24 * bulk, 0.06, 0.12, { p: [0, -0.33, 0.22] }, { color: STEEL_DARK, mat: "metal", wear: 0.3 });
+  if (feet === "leather") for (const dy of [-0.34, -0.29]) s.box(0.22 * bulk, 0.02, 0.02, { p: [0, dy, 0.17] }, { color: LEATHER_DARK });
+  s.cyl(0.1, 0.24 * bulk, 0.24 * bulk, 8, { p: [0, -0.28, 0] }, { color: feet === "metal" ? STEEL_DARK : PAL.fur, mat: feet === "metal" ? "metal" : undefined, wear: 0.25, ...SMOOTH });
   const shin = s.buildOne("shin");
   shin.parent = knee;
   return { hip, knee, meshes: [thigh, shin] };
@@ -125,6 +149,31 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
     if (cls === "sniper") for (const x of [-0.07, 0.07]) k.sphere(0.05, 6, { p: [x, 1.92, 0.33] }, { color: PAL.ice, mat: "glow" });
   }
 
+  // Armura de piept și casca (peste haină și glugă).
+  const chest = look.armor?.chest ?? null;
+  const head = look.armor?.head ?? null;
+  if (chest === "leather") {
+    // Vestă de piele tăbăcită cu curele și cusături.
+    k.capsule(0.62, 0.285 * bulk, { p: [0, 1.36, 0.01], s: [1.32, 1, 0.86] }, { color: LEATHER, wear: 0.25, frost: 0.2, ...SMOOTH });
+    for (const y of [1.2, 1.38, 1.56]) k.box(0.62 * bulk, 0.035, 0.04, { p: [0, y, 0.25] }, { color: LEATHER_DARK });
+  } else if (chest === "metal") {
+    // Pieptar de fier cu nituri și umăr de oțel pe ambele părți.
+    k.capsule(0.6, 0.29 * bulk, { p: [0, 1.37, 0.02], s: [1.3, 1, 0.86] }, { color: STEEL, mat: "metal", wear: 0.3, frost: 0.25, ...SMOOTH });
+    k.box(0.06, 0.5, 0.06, { p: [0, 1.38, 0.27] }, { color: STEEL_DARK, mat: "metal" });
+    for (const [x, y] of [[-0.2, 1.55], [0.2, 1.55], [-0.22, 1.2], [0.22, 1.2]] as const) k.sphere(0.04, 5, { p: [x, y, 0.27] }, { color: PAL.rust, mat: "metal" });
+    for (const side of [1, -1]) k.sphere(1, 8, { p: [side * 0.42 * bulk, 1.64, 0], s: [0.34, 0.2, 0.38], r: [0, 0, side * -0.4] }, { color: STEEL, mat: "metal", wear: 0.25, ...SMOOTH });
+  }
+  if (head === "leather" && !look.accessory) {
+    // Căciulă de piele cu clape pentru urechi.
+    k.sphere(0.5, 10, { p: [0, 2.0, -0.03], s: [1.02, 0.7, 1.05] }, { color: LEATHER, wear: 0.25, frost: 0.5, ...SMOOTH });
+    for (const side of [1, -1]) k.box(0.08, 0.26, 0.2, { p: [side * 0.25, 1.86, 0.02] }, { color: LEATHER_DARK, wear: 0.2 });
+  } else if (head === "metal" && !look.accessory) {
+    // Coif de fier cu apărătoare de nas și creastă.
+    k.sphere(0.54, 12, { p: [0, 2.0, -0.02], s: [1, 0.78, 1.04] }, { color: STEEL, mat: "metal", wear: 0.25, frost: 0.4, ...SMOOTH });
+    k.box(0.06, 0.24, 0.06, { p: [0, 1.9, 0.27] }, { color: STEEL_DARK, mat: "metal" });
+    k.box(0.05, 0.08, 0.5, { p: [0, 2.2, -0.02] }, { color: STEEL_DARK, mat: "metal" });
+  }
+
   // Bandulieră în diagonală, cu cartușe.
   if (!healer) {
     k.box(0.1, 0.95, 0.05, { p: [0, 1.3, 0.25], r: [0, 0, 0.62] }, { color: PAL.leather, wear: 0.2 });
@@ -168,8 +217,8 @@ export function buildHero(scene: Scene, mats: Materials, look: HeroLook): HeroMo
   }
 
   const body = k.build(`hero_${cls}`);
-  const legL = buildLeg(scene, mats, 21, trousers, -0.15 * bulk, bulk);
-  const legR = buildLeg(scene, mats, 23, trousers, 0.15 * bulk, bulk);
+  const legL = buildLeg(scene, mats, 21, trousers, -0.15 * bulk, bulk, look.armor?.legs ?? null, look.armor?.feet ?? null);
+  const legR = buildLeg(scene, mats, 23, trousers, 0.15 * bulk, bulk, look.armor?.legs ?? null, look.armor?.feet ?? null);
   return { body, legL, legR, muzzle };
 }
 
@@ -287,6 +336,29 @@ function gun(k: ModelKit, weapon: WeaponId, sniper: boolean): [number, number, n
   const barrel = (len: number, z: number, d = 0.08, color = PAL.iron, dx = 0, dy = 0.05) =>
     k.cyl(len, d, d * 1.15, 10, { p: [x + dx, y + dy, z], r: [Math.PI / 2, 0, 0] }, { color, mat: "metal", wear: 0.2, smooth: true });
   switch (weapon) {
+    case "pistol":
+      // Pistol: mâner scurt, țeavă scurtă de oțel, ținut cu ambele mâini.
+      k.box(0.1, 0.24, 0.12, { p: [x, y - 0.14, 0.62], r: [0.25, 0, 0] }, { color: PAL.darkWood, wear: 0.2 });
+      k.box(0.11, 0.13, 0.42, { p: [x, y + 0.02, 0.8] }, { color: STEEL_DARK, mat: "metal", wear: 0.25 });
+      barrel(0.25, 1.1, 0.06, STEEL_DARK);
+      return [x, y + 0.05, 1.25];
+    case "rifle":
+      // Pușca: patul de lemn lung, mecanism de oțel, lunetă mică, curea.
+      stock(0.8, mix(PAL.oldWood, LEATHER, 0.3));
+      k.box(0.12, 0.13, 0.95, { p: [x, y, 0.8] }, { color: mix(PAL.oldWood, LEATHER, 0.3), wear: 0.2 });
+      barrel(1.4, 1.15, 0.075, STEEL_DARK);
+      k.cyl(0.38, 0.08, 0.08, 10, { p: [x, y + 0.17, 0.72], r: [Math.PI / 2, 0, 0] }, { color: STEEL_DARK, mat: "metal", smooth: true });
+      k.box(0.03, 0.04, 0.9, { p: [x - 0.08, y - 0.1, 0.55] }, { color: LEATHER_DARK });
+      return [x, y + 0.05, 1.86];
+    case "assaultRifle":
+      // Pușca de asalt: corp negru de oțel, încărcător curbat, pat rabatabil, mâner în față.
+      k.box(0.13, 0.2, 0.55, { p: [x, y - 0.02, 0.15] }, { color: hex("#2c3238"), mat: "metal", wear: 0.3 });
+      k.box(0.14, 0.22, 0.7, { p: [x, y, 0.75] }, { color: hex("#30363d"), mat: "metal", wear: 0.25 });
+      k.box(0.1, 0.32, 0.14, { p: [x, y - 0.26, 0.78], r: [-0.3, 0, 0] }, { color: hex("#3a2a1e"), wear: 0.2 });
+      k.box(0.09, 0.2, 0.09, { p: [x, y - 0.2, 1.05] }, { color: hex("#2c3238"), mat: "metal" });
+      barrel(0.75, 1.42, 0.065, hex("#22272c"));
+      k.box(0.05, 0.08, 0.3, { p: [x, y + 0.15, 0.7] }, { color: hex("#22272c"), mat: "metal" });
+      return [x, y + 0.05, 1.8];
     case "hunting":
       stock(0.75);
       k.box(0.11, 0.11, 0.9, { p: [x, y, 0.75] }, { color: PAL.oldWood, wear: 0.2 });
@@ -662,6 +734,288 @@ function buildBoss(scene: Scene, mats: Materials, seed: number): ZombieModel {
   return { body, armL: arm(1, false), armR: arm(2, true), legL: legM(1), legR: legM(2), shoulder: [0.95, 3.45, 0.1], hip: [0.35, 1.65] };
 }
 
+// ---------- Zombii noi ----------
+
+/** Urlătoarea (screamer): strigoaică slabă, păr lung alb, gura uriașă care strălucește violet-rece, brațe ridicate. */
+function buildScreamer(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const skin = mix(FROST_SKIN, PAL.bone, 0.35);
+  const wail = hex("#b9a6ff");
+  // Trup subțire, rochie lungă ruptă până în zăpadă.
+  k.capsule(0.75, 0.16, { p: [0, 1.3, 0], r: [0.15, 0, 0], s: [1, 1, 0.75] }, { color: skin, wear: 0.15, ...SMOOTH });
+  k.cyl(1.05, 0.34, 0.62, 10, { p: [0, 0.62, 0], s: [1, 1, 0.8] }, { color: mix(FROST_RAG, PAL.bone, 0.25), wear: 0.25, frost: 0.5, frostNormal: 0.25, ...SMOOTH });
+  rags(k, 12, [-0.32, 0.32], 0.4, [-0.25, 0.25], [0.2, 0.42], 0.16, mix(FROST_RAG, PAL.bone, 0.2));
+  // Capul dat pe spate, gura căscată (glow), ochi goi.
+  k.sphere(0.36, 10, { p: [0, 1.86, 0.08], s: [0.9, 1.2, 0.95] }, { color: skin, wear: 0.15, ...SMOOTH });
+  k.sphere(0.2, 8, { p: [0, 1.74, 0.22], s: [0.8, 1.4, 0.6] }, { color: wail, mat: "glow" });
+  for (const x of [-0.08, 0.08]) eye(k, x, 1.94, 0.22, 0.05, wail);
+  // Părul alb, lung, în șuvițe care curg pe spate.
+  for (let i = 0; i < 14; i++) {
+    const a = Math.PI + (i / 13 - 0.5) * 2.4;
+    const h = k.rand(0.7, 1.2);
+    k.cyl(h, 0.06, 0.01, 4, { p: [Math.sin(a) * 0.2, 1.95 - h / 2, Math.cos(a) * 0.16 - 0.05], r: [k.rand(-0.2, 0.05), 0, Math.sin(a) * 0.2] }, { color: hex("#e8eef2"), wear: 0.05, smooth: true });
+  }
+  const body = k.build(`screamer${seed}`);
+  const arm = (s: number) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(0.6, 0.05, { p: [0, -0.28, 0] }, { color: skin, wear: 0.15, ...SMOOTH });
+    a.capsule(0.6, 0.045, { p: [0, -0.84, 0.05] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+    claws(a, -1.16, 0.1, 0.3, 0.05, PAL.bone);
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.capsule(0.75, 0.06, { p: [0, -0.4, 0] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+  });
+  return { body, armL: arm(1), armR: arm(2), legL: legM(1), legR: legM(2), shoulder: [0.22, 1.6, 0.06], hip: [0.1, 0.8] };
+}
+
+/** Umflatul (bloater): burtă uriașă, pungi de gaz înghețat galben-verzui care strălucesc, cap mic. */
+function buildBloater(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const skin = mix(FROST_SKIN, hex("#8a9a6a"), 0.45);
+  const gas = hex("#d8f08a");
+  k.sphere(1.6, 14, { p: [0, 1.15, 0.05], s: [1, 0.95, 1] }, { color: skin, wear: 0.18, frost: 0.2, ...SMOOTH });
+  // Vene și pungi de gaz care stau să plesnească.
+  for (let i = 0; i < 9; i++) {
+    const a = k.rand(0, Math.PI * 2);
+    const y = k.rand(0.7, 1.6);
+    const r = Math.sqrt(Math.max(0.05, 0.64 - (y - 1.15) ** 2)) * 0.98;
+    k.sphere(k.rand(0.16, 0.3), 8, { p: [Math.sin(a) * r, y, Math.cos(a) * r + 0.05] }, { color: gas, mat: "glow" });
+  }
+  for (let i = 0; i < 6; i++) k.capsule(k.rand(0.4, 0.7), 0.025, { p: [k.rand(-0.5, 0.5), k.rand(0.8, 1.5), 0.72], r: [0, 0, k.rand(-1, 1)] }, { color: PAL.blood, ...SMOOTH });
+  // Cap mic, înfundat în umeri.
+  k.sphere(0.4, 10, { p: [0, 2.0, 0.25] }, { color: skin, wear: 0.15, ...SMOOTH });
+  k.sphere(0.14, 6, { p: [0, 1.92, 0.42], s: [1, 0.6, 0.6] }, { color: PAL.blood, ...SMOOTH });
+  for (const x of [-0.08, 0.08]) eye(k, x, 2.05, 0.4, 0.05, gas);
+  k.box(0.9, 0.25, 0.7, { p: [0, 0.45, 0] }, { color: PAL.rags, wear: 0.25, frost: 0.4 });
+  const body = k.build(`bloater${seed}`);
+  const arm = (s: number) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(0.45, 0.1, { p: [0, -0.22, 0] }, { color: skin, wear: 0.15, ...SMOOTH });
+    a.capsule(0.4, 0.09, { p: [0, -0.6, 0.06] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.capsule(0.5, 0.15, { p: [0, -0.22, 0] }, { color: skin, wear: 0.15, ...SMOOTH });
+    a.sphere(0.24, 6, { p: [0, -0.45, 0.08], s: [1, 0.5, 1.4] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+  });
+  return { body, armL: arm(1), armR: arm(2), legL: legM(1), legR: legM(2), shoulder: [0.78, 1.55, 0.1], hip: [0.32, 0.5] };
+}
+
+/** Săpătorul (burrower): cocoșat, cu plăci de gheață și piatră pe spate și gheare-lopată uriașe. */
+function buildBurrower(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const skin = mix(FROST_SKIN_DARK, PAL.dirt, 0.35);
+  k.capsule(1.1, 0.34, { p: [0, 1.0, 0], r: [1.1, 0, 0], s: [1.15, 1, 0.9] }, { color: skin, wear: 0.25, frost: 0.3, ...SMOOTH });
+  // Carapacea: plăci de piatră și gheață, ca solzii.
+  for (let i = 0; i < 7; i++) {
+    for (const side of [-1, 0, 1]) {
+      k.ico(0.22 - Math.abs(side) * 0.04, { p: [side * 0.24, 1.32 - i * 0.03, -0.45 + i * 0.16], s: [1.2, 0.5, 1] }, { color: i % 2 ? PAL.stoneDark : mix(PAL.stone, PAL.ice, 0.3), wear: 0.3, frost: 0.6, smooth: true });
+    }
+  }
+  // Bot lung, ochi mici, colți.
+  k.sphere(0.4, 10, { p: [0, 1.0, 0.65], s: [0.9, 0.7, 1.4] }, { color: skin, wear: 0.2, ...SMOOTH });
+  k.cyl(0.25, 0.1, 0.18, 6, { p: [0, 0.95, 0.95], r: [Math.PI / 2, 0, 0] }, { color: hex("#c79a9a"), ...SMOOTH });
+  for (const x of [-0.12, 0.12]) {
+    eye(k, x, 1.12, 0.82, 0.045);
+    k.cyl(0.14, 0, 0.04, 3, { p: [x * 0.6, 0.82, 0.95] }, { color: PAL.bone });
+  }
+  const body = k.build(`burrower${seed}`);
+  const arm = (s: number) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(0.5, 0.11, { p: [0, -0.22, 0.05] }, { color: skin, wear: 0.2, ...SMOOTH });
+    // Mâna-lopată: palmă lată și 4 gheare groase.
+    a.box(0.36, 0.08, 0.3, { p: [0, -0.55, 0.2], r: [0.5, 0, 0] }, { color: FROST_SKIN_DARK, wear: 0.2 });
+    for (const dx of [-0.13, -0.045, 0.045, 0.13]) a.cyl(0.32, 0.01, 0.07, 4, { p: [dx, -0.68, 0.42], r: [1.0, 0, 0] }, { color: PAL.bone, wear: 0.2 });
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.capsule(0.55, 0.12, { p: [0, -0.25, -0.05] }, { color: skin, wear: 0.2, ...SMOOTH });
+    a.sphere(0.22, 6, { p: [0, -0.52, 0.06], s: [1, 0.5, 1.4] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+  });
+  return { body, armL: arm(1), armR: arm(2), legL: legM(1), legR: legM(2), shoulder: [0.36, 1.0, 0.45], hip: [0.22, 0.6] };
+}
+
+/** Șamanul de gheață: bătrân cocoșat, coarne de cerb pe cap, colier de oase, toiag cu cristal care pulsează. */
+function buildShaman(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const skin = mix(FROST_SKIN, hex("#7a8f8a"), 0.3);
+  const fur = hex("#5e5244");
+  const heal = hex("#7ff0d8");
+  k.capsule(0.8, 0.22, { p: [0, 1.2, 0.05], r: [0.45, 0, 0], s: [1.1, 1, 0.8] }, { color: skin, wear: 0.2, ...SMOOTH });
+  // Mantie de blană cu glugă, până jos.
+  k.cyl(1.25, 0.45, 0.7, 10, { p: [0, 0.75, -0.05], s: [1, 1, 0.85] }, { color: fur, wear: 0.3, frost: 0.5, frostNormal: 0.3, ...SMOOTH });
+  for (const side of [1, -1]) k.sphere(0.45, 8, { p: [side * 0.26, 1.58, -0.05], s: [1, 0.6, 1] }, { color: mix(fur, PAL.furDark, 0.5), wear: 0.3, frost: 0.6, ...SMOOTH });
+  // Colier de oase și dinți.
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 8 - 0.5) * 2.2;
+    k.cyl(0.12, 0.01, 0.04, 4, { p: [Math.sin(a) * 0.3, 1.48, 0.25 + Math.cos(a) * 0.05] }, { color: PAL.bone });
+  }
+  // Cap cu glugă și coarne de cerb.
+  k.sphere(0.34, 10, { p: [0, 1.8, 0.32] }, { color: skin, wear: 0.15, ...SMOOTH });
+  k.sphere(0.46, 10, { p: [0, 1.86, 0.22], s: [1, 1, 1.05] }, { color: mix(fur, PAL.furDark, 0.4), wear: 0.25, frost: 0.6, ...SMOOTH });
+  for (const x of [-0.07, 0.07]) eye(k, x, 1.82, 0.48, 0.05, heal);
+  for (const side of [1, -1]) {
+    k.cyl(0.55, 0.03, 0.06, 5, { p: [side * 0.25, 2.2, 0.18], r: [0, 0, side * -0.6] }, { color: PAL.bone, wear: 0.15 });
+    for (let i = 0; i < 3; i++) k.cyl(0.25, 0.015, 0.035, 4, { p: [side * (0.3 + i * 0.07), 2.3 + i * 0.08, 0.18], r: [0, 0, side * (0.3 - i * 0.3)] }, { color: PAL.bone, wear: 0.15 });
+  }
+  const body = k.build(`shaman${seed}`);
+  const arm = (s: number, staff: boolean) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(0.55, 0.07, { p: [0, -0.26, 0] }, { color: fur, wear: 0.3, ...SMOOTH });
+    a.capsule(0.5, 0.06, { p: [0, -0.7, 0.08] }, { color: skin, wear: 0.15, ...SMOOTH });
+    if (staff) {
+      // Toiagul: lemn noduros, cu cristalul de gheață vindecătoare sus.
+      a.cyl(2.2, 0.05, 0.07, 6, { p: [0, -0.4, 0.2] }, { color: PAL.burntWood, wear: 0.3 });
+      a.ico(0.2, { p: [0, 0.78, 0.2], s: [0.8, 1.5, 0.8] }, { color: heal, mat: "glow" });
+      for (let i = 0; i < 3; i++) a.cyl(0.18, 0.005, 0.03, 4, { p: [Math.sin(i * 2.1) * 0.08, 0.55, 0.2 + Math.cos(i * 2.1) * 0.08], r: [0, 0, Math.sin(i * 2.1) * 0.5] }, { color: PAL.bone });
+    } else {
+      claws(a, -0.98, 0.14, 0.2);
+    }
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.capsule(0.7, 0.07, { p: [0, -0.35, 0] }, { color: FROST_SKIN_DARK, ...SMOOTH });
+  });
+  return { body, armL: arm(1, false), armR: arm(2, true), legL: legM(1), legR: legM(2), shoulder: [0.34, 1.5, 0.15], hip: [0.12, 0.75] };
+}
+
+// ---------- Boșii noi ----------
+
+/** Matca: un păianjen de gheață umflat, cu abdomen plin de ouă care strălucesc și 8 picioare. */
+function buildBroodmother(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const shell = mix(FROST_SKIN_DARK, hex("#3a3448"), 0.4);
+  const egg = hex("#b8f4ff");
+  // Abdomenul: sac uriaș cu ouă vizibile prin piele.
+  k.sphere(2.4, 14, { p: [0, 1.75, -1.0], s: [1, 0.85, 1.15] }, { color: mix(shell, FROST_SKIN, 0.35), wear: 0.2, frost: 0.4, frostNormal: 0.3, ...SMOOTH });
+  for (let i = 0; i < 14; i++) {
+    const a = k.rand(0, Math.PI * 2);
+    const b = k.rand(-0.6, 0.9);
+    k.sphere(k.rand(0.22, 0.34), 8, { p: [Math.sin(a) * Math.cos(b) * 1.1, 1.75 + Math.sin(b) * 0.95, -1.0 + Math.cos(a) * Math.cos(b) * 1.25] }, { color: egg, mat: "glow" });
+  }
+  // Toracele și capul cu mulți ochi și clești.
+  k.sphere(1.3, 12, { p: [0, 1.35, 0.55], s: [1, 0.75, 1] }, { color: shell, wear: 0.2, frost: 0.4, ...SMOOTH });
+  k.sphere(0.8, 10, { p: [0, 1.35, 1.25] }, { color: shell, wear: 0.2, ...SMOOTH });
+  for (const [x, y] of [[-0.18, 1.55], [0.18, 1.55], [-0.3, 1.42], [0.3, 1.42], [-0.1, 1.68], [0.1, 1.68]] as const) eye(k, x, y, 1.6, 0.07, egg);
+  for (const side of [1, -1]) k.cyl(0.5, 0.02, 0.1, 5, { p: [side * 0.2, 1.05, 1.6], r: [1.0, 0, side * 0.4] }, { color: PAL.bone, wear: 0.2 });
+  // Încă 4 picioare fixe pe laterale (cele animate sunt brațele / picioarele).
+  for (const side of [1, -1]) {
+    for (const dz of [0.2, 0.75]) {
+      k.capsule(1.3, 0.09, { p: [side * 1.15, 1.6, dz], r: [0, 0, side * 1.0] }, { color: shell, wear: 0.2, ...SMOOTH });
+      k.capsule(1.4, 0.07, { p: [side * 1.9, 0.8, dz + 0.1], r: [0, 0, side * -0.35] }, { color: mix(shell, PAL.ice, 0.2), wear: 0.2, ...SMOOTH });
+    }
+  }
+  const body = k.build(`brood${seed}`);
+  const leg = (s: number, side: number) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(1.2, 0.1, { p: [side * 0.5, 0.15, 0], r: [0, 0, side * 1.15] }, { color: shell, wear: 0.2, ...SMOOTH });
+    a.capsule(1.5, 0.075, { p: [side * 1.15, -0.55, 0.05], r: [0, 0, side * -0.3] }, { color: mix(shell, PAL.ice, 0.2), wear: 0.2, ...SMOOTH });
+  });
+  return { body, armL: leg(1, -1), armR: leg(2, 1), legL: leg(3, -1), legR: leg(4, 1), shoulder: [0.7, 1.35, 1.2], hip: [0.7, 1.35] };
+}
+
+/** Yeti-ul turbat: maimuță uriașă cu blană albă murdară, față albastră, coarne, brațe până la pământ. */
+function buildYeti(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const fur = hex("#dfe6ea");
+  const furDark = hex("#aeb9c2");
+  const face = hex("#4f79a8");
+  k.capsule(1.6, 0.85, { p: [0, 2.05, 0.1], r: [0.35, 0, 0], s: [1.2, 1, 0.95] }, { color: fur, wear: 0.15, frost: 0.3, frostNormal: 0.4, ...SMOOTH });
+  // Smocuri de blană zbârlită pe umeri și spate.
+  for (let i = 0; i < 18; i++) {
+    const a = k.rand(-2.4, 2.4) + Math.PI;
+    k.sphere(k.rand(0.45, 0.7), 8, { p: [Math.sin(a) * 0.8, k.rand(2.2, 3.0), Math.cos(a) * 0.6], s: [1, 0.8, 1] }, { color: mix(fur, furDark, k.rand(0, 1)), wear: 0.2, frost: 0.4, ...SMOOTH });
+  }
+  k.sphere(1.1, 10, { p: [0, 1.7, 0.6], s: [1, 0.9, 0.7] }, { color: furDark, wear: 0.2, ...SMOOTH });
+  // Capul: față albastră, gura cu colți, sprâncene grele, coarne.
+  k.sphere(0.85, 12, { p: [0, 3.05, 0.85] }, { color: fur, wear: 0.15, ...SMOOTH });
+  k.sphere(0.6, 10, { p: [0, 2.95, 1.12], s: [1, 0.95, 0.7] }, { color: face, wear: 0.15, ...SMOOTH });
+  k.box(0.6, 0.12, 0.2, { p: [0, 3.18, 1.28], r: [0.2, 0, 0] }, { color: mix(face, PAL.iron, 0.4) });
+  for (const x of [-0.17, 0.17]) {
+    eye(k, x, 3.08, 1.36, 0.08);
+    k.cyl(0.18, 0.06, 0, 4, { p: [x * 0.7, 2.72, 1.38], r: [0, 0, 0] }, { color: PAL.bone });
+  }
+  k.sphere(0.32, 8, { p: [0, 2.72, 1.3], s: [1.2, 0.5, 0.6] }, { color: PAL.blood, ...SMOOTH });
+  for (const side of [1, -1]) k.cyl(0.7, 0, 0.18, 6, { p: [side * 0.6, 3.5, 0.75], r: [0.4, 0, side * -0.9] }, { color: PAL.bone, wear: 0.15, smooth: true });
+  const body = k.build(`yeti${seed}`);
+  const arm = (s: number) => limb(scene, mats, seed + s, (a) => {
+    a.capsule(1.1, 0.32, { p: [0, -0.5, 0] }, { color: fur, wear: 0.15, frost: 0.3, ...SMOOTH });
+    a.capsule(1.1, 0.28, { p: [0, -1.4, 0.15] }, { color: furDark, wear: 0.2, ...SMOOTH });
+    a.sphere(0.6, 8, { p: [0, -2.05, 0.3], s: [1, 0.8, 1.1] }, { color: face, wear: 0.15, ...SMOOTH });
+    claws(a, -2.2, 0.55, 0.32, 0.14, PAL.bone);
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.capsule(0.9, 0.35, { p: [0, -0.4, 0] }, { color: fur, wear: 0.15, ...SMOOTH });
+    a.sphere(0.6, 8, { p: [0, -0.95, 0.2], s: [1, 0.5, 1.4] }, { color: furDark, ...SMOOTH });
+  });
+  return { body, armL: arm(1), armR: arm(2), legL: legM(1), legR: legM(2), shoulder: [1.1, 2.75, 0.4], hip: [0.45, 1.15] };
+}
+
+/** Vrăjitoarea viscolului: înaltă, robă lungă în formă de clopot, glugă ascuțită cu coroană de gheață, toiag cu glob. */
+function buildWitch(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const robe = hex("#2e3f58");
+  const robeLight = hex("#4c6788");
+  const frost = hex("#a9e4ff");
+  // Roba plutește puțin deasupra zăpezii (fără picioare vizibile).
+  k.cyl(2.0, 0.42, 1.25, 12, { p: [0, 1.2, 0] }, { color: robe, wear: 0.2, frost: 0.4, frostNormal: 0.3, ...SMOOTH });
+  rags(k, 14, [-0.6, 0.6], 0.35, [-0.55, 0.55], [0.2, 0.4], 0.22, robe);
+  k.capsule(0.7, 0.3, { p: [0, 2.45, 0], s: [1.2, 1, 0.8] }, { color: robeLight, wear: 0.2, ...SMOOTH });
+  for (let i = 0; i < 6; i++) k.cyl(0.04, 0.95 - i * 0.08, 0.95 - i * 0.08, 12, { p: [0, 0.35 + i * 0.35, 0] }, { color: frost, mat: "glow" });
+  // Gluga ascuțită, fața palidă, ochi care ard rece, coroana de țurțuri.
+  k.sphere(0.6, 10, { p: [0, 3.05, 0.02], s: [1, 1.1, 1] }, { color: robe, wear: 0.2, frost: 0.5, ...SMOOTH });
+  k.cyl(0.9, 0, 0.45, 8, { p: [0, 3.65, -0.2], r: [-0.5, 0, 0] }, { color: robe, wear: 0.2, frost: 0.6, ...SMOOTH });
+  k.sphere(0.36, 10, { p: [0, 3.0, 0.22] }, { color: mix(PAL.bone, PAL.ice, 0.3), wear: 0.1, ...SMOOTH });
+  for (const x of [-0.1, 0.1]) eye(k, x, 3.05, 0.5, 0.07, frost);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 6 - 0.5) * 2.4;
+    k.cyl(0.35 + (i === 3 ? 0.2 : 0), 0, 0.06, 4, { p: [Math.sin(a) * 0.38, 3.45, Math.cos(a) * 0.3 + 0.05] }, { color: frost, mat: "glow" });
+  }
+  const body = k.build(`witch${seed}`);
+  const arm = (s: number, staff: boolean) => limb(scene, mats, seed + s, (a) => {
+    a.cyl(0.9, 0.12, 0.3, 8, { p: [0, -0.42, 0.05] }, { color: robeLight, wear: 0.2, ...SMOOTH });
+    a.capsule(0.4, 0.05, { p: [0, -0.95, 0.12] }, { color: mix(PAL.bone, PAL.ice, 0.3), ...SMOOTH });
+    for (const dx of [-0.05, 0, 0.05]) a.cyl(0.3, 0.004, 0.025, 4, { p: [dx, -1.2, 0.2], r: [0.5, 0, dx * 2] }, { color: frost });
+    if (staff) {
+      a.cyl(3.0, 0.05, 0.07, 6, { p: [0, -0.6, 0.3] }, { color: hex("#1e2a38"), wear: 0.2 });
+      a.sphere(0.42, 12, { p: [0, 1.0, 0.3] }, { color: frost, mat: "glow" });
+      for (let i = 0; i < 4; i++) a.cyl(0.35, 0.02, 0.05, 4, { p: [Math.sin(i * 1.57) * 0.22, 1.0, 0.3 + Math.cos(i * 1.57) * 0.22], r: [Math.cos(i * 1.57) * 0.6, 0, -Math.sin(i * 1.57) * 0.6] }, { color: hex("#1e2a38") });
+    }
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.sphere(0.05, 4, { p: [0, -0.1, 0] }, { color: robe });
+  });
+  return { body, armL: arm(1, false), armR: arm(2, true), legL: legM(1), legR: legM(2), shoulder: [0.45, 2.7, 0.05], hip: [0.2, 0.6] };
+}
+
+/** Colosul de gheață: golem uriaș din bolovani și blocuri de gheață, cu un miez care arde rece în piept. */
+function buildColossus(scene: Scene, mats: Materials, seed: number): ZombieModel {
+  const k = new ModelKit(scene, mats, seed);
+  const rock = PAL.stoneDark;
+  const iceBlock = mix(PAL.ice, PAL.snow, 0.3);
+  const core = hex("#5fd8ff");
+  // Trunchiul: bolovani mari îngrămădiți, cu blocuri de gheață între ei.
+  k.ico(1.5, { p: [0, 3.0, 0], s: [1.35, 1.05, 1] }, { color: rock, wear: 0.3, frost: 0.6, frostNormal: 0.4, smooth: true });
+  k.ico(1.1, { p: [0, 1.9, 0.05], s: [1.2, 0.8, 0.95] }, { color: mix(rock, PAL.stone, 0.4), wear: 0.3, frost: 0.5, smooth: true });
+  for (let i = 0; i < 8; i++) {
+    k.box(k.rand(0.4, 0.7), k.rand(0.4, 0.9), k.rand(0.4, 0.6), { p: [k.rand(-1.4, 1.4), k.rand(2.2, 3.8), k.rand(-0.9, 0.7)], r: [k.rand(0, 1), k.rand(0, 1), k.rand(0, 1)] }, { color: iceBlock, wear: 0.05, frost: 0.3 });
+  }
+  // Miezul: o crăpătură în piept prin care se vede lumina.
+  k.ico(0.55, { p: [0, 3.0, 1.05] }, { color: core, mat: "glow" });
+  for (let i = 0; i < 5; i++) k.box(0.08, k.rand(0.6, 1.1), 0.08, { p: [k.rand(-0.5, 0.5), 3.0 + k.rand(-0.3, 0.3), 1.2], r: [0, 0, k.rand(-1, 1)] }, { color: core, mat: "glow" });
+  // Capul mic, adânc între umeri, cu ochi ca niște fante.
+  k.ico(0.6, { p: [0, 4.35, 0.45], s: [1.1, 0.8, 1] }, { color: rock, wear: 0.3, frost: 0.7, smooth: true });
+  for (const x of [-0.22, 0.22]) k.box(0.22, 0.07, 0.1, { p: [x, 4.38, 0.98] }, { color: core, mat: "glow" });
+  // Țurțuri și zăpadă pe umeri.
+  for (const side of [1, -1]) {
+    k.ico(0.9, { p: [side * 1.7, 3.8, 0], s: [1, 0.8, 1] }, { color: mix(rock, PAL.stone, 0.3), wear: 0.3, frost: 0.9, frostNormal: 0.5, smooth: true });
+    for (let i = 0; i < 4; i++) k.cyl(k.rand(0.4, 0.8), 0, 0.15, 4, { p: [side * (1.4 + i * 0.25), 4.5, k.rand(-0.4, 0.4)], r: [k.rand(-0.3, 0.3), 0, side * -0.3] }, { color: iceBlock, wear: 0.05 });
+  }
+  const body = k.build(`colossus${seed}`);
+  const arm = (s: number) => limb(scene, mats, seed + s, (a) => {
+    a.ico(0.65, { p: [0, -0.7, 0], s: [1, 1.4, 1] }, { color: rock, wear: 0.3, frost: 0.5, smooth: true });
+    a.box(0.5, 0.6, 0.5, { p: [0, -1.5, 0.1], r: [0.3, 0.4, 0] }, { color: iceBlock, wear: 0.05 });
+    a.ico(0.85, { p: [0, -2.35, 0.25], s: [1.1, 1, 1.1] }, { color: mix(rock, PAL.stone, 0.4), wear: 0.3, frost: 0.4, smooth: true });
+  });
+  const legM = (s: number) => limb(scene, mats, seed + 10 + s, (a) => {
+    a.ico(0.65, { p: [0, -0.55, 0], s: [1, 1.3, 1] }, { color: rock, wear: 0.3, frost: 0.4, smooth: true });
+    a.box(0.95, 0.5, 1.2, { p: [0, -1.15, 0.15] }, { color: mix(rock, PAL.stone, 0.3), wear: 0.3, frost: 0.8 });
+  });
+  return { body, armL: arm(1), armR: arm(2), legL: legM(1), legR: legM(2), shoulder: [1.9, 3.6, 0.1], hip: [0.7, 1.4] };
+}
+
 export function buildZombie(scene: Scene, mats: Materials, type: ZombieType): ZombieModel {
   switch (type) {
     case "brute":
@@ -674,6 +1028,22 @@ export function buildZombie(scene: Scene, mats: Materials, type: ZombieType): Zo
       return buildFlyer(scene, mats, 600);
     case "runner":
       return buildRunner(scene, mats, 150);
+    case "screamer":
+      return buildScreamer(scene, mats, 700);
+    case "bloater":
+      return buildBloater(scene, mats, 720);
+    case "burrower":
+      return buildBurrower(scene, mats, 740);
+    case "shaman":
+      return buildShaman(scene, mats, 760);
+    case "broodmother":
+      return buildBroodmother(scene, mats, 800);
+    case "yeti":
+      return buildYeti(scene, mats, 820);
+    case "witch":
+      return buildWitch(scene, mats, 840);
+    case "colossus":
+      return buildColossus(scene, mats, 860);
     default:
       return buildWalker(scene, mats, 100);
   }

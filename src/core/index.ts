@@ -3,8 +3,18 @@ export { GameSimulation } from "./Game";
 export type { GameOptions, PlayerSetup } from "./Game";
 export type { BuildKind, Command } from "./commands";
 export { CONFIG } from "./config";
-export type { AnimalKind, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, TowerKind, Weather, ZombieType } from "./config";
-export { FISH_KINDS } from "./config";
+export type { AnimalKind, ArmorMaterial, ArmorSlot, Difficulty, FishKind, GameMode, HeroClass, ItemKind, Rarity, ShopRarity, SkillId, TowerKind, Weather, ZombieType } from "./config";
+export { ARMOR_SLOTS, BOSS_TYPES, FISH_KINDS, SKILL_IDS, ZOMBIE_NAMES, isBoss } from "./config";
+export {
+  SKILL_INFO,
+  armorCost,
+  armorReduction,
+  armorSet,
+  canCraftArmor,
+  canLearnSkill,
+  hasPassive,
+  rank,
+} from "./systems/progression";
 export { DEFAULT_SKIN_COLOR, HERO_DEFS, SKINS } from "./heroDefs";
 export type { HeroDef, SkinAccessory, SkinDef } from "./heroDefs";
 export { CHEST_POOL, REPEATABLE, SHOP_POOLS, WEAPONS, rewardKey } from "./items";
@@ -33,7 +43,7 @@ export type { ActionHint } from "./systems/gather";
 export type { GunStats } from "./systems/heroes";
 export { canPlaceMine } from "./systems/mines";
 export { canShopRoll, shopRemaining } from "./systems/shop";
-export { buildingAt, buildingCost, canAddFuel, canBuildBuilding, canCraftCanteen, litFireNear } from "./systems/survival";
+export { buildingAt, buildingCost, canAddFuel, canBuildBuilding, canCraftCanteen, canRefineOil, litFireNear } from "./systems/survival";
 export type { BuildingKind } from "./systems/survival";
 export {
   canBuildTower,

@@ -17,7 +17,7 @@ import type { Fx } from "./Fx";
 import type { Materials } from "./ModelKit";
 import { AMBER, buildChest, buildFlame } from "./models/structures";
 import { buildOre } from "./models/gathering";
-import { type AnimalModel, buildAnimal, buildCampfire, buildDrop, buildEmbers, buildFarm, buildWell } from "./models/survival";
+import { type AnimalModel, buildAnimal, buildCampfire, buildDrop, buildEmbers, buildFarm, buildWell, type DropModel } from "./models/survival";
 import { PAL } from "./palette";
 import { terrainHeight } from "./Terrain";
 import { Prefab } from "./World";
@@ -57,8 +57,11 @@ export class SurvivalView {
   private meat: Prefab;
   private farms: Record<"chicken" | "pig", Prefab>;
   private animals = {} as Record<AnimalKind, { model: AnimalModel; body: Prefab; leg: Prefab }>;
-  private drops: Record<"ammo" | "rawMeat" | "cookedMeat" | "fish", Prefab>;
-  private ores: Record<"silver" | "gold", Prefab>;
+  private drops: Record<DropModel, Prefab>;
+  private ores: Record<"silver" | "gold" | "oil", Prefab>;
+  /** Zăcămintele lovite tresar (1 → 0). */
+  private oreHits = new Map<EntityId, number>();
+  private dt = 0;
   private oreViews = new Map<EntityId, TransformNode>();
   private chestBase: Prefab;
   private chestLid: Prefab;
@@ -92,8 +95,17 @@ export class SurvivalView {
       rawMeat: new Prefab(buildDrop(scene, mats, "rawMeat")),
       cookedMeat: new Prefab(buildDrop(scene, mats, "cookedMeat")),
       fish: new Prefab(buildDrop(scene, mats, "fish")),
+      petrol: new Prefab(buildDrop(scene, mats, "petrol")),
+      oil: new Prefab(buildDrop(scene, mats, "oil")),
+      leather: new Prefab(buildDrop(scene, mats, "leather")),
+      iron: new Prefab(buildDrop(scene, mats, "iron")),
+      canteen: new Prefab(buildDrop(scene, mats, "canteen")),
     };
-    this.ores = { silver: cast(new Prefab(buildOre(scene, mats, "silver"))), gold: cast(new Prefab(buildOre(scene, mats, "gold"))) };
+    this.ores = {
+      silver: cast(new Prefab(buildOre(scene, mats, "silver"))),
+      gold: cast(new Prefab(buildOre(scene, mats, "gold"))),
+      oil: cast(new Prefab(buildOre(scene, mats, "oil"))),
+    };
     this.meat = this.drops.rawMeat;
     const chest = buildChest(scene, mats);
     this.chestBase = cast(new Prefab(chest.base));
@@ -105,8 +117,19 @@ export class SurvivalView {
     return new Vector3(x, terrainHeight(x, z) + y, z);
   }
 
+  /** Un zăcământ a fost lovit (târnăcopul): tresare. */
+  oreHit(pos: { x: number; z: number }, state: GameState): void {
+    let best: { id: EntityId; d: number } | null = null;
+    for (const o of state.ores) {
+      const d = Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z);
+      if (d < 0.8 && (!best || d < best.d)) best = { id: o.id, d };
+    }
+    if (best) this.oreHits.set(best.id, 1);
+  }
+
   sync(state: GameState, dt: number): void {
     this.time += dt;
+    this.dt = dt;
     this.syncFires(state);
     this.syncFarms(state);
     this.syncWells(state);
@@ -219,7 +242,7 @@ export class SurvivalView {
   private syncDrops(state: GameState): void {
     sync(this.dropViews, state.drops, (d) => {
       const root = new TransformNode("drop", this.scene);
-      const kind = d.kind === "ammo" || d.kind === "rawMeat" || d.kind === "cookedMeat" ? d.kind : "fish";
+      const kind: DropModel = d.kind === "perch" || d.kind === "trout" || d.kind === "pike" || d.kind === "catfish" ? "fish" : d.kind;
       this.drops[kind].instance("dropMesh", root);
       return root;
     }, (root, d) => {
@@ -240,9 +263,13 @@ export class SurvivalView {
       root.rotation.y = o.id * 1.3;
       return root;
     }, (root, o) => {
-      // Se micșorează pe măsură ce îl spargi.
+      // Se micșorează pe măsură ce îl spargi; la fiecare lovitură tresare (se turtește și revine).
       const k = 0.55 + 0.45 * (o.hits / CONFIG.gather.ore[o.kind].hits);
-      root.scaling.setAll(k);
+      const hit = this.oreHits.get(o.id) ?? 0;
+      const punch = hit > 0 ? Math.sin((1 - hit) * Math.PI * 3) * hit * 0.12 : 0;
+      root.scaling.set(k * (1 + punch), k * (1 - punch), k * (1 + punch));
+      root.rotation.z = punch * 0.4;
+      if (hit > 0) this.oreHits.set(o.id, Math.max(0, hit - this.dt * 4));
       root.position.copyFrom(this.at(o.pos.x, o.pos.z, -0.05));
     });
   }

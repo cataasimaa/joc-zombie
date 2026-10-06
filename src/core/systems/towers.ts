@@ -9,7 +9,7 @@ import { type Vec2, angleOf, dist } from "../math";
 import type { EntityId, GameEvent, GameState, PlayerId, Shell, Tower, Zombie } from "../types";
 import { distToBarricade } from "./barricades";
 import { findNearestZombie } from "./heroes";
-import { damageZombie, zombiesInRadius } from "./zombies";
+import { damageZombie, targetable, zombiesInRadius } from "./zombies";
 
 const T = CONFIG.tower;
 const A = T.abilities;
@@ -96,7 +96,11 @@ export function canUpgradeTower(state: GameState, playerId: PlayerId, towerId: E
     if (to === "crossbow") return "E deja arbaletă";
   } else {
     if (tower.level >= T.maxLevel) return "Nivel maxim";
-    if (tower.level >= player.towerTier) return `Nivelul ${tower.level + 1}: din magazin sau cufărul boss-ului`;
+    if (tower.level >= player.towerTier) {
+      const next = tower.level + 1;
+      const at = T.tierAtHeroLevel[next];
+      return next === 3 ? `Nivelul 3: magazin, cufărul boss-ului sau eroul nv.${at}` : `Nivelul ${next}: când eroul ajunge la nv.${at}`;
+    }
   }
   const cost = towerUpgradeCost(tower, to);
   if (player.wood < cost) return `Ai nevoie de ${cost} lemn`;
@@ -180,6 +184,7 @@ function launch(state: GameState, tower: Tower, target: Zombie, special: Shell["
 function zombiesOnLine(state: GameState, from: Vec2, dir: Vec2, length: number, width: number): Zombie[] {
   const out: { z: Zombie; t: number }[] = [];
   for (const z of state.zombies) {
+    if (!targetable(z)) continue;
     const dx = z.pos.x - from.x;
     const dz = z.pos.z - from.z;
     const t = dx * dir.x + dz * dir.z;
@@ -208,6 +213,11 @@ export function refundFactor(state: GameState): number {
 export function updateTowers(state: GameState, dt: number, events: GameEvent[]): void {
   for (const tower of [...state.towers]) {
     const stats = effectiveTowerStats(state, tower);
+    // Înghețat de vrăjitoarea viscolului: nu trage până se dezgheață.
+    if (tower.frozenTimer && tower.frozenTimer > 0) {
+      tower.frozenTimer = Math.max(0, tower.frozenTimer - dt);
+      continue;
+    }
     tower.fireTimer -= dt;
     tower.abilityTimer -= dt;
 
@@ -316,7 +326,7 @@ function shellImpact(state: GameState, s: Shell, target: Zombie | null, events: 
   } else if (s.special === "big") {
     // Racheta mare se sparge în mini-rachete spre zombii din jur.
     const near = state.zombies
-      .filter((z) => dist(z.pos, s.pos) <= A.miniRocketRange)
+      .filter((z) => targetable(z) && dist(z.pos, s.pos) <= A.miniRocketRange)
       .sort((a, b) => dist(a.pos, s.pos) - dist(b.pos, s.pos))
       .slice(0, A.miniRockets);
     for (const z of near) {

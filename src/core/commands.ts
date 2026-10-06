@@ -1,7 +1,7 @@
 // Comenzile sunt SINGURA cale prin care un jucător poate schimba jocul.
 // Acum le trimite input-ul local; în multiplayer le va trimite clientul la server.
 
-import type { ItemKind, TowerKind } from "./config";
+import type { ArmorMaterial, ArmorSlot, ItemKind, SkillId, TowerKind } from "./config";
 import type { EntityId, PlayerId, SlotItem } from "./types";
 
 export type BuildKind = "tower" | "barricade" | "campfire" | "farmChicken" | "farmPig" | "well";
@@ -31,6 +31,12 @@ export type Command =
   | { type: "reload"; playerId: PlayerId }
   /** Bara rapidă: mănânci (sau pui carnea crudă pe focul de lângă tine). */
   | { type: "useItem"; playerId: PlayerId; item: ItemKind }
+  /** Level up: pui punctul de abilitate în tăiat, minerit, pescuit sau tras. */
+  | { type: "learnSkill"; playerId: PlayerId; skill: SkillId }
+  /** Faci (și îmbraci) o piesă de armură din piele sau metal. */
+  | { type: "craftArmor"; playerId: PlayerId; slot: ArmorSlot; material: ArmorMaterial }
+  /** Pui ulei pe focul de lângă tine: se face benzină (pentru drujbă). */
+  | { type: "refineOil"; playerId: PlayerId }
   /** La fântâna ta: faci o canistră nouă (costă lemn). */
   | { type: "craftCanteen"; playerId: PlayerId }
   /** Pui lemne pe foc. */

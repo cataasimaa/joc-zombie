@@ -13,9 +13,10 @@ import {
   upgradeBarricade,
 } from "./systems/barricades";
 import { updateChests, updateCoins } from "./systems/coins";
-import { addFuel, buildBuilding, craftCanteen, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
+import { addFuel, buildBuilding, craftCanteen, refineOil, demolishBuilding, updateAnimals, updateDrops, updateSurvival, useItem } from "./systems/survival";
 import { spawnDayOres, updateGather } from "./systems/gather";
 import { defaultHotbar, setSlot, useSlot } from "./systems/hotbar";
+import { craftArmor, learnSkill } from "./systems/progression";
 import { gunStats, heroById, startReload, updateHeroes } from "./systems/heroes";
 import { placeMine, updateMines } from "./systems/mines";
 import { shopRoll } from "./systems/shop";
@@ -147,6 +148,15 @@ export class GameSimulation {
         hero.aimDist = cmd.dist !== undefined && cmd.dist > 0 ? Math.min(60, cmd.dist) : 0;
         break;
       }
+      case "learnSkill":
+        learnSkill(s, cmd.playerId, cmd.skill, this.events);
+        break;
+      case "craftArmor":
+        craftArmor(s, cmd.playerId, cmd.slot, cmd.material, this.events);
+        break;
+      case "refineOil":
+        refineOil(s, cmd.playerId, this.events);
+        break;
       case "craftCanteen":
         craftCanteen(s, cmd.playerId, this.events);
         break;
@@ -250,10 +260,11 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       skin: null,
       unlocked: [],
       kills: 0,
-      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, canteen: mode === "survival" ? 1 : 0, perch: 0, trout: 0, pike: 0, catfish: 0 },
+      inventory: { rawMeat: 0, cookedMeat: mode === "survival" ? 2 : 0, canteen: mode === "survival" ? 1 : 0, oil: 0, petrol: 0, leather: 0, iron: 0, perch: 0, trout: 0, pike: 0, catfish: 0 },
       water: mode === "survival" ? CONFIG.survival.canteenDrinks : 0,
       weapons: ["rusty"],
       hotbar: defaultHotbar(mode),
+      chainsaw: false,
       tool: "gun",
     };
     state.heroes.push({
@@ -289,6 +300,10 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
       hooked: null,
       reel: 0,
       tugTimer: 0,
+      skills: { chop: 0, mine: 0, fish: 0, shoot: 0 },
+      skillPoints: 0,
+      sawFuel: 0,
+      armor: { head: null, chest: null, legs: null, feet: null },
       lantern: false,
       battery: 100,
       reviveProgress: 0,
@@ -301,7 +316,7 @@ function createInitialState({ players, seed = Date.now(), difficulty = "easy", m
   // Supraviețuire: un foc de tabără de start, la câțiva pași de mină (lângă mină e loc liber de
   // construit ziduri). În Apără mina nu mai e foc lângă mină.
   if (mode === "survival") {
-    state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 2.5, z: -8.5 }, fuel: CONFIG.survival.campfireFuel, cooking: [] });
+    state.campfires.push({ id: state.nextId++, ownerId: players[0]?.id ?? "p1", pos: { x: 2.5, z: -8.5 }, fuel: CONFIG.survival.campfireFuel, cooking: [], refining: [] });
   }
   // Primele zăcăminte de argint / aur, ca să ai ce mina din prima zi.
   spawnDayOres(state, []);

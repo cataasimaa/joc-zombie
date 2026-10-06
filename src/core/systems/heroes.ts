@@ -7,7 +7,8 @@ import { distToBarricade } from "./barricades";
 import { resolveCollisions } from "./physics";
 import { openBossChest } from "./shop";
 import { damageAnimal } from "./survival";
-import { damageZombie } from "./zombies";
+import { damageZombie, targetable } from "./zombies";
+import { armorReduction, armorSpeed, onLevelUp, shootBonus } from "./progression";
 
 export function heroById(state: GameState, id: EntityId): Hero | undefined {
   return state.heroes.find((h) => h.id === id);
@@ -32,12 +33,13 @@ export function gunStats(state: GameState, hero: Hero): GunStats {
   const c: HeroStats = CONFIG.heroes[hero.heroClass];
   const w: WeaponDef = WEAPONS[playerOf(state, hero)?.weapon ?? "rusty"];
   const pellets = c.pellets + w.pellets;
+  const skill = shootBonus(hero);
   return {
-    damage: c.damage * w.damage * heroDamageMultiplier(hero),
+    damage: c.damage * w.damage * heroDamageMultiplier(hero) * skill.damage,
     interval: c.fireInterval * w.interval,
     range: Math.max(4, c.range + w.range),
     magazine: Math.max(1, Math.round(c.magazine * w.magazine)),
-    reloadTime: c.reloadTime * w.reload,
+    reloadTime: c.reloadTime * w.reload * skill.reload,
     pellets,
     spread: pellets > 1 ? Math.max(c.spread, 0.2) : 0,
     pierce: c.pierce + w.pierce,
@@ -102,7 +104,7 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
     // 1. Mișcare. Zidurile și turnurile îl opresc, ușile nu.
     const { x, z } = hero.moveInput;
     if (x !== 0 || z !== 0) {
-      const speed = stats.speed * (1 + player.speedBonus) * (hero.firing ? 0.8 : 1) * CONFIG.weather[state.weather].heroSpeed;
+      const speed = stats.speed * (1 + player.speedBonus + armorSpeed(hero)) * (hero.firing ? 0.8 : 1) * CONFIG.weather[state.weather].heroSpeed;
       hero.pos.x += x * speed * dt;
       hero.pos.z += z * speed * dt;
       if (!hero.firing) hero.facing = angleOf(x, z);
@@ -157,8 +159,11 @@ export function updateHeroes(state: GameState, dt: number, events: GameEvent[]):
 /** Un foc: una sau mai multe alice, fiecare un „glonț” pe o linie dreaptă. */
 function fire(state: GameState, hero: Hero, gun: GunStats, events: GameEvent[]): void {
   const base = Math.atan2(hero.aim.x, hero.aim.z);
-  const crit = hero.heroClass === "sniper" && nextRandom(state) < CONFIG.heroCommon.sniperCritChance;
-  const damage = gun.damage * (crit ? CONFIG.heroCommon.sniperCritMultiplier : 1);
+  // Critice: Sniper-ul din clasă, oricine cu pasiva „Ochi de vultur” (tras, treapta 5).
+  const sniperCrit = hero.heroClass === "sniper" && nextRandom(state) < CONFIG.heroCommon.sniperCritChance;
+  const skillCrit = !sniperCrit && nextRandom(state) < shootBonus(hero).crit;
+  const crit = sniperCrit || skillCrit;
+  const damage = gun.damage * (sniperCrit ? CONFIG.heroCommon.sniperCritMultiplier : skillCrit ? CONFIG.skills.critMultiplier : 1);
   for (let i = 0; i < gun.pellets; i++) {
     const offset = gun.pellets > 1 ? (i / (gun.pellets - 1) - 0.5) * gun.spread + (nextRandom(state) - 0.5) * 0.04 : 0;
     const a = base + offset;
@@ -215,7 +220,7 @@ export function traceBullet(
     return Math.abs(dx * dir.z - dz * dir.x) <= radius + width ? t : null;
   };
   for (const z of state.zombies) {
-    if (z.hp <= 0) continue;
+    if (z.hp <= 0 || !targetable(z)) continue;
     const t = onLine(z.pos, CONFIG.zombies[z.type].radius);
     if (t !== null) candidates.push({ z, t });
   }
@@ -227,6 +232,7 @@ export function traceBullet(
   if (candidates.length === 0 && assist) {
     let best: { z: Zombie; t: number; ang: number } | null = null;
     for (const z of state.zombies) {
+      if (!targetable(z)) continue;
       const dx = z.pos.x - from.x;
       const dz = z.pos.z - from.z;
       const d = Math.hypot(dx, dz);
@@ -335,7 +341,7 @@ export function findNearestZombie(
   let best: Zombie | null = null;
   let bestD = range * range;
   for (const z of state.zombies) {
-    if (z.hp <= 0 || exclude.includes(z)) continue;
+    if (z.hp <= 0 || !targetable(z) || exclude.includes(z)) continue;
     const d = distSq(from, z.pos);
     if (d <= bestD) {
       bestD = d;
@@ -345,12 +351,16 @@ export function findNearestZombie(
   return best;
 }
 
-/** `silent` = damage „din interior” (foame, frig): fără armură și fără sânge. */
-export function damageHero(hero: Hero, amount: number, events: GameEvent[], from: Vec2, silent = false): void {
+/**
+ * `silent` = damage „din interior” (foame, frig): fără armură și fără sânge.
+ * `by` = zombiul care a lovit (ca randarea să arate lovitura care intră în erou).
+ */
+export function damageHero(hero: Hero, amount: number, events: GameEvent[], from: Vec2, silent = false, by?: EntityId): void {
   if (!hero.alive) return;
   if (hero.heroClass === "tank" && !silent) amount *= 1 - CONFIG.heroCommon.tankArmor;
+  if (!silent) amount *= 1 - armorReduction(hero);
   hero.hp -= amount;
-  if (!silent) events.push({ type: "heroHit", id: hero.id, pos: { ...hero.pos }, from: { ...from }, amount });
+  if (!silent) events.push({ type: "heroHit", id: hero.id, pos: { ...hero.pos }, from: { ...from }, amount, by });
   if (hero.hp <= 0) {
     hero.hp = 0;
     hero.alive = false;
@@ -395,5 +405,6 @@ export function giveXp(state: GameState, hero: Hero, amount: number, events: Gam
     recomputeMaxHp(state, hero);
     if (hero.alive) hero.hp = hero.maxHp;
     events.push({ type: "levelUp", heroId: hero.id, level: hero.level });
+    onLevelUp(state, hero, events);
   }
 }

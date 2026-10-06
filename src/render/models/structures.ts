@@ -34,13 +34,33 @@ export function buildTowerBase(scene: Scene, mats: Materials, level: number): Me
     }
     k.cyl(0.18, 2.05, 2.05, 8, { p: [0, 0.35, 0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
   }
+  if (level >= 4) {
+    // Turn de elită: stâlpi de fier la colțuri cu steaguri zdrențuite și un brâu de cristale reci.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      k.cyl(h + 1.1, 0.08, 0.1, 6, { p: [Math.sin(a) * 1.0, (h + 1.1) / 2, Math.cos(a) * 1.0] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+      k.box(0.03, 0.45, 0.35, { p: [Math.sin(a) * 1.0, h + 0.85, Math.cos(a) * 1.0 + 0.18], r: [0, a, 0] }, { color: hex("#6b1d24"), wear: 0.3 });
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      k.ico(0.13, { p: [Math.sin(a) * 1.05, h - 0.6, Math.cos(a) * 1.05], s: [0.7, 1.5, 0.7] }, { color: PAL.ice, mat: "glow" });
+    }
+  }
+  if (level >= 5) {
+    // Legendar: coroană de fier aurit și o flacără rece deasupra fiecărui stâlp.
+    k.cyl(0.14, 2.1, 2.1, 10, { p: [0, h + 0.5, 0] }, { color: PAL.gold, mat: "metal", wear: 0.2 });
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      k.sphere(0.2, 8, { p: [Math.sin(a) * 1.0, h + 1.25, Math.cos(a) * 1.0] }, { color: hex("#7ec8ff"), mat: "glow" });
+    }
+  }
   // Troian de zăpadă la bază.
   k.ico(0.9, { p: [0.6, 0.05, 0.5], s: [1.6, 0.35, 1.2] }, { color: PAL.snow, wear: 0.03 });
   return k.build(`towerBase${level}`);
 }
 
 /** Înălțimea platformei (unde stă arma), după nivel. */
-export const towerHeadY = (level: number): number => (level >= 3 ? 1.35 : level === 2 ? 1.1 : 0.9);
+export const towerHeadY = (level: number): number => (level >= 4 ? 1.5 + (level - 4) * 0.1 : level >= 3 ? 1.35 : level === 2 ? 1.1 : 0.9);
 
 /** Culoarea „semnătură” a fiecărui tip (pentru efecte). */
 export const TOWER_COLORS: Record<TowerKind, Color3> = {

@@ -29,6 +29,19 @@ import {
   shopRemaining,
   towerCost,
   xpToNextLevel,
+  ARMOR_SLOTS,
+  type ArmorMaterial,
+  type ArmorSlot,
+  SKILL_IDS,
+  SKILL_INFO,
+  type SkillId,
+  ZOMBIE_NAMES,
+  armorCost,
+  armorReduction,
+  armorSet,
+  canCraftArmor,
+  isBoss,
+  rank,
 } from "../core";
 import { type RunResult, bestRuns, lastRuns } from "./leaderboard";
 
@@ -40,6 +53,10 @@ export interface HudCallbacks {
   /** Bara rapidă: folosește locul `slot` / pune `item` în locul `slot`. */
   onUseSlot(slot: number): void;
   onSetSlot(slot: number, item: SlotItem | null): void;
+  /** Meniul de nivel: pui punctul într-o abilitate. */
+  onLearnSkill(skill: SkillId): void;
+  /** Inventarul: faci (și îmbraci) o piesă de armură. */
+  onCraftArmor(slot: ArmorSlot, material: ArmorMaterial): void;
   /** Butonul de acțiune: apăsat (true) / eliberat (false). */
   onAction(on: boolean): void;
   onPickHero(heroClass: HeroClass): void;
@@ -92,7 +109,36 @@ const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /** Iconițele armelor (în bara rapidă și în inventar). */
-const WEAPON_ICONS: Record<WeaponId, string> = { rusty: "🔫", hunting: "🎯", scattergun: "💥", pipeGun: "🔩", boneBow: "🏹", iceLance: "❄️" };
+const WEAPON_ICONS: Record<WeaponId, string> = {
+  rusty: "🔧", pistol: "🔫", rifle: "🎯", assaultRifle: "🪖", hunting: "🦌", scattergun: "💥", pipeGun: "🔩", boneBow: "🏹", iceLance: "❄️",
+};
+
+const ARMOR_NAMES: Record<ArmorSlot, { icon: string; name: string }> = {
+  head: { icon: "⛑️", name: "Cască" },
+  chest: { icon: "🦺", name: "Piept" },
+  legs: { icon: "👖", name: "Pantaloni" },
+  feet: { icon: "🥾", name: "Papuci" },
+};
+
+/** Ce face fiecare boss (anunțat când vine noaptea lui). */
+const BOSS_TRICKS: Partial<Record<string, string>> = {
+  boss: "lich-ul cu coasă",
+  broodmother: "naște pui și îi scapă pe toți când moare",
+  yeti: "se încordează, apoi se năpustește prin ziduri",
+  witch: "se teleportează și îngheață turnurile",
+  colossus: "undă de șoc, bolovani, se înfurie la jumătate",
+};
+
+/** Ce primești la fiecare nivel al eroului (pentru meniul de nivel). */
+const LEVEL_ROAD: [number, string][] = [
+  [CONFIG.levelUnlocks.pistol, "🔫 Pistol"],
+  [CONFIG.tower.tierAtHeroLevel[3], "🏰 Turnuri nivel 3"],
+  [CONFIG.levelUnlocks.rifle, "🎯 Pușcă"],
+  [CONFIG.levelUnlocks.chainsaw, "🪚 Drujbă"],
+  [CONFIG.tower.tierAtHeroLevel[4], "🏰 Turnuri nivel 4 (elită)"],
+  [CONFIG.levelUnlocks.assaultRifle, "🪖 Pușcă de asalt"],
+  [CONFIG.tower.tierAtHeroLevel[5], "🏰 Turnuri nivel 5 (legendare)"],
+];
 
 export function rewardIcon(r: ShopReward): string {
   const icons: Record<ShopReward["kind"], string> = {
@@ -222,6 +268,8 @@ export class Hud {
   };
 
   constructor(private cb: HudCallbacks) {
+    // Apeși pe nivelul din stânga sus: meniul de nivel (alegi ce crești).
+    $("level-btn").addEventListener("click", () => this.toggleLevelMenu());
     this.el.buildBtn.addEventListener("click", () => cb.onToggleBuild());
     this.el.startWave.addEventListener("click", () => cb.onStartNight());
     this.el.pickTower.addEventListener("click", () => cb.onPick("tower"));
@@ -452,6 +500,9 @@ export class Hud {
     // Personajul: nume, nivel, viață (roșu) și experiență (galben).
     this.text(this.el.heroName, player.name);
     this.text(this.el.heroLevel, String(hero.level));
+    this.el.heroLevel.classList.toggle("has-points", hero.skillPoints > 0);
+    this.text($("skill-points"), hero.skillPoints > 0 ? `+${hero.skillPoints}` : "");
+    if (this.levelOpen) this.renderLevelMenu(hero);
     this.text(this.el.heroText, hero.alive ? `❤ ${Math.ceil(hero.hp)} / ${hero.maxHp}` : "căzut");
     this.updateActionButton(state, hero);
     this.updateRevive(state, hero);
@@ -499,9 +550,12 @@ export class Hud {
     this.text($("clock-icon"), night ? "🌙" : "☀️");
     this.el.startWave.classList.toggle("hidden", state.phase !== "day");
 
-    const boss = state.zombies.find((z) => z.type === "boss");
+    const boss = state.zombies.find((z) => isBoss(z.type) && !z.burning) ?? state.zombies.find((z) => isBoss(z.type));
     this.el.bossPanel.classList.toggle("hidden", !boss);
-    if (boss) this.width(this.el.bossBar, boss.hp / boss.maxHp);
+    if (boss) {
+      this.width(this.el.bossBar, boss.hp / boss.maxHp);
+      this.text($("boss-name"), `☠ ${ZOMBIE_NAMES[boss.type]}${boss.enraged ? " · ÎNFURIAT" : ""}`);
+    }
 
     // Resurse
     this.text(this.el.wood, String(player.wood));
@@ -549,10 +603,10 @@ export class Hud {
   private handleEvent(state: GameState, heroId: number, playerId: PlayerId, e: GameEvent): void {
     switch (e.type) {
       case "nightStarted":
-        this.toast(e.boss ? `🌙 Noaptea ${e.wave} · ☠ vine Lich-ul de gheață` : `🌙 Se lasă noaptea… (${e.wave})`);
+        this.toast(e.boss && e.bossType ? `🌙 Noaptea ${e.wave} · ☠ vine ${ZOMBIE_NAMES[e.bossType]}: ${BOSS_TRICKS[e.bossType] ?? ""}` : `🌙 Se lasă noaptea… (${e.wave})`, e.boss ? 4.5 : 2.5);
         break;
       case "chestDropped":
-        this.toast("🎁 Lich-ul a lăsat un cufăr! Trage în el ca să-l spargi!", 3.5);
+        this.toast("🎁 Boss-ul a lăsat un cufăr! Trage în el ca să-l spargi!", 3.5);
         break;
       case "chestOpened":
         if (e.playerId === playerId) {
@@ -567,6 +621,38 @@ export class Hud {
         break;
       case "thirsty":
         if (e.heroId === heroId) this.hint("💧 Îți e sete! Bea din canistră, la fântână, la baltă sau topește zăpadă lângă un foc");
+        break;
+      case "levelUp":
+        if (e.heroId === heroId) this.toast(`⭐ Nivelul ${e.level}! Apasă pe nivel (stânga sus) și alege ce crești`, 3.5);
+        break;
+      case "skillLearned":
+        if (e.heroId === heroId && e.passive) {
+          const info = SKILL_INFO[e.skill];
+          this.toast(`✨ Pasivă nouă — ${e.rank >= 5 ? info.passive5 : info.passive3}`, 3.5);
+        }
+        break;
+      case "unlocked":
+        if (e.playerId === playerId) {
+          const what = e.what === "towerTier" ? `🏰 Poți urca turnurile la nivelul ${e.tier}!` :
+            e.what === "chainsaw" ? "🪚 Ai primit DRUJBA! Merge cu benzină (ulei rafinat pe foc)" :
+            `${WEAPON_ICONS[e.what]} Ai primit ${WEAPONS[e.what].name}! (o schimbi din bara de jos)`;
+          this.toast(what, 4);
+        }
+        break;
+      case "armorCrafted":
+        if (e.playerId === playerId) this.hint(`${ARMOR_NAMES[e.slot].icon} ${ARMOR_NAMES[e.slot].name} din ${e.material === "metal" ? "metal" : "piele"} — o porți`);
+        break;
+      case "noPetrol":
+        if (e.heroId === heroId) this.hint("⛽ Drujba n-are benzină! Sparge zăcăminte de ulei și rafinează-l pe foc");
+        break;
+      case "scream":
+        this.hint("😱 Urlătoarea înfurie zombii din jur — omoar-o prima!");
+        break;
+      case "towersFrozen":
+        this.hint("❄ Vrăjitoarea a înghețat turnurile!");
+        break;
+      case "bossEnraged":
+        this.toast("💢 Colosul s-a înfuriat!", 2.5);
         break;
       case "refilled":
         if (e.playerId === playerId) this.hint("💧 Canistrele sunt pline");
@@ -596,9 +682,6 @@ export class Hud {
         break;
       case "dawn":
         if (e.wave < state.totalWaves) this.toast(`☀ Zorii! Zombii ard · +${e.wood} 🪵`);
-        break;
-      case "levelUp":
-        if (e.heroId === heroId) this.toast(`Nivelul ${e.level}!`);
         break;
       case "heroHit":
         if (e.id === heroId) this.damageFlash = Math.min(1, this.damageFlash + 0.5);
@@ -846,6 +929,8 @@ export class Hud {
 
   private toast(msg: string, time = 2.4): void {
     this.el.toast.textContent = msg;
+    // Mesajele lungi (pasive, boși) se scriu mai mic și pe mai multe rânduri, ca să încapă pe ecran.
+    this.el.toast.classList.toggle("long", msg.length > 26);
     this.el.toast.classList.add("show");
     this.toastTimer = time;
   }
@@ -902,13 +987,14 @@ export class Hud {
     const bite = hero.hooked !== null;
     const pulls = hero.hooked ? CONFIG.gather.fish[hero.hooked].pulls : 0;
     const stick = this.el.fireStick;
-    for (const t of ["gun", "pickaxe", "rod", "lantern"]) stick.classList.toggle(`tool-${t}`, tool === t);
+    for (const t of ["gun", "pickaxe", "chainsaw", "rod", "lantern"]) stick.classList.toggle(`tool-${t}`, tool === t);
     stick.classList.toggle("bite", tool === "rod" && bite);
     if (tool === "gun") return;
-    const icon = tool === "pickaxe" ? "⛏️" : tool === "rod" ? (bite ? "❗" : "🎣") : hero.lantern ? "🔦" : "🔦";
+    const icon = tool === "chainsaw" ? "🪚" : tool === "pickaxe" ? "⛏️" : tool === "rod" ? (bite ? "❗" : "🎣") : hero.lantern ? "🔦" : "🔦";
     const hint = actionHint(state, hero);
     const label =
       tool === "pickaxe" ? "" :
+      tool === "chainsaw" ? (hero.sawFuel > 0 ? `⛽ ${Math.ceil(hero.sawFuel)}s` : player.inventory.petrol > 0 ? `⛽ ${player.inventory.petrol}` : "fără benzină") :
       tool === "rod" ? (bite ? `TRAGE ${Math.floor(hero.reel)}/${pulls}` : hint === "reel" ? "așteaptă" : hint === "fish" ? "aruncă" : "la baltă") :
       `${Math.round(hero.battery)}%`;
     const key = `${tool}|${icon}|${label}|${hero.lantern}`;
@@ -965,6 +1051,16 @@ export class Hud {
         return { icon: "⛏️", name: "Târnăcop", count: null, fill: null };
       case "rod":
         return { icon: "🎣", name: "Undiță", count: null, fill: null };
+      case "chainsaw":
+        return { icon: "🪚", name: `Drujbă · ⛽ ${Math.ceil(hero.sawFuel)} s + ${p.inventory.petrol} bidoane`, count: p.inventory.petrol, fill: hero.sawFuel / CONFIG.chainsaw.tank };
+      case "oil":
+        return { icon: "🛢️", name: "Ulei brut · pune-l pe foc → benzină", count: p.inventory.oil, fill: null };
+      case "petrol":
+        return { icon: "⛽", name: "Benzină (pentru drujbă)", count: p.inventory.petrol, fill: null };
+      case "leather":
+        return { icon: "🟫", name: "Piele (pentru armuri)", count: p.inventory.leather, fill: null };
+      case "iron":
+        return { icon: "⛓️", name: "Fier (pentru armuri de metal)", count: p.inventory.iron, fill: null };
       case "lantern":
         return { icon: "🔦", name: hero.lantern ? "Lanternă (aprinsă)" : "Lanternă", count: null, fill: hero.battery / 100 };
       case "mine":
@@ -1084,12 +1180,12 @@ export class Hud {
     const hero = state.heroes.find((h) => h.id === p.heroId)!;
     const items: SlotItem[] = [
       ...p.weapons.map((w) => `weapon:${w}` as SlotItem),
-      "pickaxe", "rod", "lantern",
+      "pickaxe", ...(p.chainsaw ? ["chainsaw" as SlotItem] : []), "rod", "lantern",
       ...(p.mines > 0 ? ["mine" as SlotItem] : []),
-      ...(["canteen", "cookedMeat", "rawMeat"] as SlotItem[]).filter((k) => p.inventory[k as "rawMeat"] > 0),
+      ...(["canteen", "cookedMeat", "rawMeat", "oil", "petrol", "leather", "iron"] as SlotItem[]).filter((k) => p.inventory[k as "rawMeat"] > 0),
       ...FISH_KINDS.filter((k) => p.inventory[k] > 0),
     ];
-    const key = `${items.join(",")}|${p.hotbar.join(",")}|${Object.values(p.inventory).join(",")}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}|${Math.round(hero.battery / 5)}|${this.selectedItem}`;
+    const key = `${items.join(",")}|${p.hotbar.join(",")}|${Object.values(p.inventory).join(",")}|${hero.reserve}|${p.wood}|${p.coins}|${p.mines}|${Math.round(hero.battery / 5)}|${this.selectedItem}|${JSON.stringify(hero.armor)}|${Math.ceil(hero.sawFuel)}`;
     if (key === this.invKey) return;
     this.invKey = key;
     const cells = Array.from({ length: Math.max(15, Math.ceil(items.length / 5) * 5) }, (_, i) => {
@@ -1102,8 +1198,11 @@ export class Hud {
     const sel = this.selectedItem ? this.itemInfo(this.selectedItem, p, hero).name : "Trage un obiect pe bara de jos";
     $("inventory").innerHTML =
       `<div class="inv-head"><span>INVENTAR</span><span class="inv-res">🪵 ${p.wood} · <i class="coin"></i> ${p.coins} · 📦 ${hero.reserve}</span><button class="inv-close">✕</button></div>` +
-      `<div class="inv-grid">${cells}</div><div class="inv-sel">${sel}</div>`;
+      `<div class="inv-body"><div class="inv-left"><div class="inv-grid">${cells}</div><div class="inv-sel">${sel}</div></div>${this.armorHtml(state, p, hero)}</div>`;
     $("inventory").querySelector(".inv-close")!.addEventListener("click", () => this.toggleInventory(false));
+    for (const b of $("inventory").querySelectorAll<HTMLButtonElement>(".armor-craft[data-slot]")) {
+      b.addEventListener("click", () => this.cb.onCraftArmor(b.dataset.slot as ArmorSlot, b.dataset.mat as ArmorMaterial));
+    }
     for (const c of $("inventory").querySelectorAll<HTMLElement>(".inv-cell[data-item]")) {
       const item = c.dataset.item as SlotItem;
       c.addEventListener("pointerdown", (e) => this.startDrag(e, item, null));
@@ -1114,6 +1213,64 @@ export class Hud {
         this.invKey = this.hotbarKey = "";
         this.renderInventory(state, playerId);
       });
+    }
+  }
+
+  /** Armura: cele 4 locuri, ce porți și butoanele de făcut piese (piele / metal). */
+  private armorHtml(state: GameState, p: Player, hero: Hero): string {
+    const rows = ARMOR_SLOTS.map((slot) => {
+      const worn = hero.armor[slot];
+      const btn = (mat: ArmorMaterial) => {
+        const c = armorCost(slot, mat);
+        const why = canCraftArmor(state, p.id, slot, mat);
+        const cost = `${c.leather ? `🟫${c.leather}` : ""}${c.iron ? ` ⛓️${c.iron}` : ""}`;
+        return `<button class="armor-craft ${mat}" data-slot="${slot}" data-mat="${mat}" ${why ? `disabled title="${escapeHtml(why)}"` : ""}>${mat === "metal" ? "Metal" : "Piele"}<small>${cost}</small></button>`;
+      };
+      return `<div class="armor-row ${worn ?? ""}"><span class="armor-ico">${ARMOR_NAMES[slot].icon}</span><span class="armor-name">${ARMOR_NAMES[slot].name}<small>${worn === "metal" ? "metal" : worn === "leather" ? "piele" : "nimic"}</small></span>${btn("leather")}${btn("metal")}</div>`;
+    }).join("");
+    const set = armorSet(hero);
+    const bonus = set === "leather" ? " · set de piele: frig −30%, +5% viteză" : set === "metal" ? " · set de metal: +10% armură" : "";
+    return `<div class="inv-armor"><div class="armor-head">ARMURĂ · 🛡 ${Math.round(armorReduction(hero) * 100)}%${bonus}</div>${rows}<div class="armor-res">🟫 ${p.inventory.leather} piele · ⛓️ ${p.inventory.iron} fier</div></div>`;
+  }
+
+  // ---------- Meniul de nivel (apeși pe nivelul din stânga sus) ----------
+
+  private levelOpen = false;
+  private levelKey = "";
+  toggleLevelMenu(open = !this.levelOpen): void {
+    this.levelOpen = open;
+    this.levelKey = "";
+    $("level-menu").classList.toggle("hidden", !open);
+    if (open && this.lastState && this.playerId) this.renderLevelMenu(this.myHero()!);
+  }
+
+  private renderLevelMenu(hero: Hero): void {
+    const key = `${hero.level}|${hero.skillPoints}|${SKILL_IDS.map((k) => rank(hero, k)).join(",")}`;
+    if (key === this.levelKey) return;
+    this.levelKey = key;
+    const max = CONFIG.skills.maxRank;
+    const rows = SKILL_IDS.map((id) => {
+      const info = SKILL_INFO[id];
+      const r = rank(hero, id);
+      const pips = Array.from({ length: max }, (_, i) => `<i class="pip ${i < r ? "on" : ""} ${i === 2 || i === 4 ? "star" : ""}"></i>`).join("");
+      const can = hero.skillPoints > 0 && r < max;
+      return `<div class="skill ${r >= max ? "maxed" : ""}">
+        <span class="skill-ico">${info.icon}</span>
+        <div class="skill-txt"><b>${info.name}</b><small>${info.perRank}</small>
+          <div class="pips">${pips}</div>
+          <small class="passive ${r >= 3 ? "on" : ""}">★3 ${info.passive3}</small>
+          <small class="passive ${r >= 5 ? "on" : ""}">★5 ${info.passive5}</small>
+        </div>
+        <button class="skill-up" data-skill="${id}" ${can ? "" : "disabled"}>+</button>
+      </div>`;
+    }).join("");
+    const road = LEVEL_ROAD.map(([lvl, what]) => `<span class="${hero.level >= lvl ? "got" : ""}">nv.${lvl} ${what}</span>`).join("");
+    $("level-menu").innerHTML =
+      `<div class="lvl-head"><span>NIVELUL ${hero.level}</span><span class="lvl-pts">${hero.skillPoints > 0 ? `${hero.skillPoints} ${hero.skillPoints === 1 ? "punct" : "puncte"} de pus` : "Fără puncte · crește în nivel"}</span><button class="lvl-close">✕</button></div>` +
+      `<div class="skills">${rows}</div><div class="lvl-road">${road}</div>`;
+    $("level-menu").querySelector(".lvl-close")!.addEventListener("click", () => this.toggleLevelMenu(false));
+    for (const b of $("level-menu").querySelectorAll<HTMLButtonElement>(".skill-up")) {
+      b.addEventListener("click", () => this.cb.onLearnSkill(b.dataset.skill as SkillId));
     }
   }
 

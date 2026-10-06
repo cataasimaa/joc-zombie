@@ -18,7 +18,9 @@
       <!-- Stânga sus: doar personajul (nume, nivel, viață, experiență) -->
       <div class="panel top-left hero-panel">
         <div class="hero-row">
-          <span id="hero-level" class="lvl">1</span>
+          <button id="level-btn" class="lvl-btn" title="Nivelul: apasă ca să alegi ce crești">
+            <span id="hero-level" class="lvl">1</span><span id="skill-points" class="skill-points"></span>
+          </button>
           <span id="hero-name" class="hero-name"></span>
         </div>
         <div class="bar big"><div id="hero-bar" class="fill hero"></div><span id="hero-text" class="bar-text"></span></div>
@@ -48,7 +50,7 @@
           <button id="start-wave" class="small-btn clock-skip" title="Începe noaptea acum">🌙▸</button>
         </div>
         <div id="boss-panel" class="panel boss-panel hidden">
-          <div class="bar-label">☠ Lich-ul de gheață</div>
+          <div id="boss-name" class="bar-label">☠ Lich-ul de gheață</div>
           <div class="bar"><div id="boss-bar" class="fill boss"></div></div>
         </div>
       </div>
@@ -87,6 +89,9 @@
       <!-- Inventarul complet (se deschide din 🎒) -->
       <div id="inventory" class="inventory hidden"></div>
 
+      <!-- Meniul de nivel: alegi ce crești (tăiat, minerit, pescuit, tras) -->
+      <div id="level-menu" class="level-menu hidden"></div>
+
       <!-- Căzut: un coleg te poate ridica -->
       <div id="revive" class="revive hidden"></div>
 
@@ -109,7 +114,7 @@
         <button id="pick-tower" class="build-choice"><span class="ico">🗼</span>Turn<small id="tower-cost"></small></button>
         <button id="pick-wall" class="build-choice"><span class="ico">🧱</span>Zid<small id="wall-cost"></small></button>
         <button id="pick-mine" class="build-choice"><span class="ico">💣</span>Mină<small id="mine-cost"></small></button>
-        <button id="pick-campfire" class="build-choice survival-only"><span class="ico">🔥</span>Foc<small id="campfire-cost"></small></button>
+        <button id="pick-campfire" class="build-choice"><span class="ico">🔥</span>Foc<small id="campfire-cost"></small></button>
         <button id="pick-farmChicken" class="build-choice survival-only"><span class="ico">🐔</span>Coteț<small id="chicken-cost"></small></button>
         <button id="pick-farmPig" class="build-choice survival-only"><span class="ico">🐖</span>Țarc<small id="pig-cost"></small></button>
         <button id="pick-well" class="build-choice survival-only"><span class="ico">🪣</span>Fântână<small id="well-cost"></small></button>

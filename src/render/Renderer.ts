@@ -31,10 +31,11 @@ import {
   type ZombieType,
   bobberPos,
   effectiveTowerStats,
+  isBoss,
   segmentEnds,
 } from "../core";
 import { Fx } from "./Fx";
-import { buildHandLantern, buildPickaxe, buildRod } from "./models/gathering";
+import { buildChainsaw, buildHandLantern, buildPickaxe, buildRod } from "./models/gathering";
 import { Materials, ModelKit, type Quality } from "./ModelKit";
 import { type HeroModel, type ZombieModel, buildHero, buildZombie } from "./models/characters";
 import {
@@ -57,8 +58,15 @@ import { SurvivalView } from "./SurvivalView";
 import { Prefab, World } from "./World";
 
 const CAMERA_OFFSET = new Vector3(0, 20, -15);
-const ZOMBIE_SCALE: Record<ZombieType, number> = { walker: 1, runner: 0.88, spitter: 1, flyer: 1, brute: 1, boss: 1 };
-const HP_BAR_Y: Partial<Record<ZombieType, number>> = { brute: 3.0, boss: 5.3 };
+const ZOMBIE_SCALE: Partial<Record<ZombieType, number>> = { runner: 0.88 };
+const HP_BAR_Y: Partial<Record<ZombieType, number>> = {
+  brute: 3.0, boss: 5.3, bloater: 2.6, broodmother: 3.8, yeti: 4.4, witch: 4.6, colossus: 5.8,
+};
+/** Cât de „mare” e fiecare creatură (sânge, crustă de gheață, flăcări, urme, bara de viață). */
+const ZOMBIE_SIZE: Partial<Record<ZombieType, number>> = {
+  brute: 1.5, boss: 2.2, bloater: 1.3, burrower: 1.1, broodmother: 2.3, yeti: 2, witch: 1.6, colossus: 2.8,
+};
+const zSize = (t: ZombieType): number => ZOMBIE_SIZE[t] ?? 1;
 /** Turnurile sunt desenate puțin mai mici decât modelul (mai ușor de așezat). */
 const TOWER_SCALE = 0.85;
 
@@ -112,6 +120,10 @@ interface HeroView {
   rodTip: TransformNode;
   /** Secunde de la ultima lovitură cu târnăcopul (animația: izbește, apoi îl ridică din nou). */
   swing: number;
+  /** Cât durează o lovitură întreagă (intervalul dintre lovituri): animația se întinde exact pe el. */
+  swingDur: number;
+  /** Drujba ținută în mâini (vibrează cât merge). */
+  chainsaw: TransformNode;
   toolShow: number;
   /** Lovit: tresare, se apleacă pe spate și se smucește într-o parte (1 → 0). */
   hurt: number;
@@ -139,6 +151,10 @@ interface ZombieView {
   knock: number;
   attack: number;
   lastBlood: number;
+  /** Încordarea dinaintea loviturii (yeti-ul înainte de năpustire), 1 → 0. */
+  windup: number;
+  /** Săpătorul sub zăpadă: cât a mers de la ultimul „val” de zăpadă. */
+  burrowTrail: number;
   dispose(): void;
 }
 
@@ -208,6 +224,7 @@ export class Renderer {
   private iceShell!: Prefab;
   private flame!: Prefab;
   private pickaxePrefab!: Prefab;
+  private chainsawPrefab!: Prefab;
   private lanternPrefab!: Prefab;
   private lanternGlowPrefab!: Prefab;
   /** Barele de viață ale animalelor (apar când sunt rănite). */
@@ -217,6 +234,9 @@ export class Renderer {
   private mine!: Prefab;
   private coin!: Prefab;
   private glob!: Prefab;
+  private towerIce = new Map<EntityId, InstancedMesh>();
+  private boulder!: Prefab;
+  private iceBolt!: Prefab;
 
   private heroViews = new Map<EntityId, HeroView>();
   private zombieViews = new Map<EntityId, ZombieView>();
@@ -315,7 +335,7 @@ export class Renderer {
     const caster = (p: Prefab) => {
       for (const src of p.sources) this.world.shadows.addShadowCaster(src);
     };
-    for (const type of ["walker", "runner", "spitter", "flyer", "brute", "boss"] as ZombieType[]) {
+    for (const type of Object.keys(CONFIG.zombies) as ZombieType[]) {
       const model = buildZombie(s, this.mats, type);
       const prefab = {
         model,
@@ -341,6 +361,7 @@ export class Renderer {
     this.iceShell = new Prefab([buildIceShell(s, this.mats)]);
     this.flame = new Prefab([buildFlame(s, this.mats)]);
     this.pickaxePrefab = new Prefab(buildPickaxe(s, this.mats));
+    this.chainsawPrefab = new Prefab(buildChainsaw(s, this.mats));
     const hl = buildHandLantern(s, this.mats);
     this.lanternPrefab = new Prefab(hl.body);
     this.lanternGlowPrefab = new Prefab(hl.glow);
@@ -359,6 +380,13 @@ export class Renderer {
     const gk = new ModelKit(s, this.mats, 1300);
     gk.sphere(0.4, 8, {}, { color: hex("#9fe8c0"), mat: "glow" });
     this.glob = new Prefab([gk.buildOne("glob")]);
+    // Bolovanul colosului și țurțurul vrăjitoarei.
+    const bk = new ModelKit(s, this.mats, 1310);
+    bk.ico(0.7, { s: [1.1, 0.9, 1] }, { color: PAL.stoneDark, wear: 0.3, frost: 0.6, smooth: true });
+    this.boulder = new Prefab([bk.buildOne("boulder")]);
+    const ik = new ModelKit(s, this.mats, 1320);
+    ik.cyl(0.9, 0, 0.18, 5, { r: [Math.PI / 2, 0, 0] }, { color: PAL.ice, mat: "glow" });
+    this.iceBolt = new Prefab([ik.buildOne("iceBolt")]);
   }
 
   // ---------- Sincronizare cu starea ----------
@@ -622,12 +650,12 @@ export class Renderer {
         const z = state.zombies.find((x) => x.id === e.id);
         const h = (view ? (HP_BAR_Y[view.type] ?? 1.5) * 0.65 : 1.1) + (z ? this.zombieY(z.type) : 0);
         const dir = new Vector3(e.pos.x - e.from.x, 0.25, e.pos.z - e.from.z);
-        this.fx.blood(this.at(e.pos, h), dir.lengthSquared() > 0.01 ? dir : null, view?.type === "boss" || view?.type === "brute" ? 1.6 : 1);
+        this.fx.blood(this.at(e.pos, h), dir.lengthSquared() > 0.01 ? dir : null, view && zSize(view.type) >= 1.5 ? 1.6 : 1);
         if (Math.random() < 0.3) this.fx.decal(e.pos.x + dir.x * 0.1 + (Math.random() - 0.5), e.pos.z + dir.z * 0.1 + (Math.random() - 0.5), 0.6);
         break;
       }
       case "zombieDied": {
-        const big = e.zombieType === "boss" ? 3 : e.zombieType === "brute" ? 1.8 : 1;
+        const big = zSize(e.zombieType) >= 2 ? zSize(e.zombieType) * 1.3 : zSize(e.zombieType) >= 1.5 ? 1.8 : 1;
         if (!e.burned) {
           this.fx.blood(this.at(e.pos, 1), null, 1.5 * big);
           this.fx.decal(e.pos.x, e.pos.z, 1.4 * big);
@@ -655,16 +683,48 @@ export class Renderer {
           if (e.id === this.localHeroId) this.cameraShake = Math.min(1, this.cameraShake + 0.6);
         }
         const dir = new Vector3(e.pos.x - e.from.x, 0.3, e.pos.z - e.from.z);
-        this.fx.blood(this.at(e.pos, 1.3), dir.lengthSquared() > 0.01 ? dir : null, 0.8);
-        if (Math.random() < 0.5) this.fx.decal(e.pos.x + (Math.random() - 0.5) * 0.6, e.pos.z + (Math.random() - 0.5) * 0.6, 0.45);
+        this.fx.blood(this.at(e.pos, 1.3), dir.lengthSquared() > 0.01 ? dir : null, 1.1);
+        if (Math.random() < 0.6) this.fx.decal(e.pos.x + (Math.random() - 0.5) * 0.6, e.pos.z + (Math.random() - 0.5) * 0.6, 0.5);
+        // Lovitura unui zombi se VEDE: trei zgârieturi de gheare peste piept (sau o undă la bâtă / pumn uriaș).
+        const attacker = e.by !== undefined ? this.zombieViews.get(e.by) : undefined;
+        if (attacker && hv) {
+          const big = zSize(attacker.type) >= 1.5;
+          const len = Math.hypot(e.pos.x - e.from.x, e.pos.z - e.from.z) || 1;
+          const dx = (e.pos.x - e.from.x) / len;
+          const dz = (e.pos.z - e.from.z) / len;
+          const c = this.at(e.pos, 1.35);
+          const side = new Vector3(-dz, 0, dx);
+          for (let i = -1; i <= 1; i++) {
+            const off = side.scale(i * 0.13).add(new Vector3(-dx * 0.35, 0, -dz * 0.35));
+            const a = c.add(off).add(new Vector3(0, 0.45, 0)).add(side.scale(0.25));
+            const b = c.add(off).add(new Vector3(0, -0.45, 0)).subtract(side.scale(0.25));
+            this.fx.tracer(a, b, mix(PAL.blood, PAL.snow, 0.35), big ? 0.1 : 0.065, 0.22, true);
+          }
+          if (big) {
+            this.fx.impactWave(this.at(e.pos, 0.2), 1.4);
+            this.fx.burst("snow", this.at(e.pos, 0.3), null, 12, 4, 0.12);
+            if (e.id === this.localHeroId) this.cameraShake = Math.min(1.4, this.cameraShake + 0.6);
+          }
+          if (hv) hv.hurt = Math.max(hv.hurt, big ? 1.4 : 1.1);
+        }
         break;
       }
       case "spit":
         this.fx.burst("venom", this.at(e.from, 1.6), new Vector3(e.to.x - e.from.x, 0.5, e.to.z - e.from.z), 5, 3, 0.07);
         break;
       case "projectileHit":
-        this.fx.burst("venom", this.at(e.pos, 1), null, 12, 3.5, 0.09);
-        this.fx.ring(this.at(e.pos, 0.1), 1.2, hex("#9fe8c0"), 0.35);
+        if (e.kind === "boulder") {
+          this.fx.burst("stone", this.at(e.pos, 0.8), null, 16, 6, 0.15);
+          this.fx.dust(this.at(e.pos, 0.3), 1.5, 1);
+          this.fx.impactWave(this.at(e.pos, 0.2), 1.5);
+          this.shakeNear(e.pos, 0.5);
+        } else if (e.kind === "ice") {
+          this.fx.burst("ice", this.at(e.pos, 1), null, 14, 4, 0.08);
+          this.fx.ring(this.at(e.pos, 0.1), 1.2, PAL.ice, 0.35);
+        } else {
+          this.fx.burst("venom", this.at(e.pos, 1), null, 12, 3.5, 0.09);
+          this.fx.ring(this.at(e.pos, 0.1), 1.2, hex("#9fe8c0"), 0.35);
+        }
         break;
       case "barricadeHit":
         this.fx.burst("wood", this.at(e.pos, 0.9), null, 3, 3, 0.08);
@@ -681,9 +741,21 @@ export class Renderer {
         break;
       case "toolHit": {
         const v = this.heroViews.get(e.heroId);
+        const hero = state.heroes.find((h) => h.id === e.heroId);
+        if (e.tool === "chainsaw") {
+          // Drujba: rumeguș, scântei și zăpadă care sar continuu (fără „lovitură”).
+          const at = this.at(e.pos, e.target === "tree" ? 0.9 : 1);
+          if (e.target === "tree") this.fx.burst("wood", at, null, 4, 4, 0.05);
+          if (e.target === "air") this.fx.burst("snow", this.at(e.pos, 0.2), new Vector3(0, 1, 0), 2, 1.5, 0.05);
+          if (Math.random() < 0.5) this.fx.burst("spark", at, null, 2, 3, 0.03);
+          break;
+        }
         if (v) {
           v.swing = 0;
+          // Animația loviturii se întinde exact pe intervalul până la lovitura următoare (fluidă, fără pauze).
+          v.swingDur = Math.max(0.35, (hero?.actionTimer ?? 0.7) + 0.02);
         }
+        if (e.target === "ore") this.survival.oreHit(e.pos, state);
         const at = this.at(e.pos, e.target === "tree" ? 1.1 : 0.5);
         if (e.target === "tree") {
           // Așchii de lemn și zăpadă care cade din crengi.
@@ -698,6 +770,89 @@ export class Renderer {
         }
         break;
       }
+      case "scream":
+        // Urletul: două unde violet-reci care se lățesc, zombii din jur se înfurie.
+        this.fx.ring(this.at(e.pos, 1.6), e.radius * 0.5, hex("#b9a6ff"), 0.35);
+        this.fx.ring(this.at(e.pos, 0.2), e.radius, hex("#8f7ae0"), 0.7);
+        this.zombieViews.get(e.id) && (this.zombieViews.get(e.id)!.attack = 1);
+        break;
+      case "bloaterBurst":
+        // Umflatul plesnește: nor de gaz galben-verzui, stropi și o undă.
+        this.fx.burst("venom", this.at(e.pos, 1.2), null, 34, 6, 0.16);
+        this.fx.burst("smoke", this.at(e.pos, 1), null, 8, 1.5, 0.6);
+        this.fx.ring(this.at(e.pos, 0.15), e.radius, hex("#d8f08a"), 0.6);
+        this.fx.blood(this.at(e.pos, 1), null, 2);
+        this.fx.decal(e.pos.x, e.pos.z, 1.8);
+        this.shakeNear(e.pos, 0.5);
+        break;
+      case "burrowUp":
+        // Săpătorul țâșnește din zăpadă.
+        this.fx.burst("snow", this.at(e.pos, 0.2), new Vector3(0, 1, 0), 26, 6, 0.16);
+        this.fx.burst("stone", this.at(e.pos, 0.3), new Vector3(0, 1, 0), 8, 5, 0.1);
+        this.fx.dust(this.at(e.pos, 0.2), 1.6, 0.8);
+        this.fx.ring(this.at(e.pos, 0.1), 2, PAL.snowShadow, 0.4);
+        break;
+      case "shamanHeal":
+        this.fx.ring(this.at(e.pos, 0.2), e.radius, hex("#7ff0d8"), 0.8);
+        this.fx.burst("plasma", this.at(e.pos, 2.2), new Vector3(0, 1, 0), 14, 2.5, 0.08);
+        break;
+      case "broodSpawn":
+        this.fx.burst("venom", this.at(e.pos, 1.5), null, 10 + e.count * 3, 4, 0.12);
+        this.fx.burst("ice", this.at(e.pos, 1.2), null, 8, 3, 0.1);
+        break;
+      case "yetiWindup": {
+        // Se încordează: zăpadă ridicată de la picioare și un pas înapoi (vezi animația).
+        this.fx.burst("snow", this.at(e.pos, 0.2), null, 14, 3, 0.14);
+        const v = this.zombieViews.get(e.id);
+        if (v) v.windup = 1;
+        break;
+      }
+      case "yetiCharge":
+        this.fx.dust(this.at(e.pos, 0.2), 2, 1);
+        this.fx.impactWave(this.at(e.pos, 0.2), 2);
+        this.shakeNear(e.pos, 0.7);
+        break;
+      case "witchBlink":
+        // Dispare într-un vârtej de gheață și apare în altă parte.
+        this.fx.burst("ice", this.at(e.from, 1.8), null, 26, 5, 0.12);
+        this.fx.ring(this.at(e.from, 0.2), 1.8, PAL.ice, 0.5);
+        this.fx.burst("ice", this.at(e.to, 1.8), null, 26, 5, 0.12);
+        this.fx.ring(this.at(e.to, 0.2), 2.4, PAL.ice, 0.6);
+        this.fx.lightning(this.at(e.from, 2.2), this.at(e.to, 2.2), PAL.ice, 0.05, 0.18, false, 0.6);
+        break;
+      case "towersFrozen":
+        this.fx.ring(this.at(e.pos, 0.3), e.radius, PAL.ice, 0.9);
+        this.fx.burst("ice", this.at(e.pos, 3), null, 30, 6, 0.1);
+        break;
+      case "stomp":
+        // Colosul bate din picior: undă de șoc, pietre, praf, zăpadă, camera tremură.
+        this.fx.impactWave(this.at(e.pos, 0.2), e.radius * 0.8);
+        this.fx.ring(this.at(e.pos, 0.15), e.radius, PAL.snowShadow, 0.6);
+        this.fx.dust(this.at(e.pos, 0.3), e.radius * 0.6, 1.4);
+        this.fx.burst("stone", this.at(e.pos, 0.5), new Vector3(0, 1, 0), 18, 7, 0.16);
+        this.fx.burst("snow", this.at(e.pos, 0.3), null, 30, 7, 0.16);
+        this.shakeNear(e.pos, 1.2);
+        {
+          const v = this.zombieViews.get(e.id);
+          if (v) v.attack = 1;
+        }
+        break;
+      case "throw": {
+        const v = this.zombieViews.get(e.id);
+        if (v) v.attack = 1;
+        if (e.kind === "boulder") this.fx.burst("stone", this.at(e.from, 4), null, 6, 3, 0.12);
+        else this.fx.burst("ice", this.at(e.from, 3), null, 8, 3, 0.07);
+        break;
+      }
+      case "bossEnraged":
+        this.fx.ring(this.at(e.pos, 0.3), 5, hex("#5fd8ff"), 1);
+        this.fx.burst("plasma", this.at(e.pos, 3), null, 30, 6, 0.12);
+        this.shakeNear(e.pos, 0.8);
+        break;
+      case "refined":
+        this.fx.burst("smoke", this.at(e.pos, 1), new Vector3(0, 1, 0), 6, 1, 0.4);
+        this.fx.burst("spark", this.at(e.pos, 0.8), new Vector3(0, 1, 0), 10, 3, 0.05);
+        break;
       case "treeFelled":
         this.fx.dust(this.at(e.pos, 0.3), 2.2, 1);
         this.fx.burst("snow", this.at(e.pos, 2), null, 30, 5, 0.18);
@@ -779,14 +934,15 @@ export class Renderer {
   private heroLookKey(state: GameState, hero: Hero): string {
     const p = state.players[hero.playerId];
     const gear = hero.level >= 8 ? 3 : hero.level >= 5 ? 2 : hero.level >= 3 ? 1 : 0;
-    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}|${p?.tool === "gun" || !p ? "gun" : "tool"}`;
+    const armor = hero.armor ? `${hero.armor.head}${hero.armor.chest}${hero.armor.legs}${hero.armor.feet}` : "";
+    return `${hero.heroClass}|${p?.skin ?? ""}|${gear}|${p?.weapon ?? "rusty"}|${p?.tool === "gun" || !p ? "gun" : "tool"}|${armor}`;
   }
 
   private buildHeroView(state: GameState, hero: Hero): HeroView {
     const p = state.players[hero.playerId];
     const skin = p?.skin ? SKINS.find((s) => s.id === p.skin) : null;
     const coat = new Color3(...(skin ? skin.color : DEFAULT_SKIN_COLOR[hero.heroClass]));
-    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory, noGun: !!p && p.tool !== "gun" });
+    const model = buildHero(this.scene, this.mats, { heroClass: hero.heroClass, coat, level: hero.level, weapon: p?.weapon ?? "rusty", accessory: skin?.accessory, noGun: !!p && p.tool !== "gun", armor: hero.armor });
     const root = new TransformNode("hero", this.scene);
     const body = new TransformNode("heroBody", this.scene);
     body.parent = root;
@@ -811,6 +967,7 @@ export class Renderer {
       reloadTotal: 1,
       ...this.heroTools(root),
       swing: 9,
+      swingDur: 0.7,
       toolShow: 0,
       hurt: 0,
       hurtSide: 1,
@@ -820,7 +977,7 @@ export class Renderer {
   }
 
   /** Târnăcopul și undița, atașate eroului (ascunse până le folosește). */
-  private heroTools(root: TransformNode): { pickaxe: TransformNode; rod: TransformNode; rodTip: TransformNode; lantern: TransformNode; lanternGlow: TransformNode } {
+  private heroTools(root: TransformNode): { pickaxe: TransformNode; chainsaw: TransformNode; rod: TransformNode; rodTip: TransformNode; lantern: TransformNode; lanternGlow: TransformNode } {
     // Târnăcopul e prins în mâini (în fața pieptului): pivotul e la mâini, coada coboară puțin
     // sub ele, iar capul de fier e sus. Lovitura rotește tot în jurul mâinilor.
     const pickaxe = new TransformNode("pickaxe", this.scene);
@@ -832,6 +989,12 @@ export class Renderer {
     grip.scaling.setAll(1.1);
     this.pickaxePrefab.instance("pickaxeMesh", grip);
     pickaxe.setEnabled(false);
+    // Drujba: ținută cu ambele mâini, în fața bazinului, cu lama spre înainte.
+    const chainsaw = new TransformNode("chainsaw", this.scene);
+    chainsaw.parent = root;
+    chainsaw.position.set(0.12, 1.05, 0.5);
+    this.chainsawPrefab.instance("chainsawMesh", chainsaw);
+    chainsaw.setEnabled(false);
     // Felinarul, ținut în mâna stângă, ușor în față.
     const lantern = new TransformNode("handLantern", this.scene);
     lantern.parent = root;
@@ -849,7 +1012,7 @@ export class Renderer {
     rodTip.parent = rod;
     rodTip.position.set(0, 2.2, 0);
     rod.setEnabled(false);
-    return { pickaxe, rod, rodTip, lantern, lanternGlow };
+    return { pickaxe, chainsaw, rod, rodTip, lantern, lanternGlow };
   }
 
   /** Poziția gurii armei, în lume (pentru trasoare și flacără). */
@@ -913,24 +1076,59 @@ export class Renderer {
       const holding = tool === "pickaxe";
       const working = hero.alive && holding && (hero.firing || hero.action);
       view.swing += dt;
+      if (!working && view.swing > view.swingDur) view.swingDur = 0.7;
       view.pickaxe.setEnabled(hero.alive && holding);
-      // Lovitura, cu ambele mâini: izbește repede în față (0,1 s), stă o clipă jos, apoi ridică
-      // încet târnăcopul peste umăr și așteaptă acolo lovitura următoare. Fără lucru: îl ține
-      // pieziș în fața pieptului.
-      const RAISED = -1.65;
+      // Lovitura, cu ambele mâini, întinsă pe tot intervalul dintre două lovituri (deci fluidă, fără
+      // opriri): (1) izbitura — accelerează în jos, ca un pendul; (2) impactul — târnăcopul ricoșează
+      // puțin în sus; (3) îl trage înapoi și îl ridică încet peste umăr; (4) o mică încordare în spate
+      // chiar înainte de lovitura următoare. Fără lucru: îl ține pieziș în fața pieptului.
+      const RAISED = -1.7;
       const STRUCK = 1.35;
       const REST = 0.35;
-      const t = view.swing;
+      const p = view.swing / view.swingDur;
       const ease = (k: number) => k * k * (3 - 2 * k);
-      const swingAngle =
-        t < 0.1 ? RAISED + (STRUCK - RAISED) * ease(t / 0.1) :
-        t < 0.2 ? STRUCK :
-        t < 0.6 ? STRUCK + ((working ? RAISED : REST) - STRUCK) * ease((t - 0.2) / 0.4) :
-        working ? RAISED : REST;
-      view.pickaxe.rotation.x = swingAngle;
+      const easeIn = (k: number) => k * k * k;
+      let swingAngle: number;
+      let lean: number;
+      if (p < 0.16) {
+        const k = easeIn(p / 0.16);
+        swingAngle = RAISED + (STRUCK - RAISED) * k;
+        lean = 0.34 * k;
+      } else if (p < 0.3) {
+        // Ricoșeul: sare puțin înapoi și se oprește (amortizat).
+        const k = (p - 0.16) / 0.14;
+        swingAngle = STRUCK - Math.sin(k * Math.PI) * 0.22;
+        lean = 0.34;
+      } else if (p < 0.9 || !working) {
+        const k = ease(Math.min(1, (p - 0.3) / 0.6));
+        swingAngle = STRUCK + ((working ? RAISED : REST) - STRUCK) * k;
+        lean = 0.34 * (1 - k) - (working ? 0.12 * k : 0);
+      } else {
+        // Încordarea dinaintea loviturii: îl mai trage puțin peste umăr.
+        const k = Math.min(1, (p - 0.9) / 0.1);
+        swingAngle = RAISED - Math.sin(k * Math.PI * 0.5) * 0.15;
+        lean = -0.12 - k * 0.05;
+      }
+      if (!holding) lean = 0;
+      // Lin de la o poză la alta (fără sărituri când începi / te oprești din lucru).
+      view.pickaxe.rotation.x += (swingAngle - view.pickaxe.rotation.x) * Math.min(1, dt * 30);
       view.pickaxe.rotation.z = holding ? -0.15 : 0;
       // Corpul însoțește lovitura: se lasă pe spate când ridică, se apleacă în față când izbește.
-      const strikeLean = !holding ? 0 : t < 0.2 ? Math.sin((t / 0.2) * Math.PI * 0.5) * 0.32 : t < 0.6 ? 0.32 * (1 - ease((t - 0.2) / 0.4)) - (working ? 0.12 * ease((t - 0.2) / 0.4) : 0) : working ? -0.12 : 0;
+      const strikeLean = lean;
+      // Drujba: ținută în față, vibrează cât merge, trage ușor înainte când taie.
+      const saw = tool === "chainsaw";
+      const sawing = hero.alive && saw && (hero.firing || hero.action) && hero.sawFuel > 0;
+      view.chainsaw.setEnabled(hero.alive && saw);
+      if (saw) {
+        const buzz = sawing ? 0.025 : 0.006;
+        view.chainsaw.position.set(0.12 + (Math.random() - 0.5) * buzz, 1.05 + (Math.random() - 0.5) * buzz, 0.5 + (sawing ? 0.12 : 0));
+        view.chainsaw.rotation.x = sawing ? 0.15 + Math.sin(this.time * 40) * 0.015 : 0.05;
+        if (Math.random() < (sawing ? 0.25 : 0.04)) {
+          // Fumul de eșapament din motor.
+          const f = view.root.rotation.y;
+          this.fx.burst("smoke", new Vector3(hero.pos.x + Math.sin(f) * 0.3 - Math.cos(f) * 0.25, y + 1.1, hero.pos.z + Math.cos(f) * 0.3 + Math.sin(f) * 0.25), new Vector3(0, 1, 0), 1, 0.4, 0.12);
+        }
+      }
       // Felinarul în mână (aprins = flacăra și lumina).
       view.lantern.setEnabled(hero.alive && tool === "lantern");
       view.lanternGlow.setEnabled(hero.lantern);
@@ -956,14 +1154,23 @@ export class Renderer {
       view.kneel += ((hero.alive ? 0 : 1) - view.kneel) * Math.min(1, dt * 6);
       const k = view.kneel;
       // Lovit: tresare puternic (se apleacă pe spate, se smucește într-o parte, e împins înapoi).
-      view.hurt = Math.max(0, view.hurt - dt * 4);
-      const hurt = Math.sin(view.hurt * Math.PI * 0.5) * view.hurt;
+      view.hurt = Math.max(0, view.hurt - dt * 3.2);
+      const hurt = Math.sin(Math.min(1, view.hurt) * Math.PI * 0.5) * view.hurt;
       view.body.position.y = bob + breathe - k * 0.5 - hurt * 0.08;
       view.body.position.z = -view.recoil * 0.06 - hurt * 0.12;
       view.body.rotation.x = amp * 0.12 - view.recoil * 0.08 + reloadPose * 0.35 + k * 0.45 - hurt * 0.55 + strikeLean;
       view.body.rotation.z = reloadPose * 0.25 + Math.sin(w) * 0.03 * amp + hurt * 0.35 * view.hurtSide;
-      view.root.position.x += view.hurtDir.x * hurt * 0.25;
-      view.root.position.z += view.hurtDir.z * hurt * 0.25;
+      view.root.position.x += view.hurtDir.x * hurt * 0.3;
+      view.root.position.z += view.hurtDir.z * hurt * 0.3;
+      // Durerea: genunchii se înmoaie, se îndoaie de mijloc, se clatină.
+      if (hurt > 0.01 && k < 0.01) {
+        legL.knee.rotation.x += hurt * 0.7;
+        legR.knee.rotation.x += hurt * 0.5;
+        legL.hip.rotation.x -= hurt * 0.35;
+        view.body.rotation.y = Math.sin(this.time * 22) * hurt * 0.12;
+      } else {
+        view.body.rotation.y = 0;
+      }
       if (k > 0.01) {
         legL.hip.rotation.x = -k * 1.4;
         legL.knee.rotation.x = k * 1.5;
@@ -973,13 +1180,22 @@ export class Renderer {
     });
   }
 
+  /** Camera tremură dacă eroul tău e aproape de o lovitură mare (undă de șoc, bolovan...). */
+  private shakeNear(pos: Vec2, amount: number): void {
+    const v = this.localHeroId !== null ? this.heroViews.get(this.localHeroId) : undefined;
+    if (!v) return;
+    const d = Math.hypot(v.root.position.x - pos.x, v.root.position.z - pos.z);
+    const k = Math.max(0, 1 - d / 18);
+    this.cameraShake = Math.min(1.5, this.cameraShake + amount * k);
+  }
+
   // ---------- Zombi ----------
 
   private createZombieView(type: ZombieType, id: EntityId, pos: Vec2): ZombieView {
     const prefab = this.zombiePrefabs[type];
     const { shoulder, hip } = prefab.model;
     const root = new TransformNode("zombie", this.scene);
-    root.scaling.setAll(ZOMBIE_SCALE[type]);
+    root.scaling.setAll(ZOMBIE_SCALE[type] ?? 1);
     prefab.body.instance("zBody", root);
     const pivot = (part: Prefab, x: number, y: number, z: number) => {
       const node = new TransformNode("zLimb", this.scene);
@@ -988,8 +1204,8 @@ export class Renderer {
       part.instance("zLimbMesh", node);
       return node;
     };
-    const big = type === "brute" || type === "boss";
-    const bar = big ? new HpBar(this.scene, this.m.hpBg, this.m.hpZombie, type === "boss" ? 3 : 1.6) : null;
+    const big = zSize(type) >= 1.3;
+    const bar = big ? new HpBar(this.scene, this.m.hpBg, this.m.hpZombie, isBoss(type) ? 3 : 1.6) : null;
     const view: ZombieView = {
       root,
       armL: pivot(prefab.armL, -shoulder[0], shoulder[1], shoulder[2]),
@@ -1007,6 +1223,8 @@ export class Renderer {
       knock: 0,
       attack: 0,
       lastBlood: -1,
+      windup: 0,
+      burrowTrail: 0,
       dispose: () => {
         root.dispose();
         view.bar?.dispose();
@@ -1025,7 +1243,7 @@ export class Renderer {
       view.ice = ice;
     }
     if (view.ice && level > 0) {
-      const big = view.type === "boss" ? 2.4 : view.type === "brute" ? 1.6 : view.type === "runner" ? 1.1 : 1;
+      const big = view.type === "runner" ? 1.1 : zSize(view.type) * 1.08;
       // Încetinit: crusta stă jos, pe picioare; înghețat: îl acoperă tot.
       view.ice.scaling.set(big * (level === 2 ? 1 : 0.85), big * (level === 2 ? 1 : 0.45), big * (level === 2 ? 1 : 0.85));
       view.ice.position.y = 0;
@@ -1040,7 +1258,7 @@ export class Renderer {
   private ignite(view: ZombieView): void {
     const fire = new TransformNode("zFire", this.scene);
     fire.parent = view.root;
-    const big = view.type === "boss" ? 2.2 : view.type === "brute" ? 1.5 : 1;
+    const big = zSize(view.type);
     for (let i = 0; i < 4; i++) {
       const node = new TransformNode("zf", this.scene);
       node.parent = fire;
@@ -1078,12 +1296,12 @@ export class Renderer {
       // Urme în zăpadă (zburătorii nu lasă): la viscol îi vezi după urmă, nu după corp.
       if (!flying) {
         view.printDist += moved;
-        const stride = z.type === "brute" || z.type === "boss" ? 1.3 : z.type === "runner" ? 0.6 : 0.8;
+        const stride = zSize(z.type) >= 1.5 ? 1.3 : z.type === "runner" ? 0.6 : 0.8;
         if (view.printDist > stride) {
           view.printDist = 0;
           view.printSide = -view.printSide;
-          const off = view.printSide * (z.type === "boss" ? 0.4 : 0.18);
-          const big = z.type === "boss" ? 2 : z.type === "brute" ? 1.5 : 1;
+          const off = view.printSide * (zSize(z.type) >= 2 ? 0.4 : 0.18);
+          const big = zSize(z.type);
           this.fx.zombiePrint(z.pos.x + Math.cos(z.facing) * off, z.pos.z - Math.sin(z.facing) * off, z.facing, big);
         }
       }
@@ -1091,17 +1309,52 @@ export class Renderer {
       const amp = Math.min(1, speed / 1.5);
       const w = view.walk;
 
-      // Lovit: un mic recul înapoi. Atac: un salt scurt înainte cu brațele.
+      // Săpătorul sub zăpadă: nu se vede corpul, doar un val de zăpadă care se mișcă spre tine.
+      if (z.burrowed) {
+        view.root.setEnabled(false);
+        view.bar?.set(z.pos, y, 1);
+        view.burrowTrail += moved;
+        if (view.burrowTrail > 0.35) {
+          view.burrowTrail = 0;
+          this.fx.burst("snow", this.at(z.pos, 0.15), new Vector3(0, 1, 0), 4, 2.2, 0.12);
+          this.fx.zombiePrint(z.pos.x, z.pos.z, z.facing, 1.4);
+        }
+        return;
+      }
+
+      // Lovit: un mic recul înapoi.
+      // Atacul are două timpi, ca să se vadă: (1) se pregătește — când stă lângă țintă și lovitura e
+      // aproape (attackTimer mic), își ridică brațele / bâta și se lasă pe spate; (2) lovește — la
+      // evenimentul de atac, brațele coboară brusc în față și corpul se aruncă înainte.
       view.knock = Math.max(0, view.knock - dt * 6);
-      view.attack = Math.max(0, view.attack - dt * 3);
-      const lunge = Math.sin(view.attack * Math.PI) * 0.25;
-      const back = view.knock * 0.28 - lunge;
-      view.root.position.set(z.pos.x - Math.sin(z.facing) * back, y, z.pos.z - Math.cos(z.facing) * back);
+      view.attack = Math.max(0, view.attack - dt * 2.6);
+      view.windup = Math.max(0, view.windup - dt * 0.9);
+      const standing = speed < 0.35;
+      const interval = CONFIG.zombies[z.type].attackInterval;
+      const ready = standing && !frozen && z.attackTimer > 0 && z.attackTimer < Math.min(0.5, interval * 0.6) ? 1 - z.attackTimer / Math.min(0.5, interval * 0.6) : 0;
+      // Yeti-ul: încordare lungă (se lasă pe spate, brațele sus), apoi năpustire aplecat în față.
+      const charging = z.charge?.phase === "charge";
+      const winding = z.charge?.phase === "wind" ? 1 : 0;
+      const raise = Math.max(ready, winding) * (1 - view.attack);
+      const strike = view.attack > 0.55 ? (1 - view.attack) / 0.45 : view.attack / 0.55;
+      const lunge = Math.sin(view.attack * Math.PI) * 0.35 * Math.min(1.6, zSize(z.type));
+      const back = view.knock * 0.28 - lunge + raise * 0.12;
+      const hover = z.type === "witch" ? 0.35 + Math.sin(this.time * 2 + z.id) * 0.15 : 0;
+      view.root.position.set(z.pos.x - Math.sin(z.facing) * back, y + hover, z.pos.z - Math.cos(z.facing) * back);
       let diff = z.facing - view.root.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       view.root.rotation.y += diff * Math.min(1, dt * 8);
-      view.root.rotation.x = view.knock * -0.3 + lunge * 0.4;
+      view.root.rotation.x = view.knock * -0.3 + lunge * 0.5 - raise * 0.22 + (charging ? 0.45 : 0);
       view.root.rotation.z = Math.sin(w * 0.5) * 0.08;
+      // Umflatul respiră și se umflă tot mai tare când e lângă țintă.
+      if (z.type === "bloater") {
+        const puff = 1 + Math.sin(this.time * 5 + z.id) * 0.04 + ready * 0.12;
+        view.root.scaling.set(puff, 1 + (puff - 1) * 0.5, puff);
+      }
+      // Colosul înfuriat: tremură.
+      if (z.enraged) view.root.rotation.z += Math.sin(this.time * 30) * 0.02;
+      // Înfuriat de urlătoare: tremură puțin și merge aplecat.
+      if (z.rageTimer > 0) view.root.rotation.x += 0.12 + Math.sin(this.time * 25 + z.id) * 0.03;
 
       if (flying) {
         // Aripile bat, picioarele atârnă.
@@ -1113,26 +1366,57 @@ export class Renderer {
       } else if (runner) {
         // Galop în patru labe: labele din față și cele din spate în contratimp; la atac sare cu ghearele.
         const g = Math.sin(w * 1.3) * 0.75 * Math.max(0.25, amp);
-        view.armL.rotation.x = g - view.attack * 1.1;
-        view.armR.rotation.x = -g * 0.8 - view.attack * 1.1;
+        view.armL.rotation.x = g - view.attack * 1.1 + raise * 0.5;
+        view.armR.rotation.x = -g * 0.8 - view.attack * 1.1 + raise * 0.5;
         view.legL.rotation.x = -g;
         view.legR.rotation.x = g * 0.8;
-        view.root.rotation.x = Math.sin(w * 2.6) * 0.05 - view.attack * 0.25;
+        view.root.rotation.x = Math.sin(w * 2.6) * 0.05 - view.attack * 0.25 - raise * 0.15;
+      } else if (z.type === "broodmother") {
+        // Păianjenul: picioarele se mișcă pe rând, ca niște clești; la atac le ridică pe cele din față.
+        const g = Math.sin(w * 2.2) * 0.35 * Math.max(0.3, amp);
+        view.armL.rotation.z = g + raise * 0.6;
+        view.armR.rotation.z = g - raise * 0.6;
+        view.armL.rotation.x = -raise * 0.8 + strike * 0.6;
+        view.armR.rotation.x = -raise * 0.8 + strike * 0.6;
+        view.legL.rotation.z = -g;
+        view.legR.rotation.z = -g;
+      } else if (z.type === "witch") {
+        // Plutește; mâna cu toiagul se ridică când aruncă țurțuri sau se teleportează.
+        view.armL.rotation.x = -0.4 + Math.sin(this.time * 1.5 + z.id) * 0.1 - raise * 1.2;
+        view.armR.rotation.x = -0.3 - view.attack * 1.6 - raise * 0.8;
+        view.armL.rotation.z = -0.3;
+        view.armR.rotation.z = 0.2;
       } else {
-        // Mers șchiopătat; brațele întinse înainte. La atac le ridică și lovește.
-        view.legL.rotation.x = Math.sin(w) * 0.6 * amp;
-        view.legR.rotation.x = -Math.sin(w) * 0.6 * amp;
-        const reach = -1.0 - view.attack * 0.9;
-        view.armL.rotation.x = reach + Math.sin(w + 1) * 0.3;
-        view.armR.rotation.x = reach + Math.sin(w + 2.2) * 0.3 - view.attack * 0.4;
-        view.armL.rotation.z = -0.1;
-        view.armR.rotation.z = 0.1;
+        // Mers șchiopătat; brațele întinse înainte. Se pregătește (brațele sus), apoi izbește.
+        const heavy = zSize(z.type) >= 1.5 ? 0.7 : 1;
+        view.legL.rotation.x = Math.sin(w) * 0.6 * amp * heavy;
+        view.legR.rotation.x = -Math.sin(w) * 0.6 * amp * heavy;
+        const base = z.type === "screamer" ? -0.5 : z.type === "shaman" ? -0.4 : -1.0;
+        const up = -1.6 * raise;
+        const down = 1.0 * strike * (view.attack > 0 ? 1 : 0);
+        view.armL.rotation.x = base + up + down + Math.sin(w + 1) * 0.3 * (1 - raise);
+        view.armR.rotation.x = base + up * 1.1 + down * 1.2 + Math.sin(w + 2.2) * 0.3 * (1 - raise);
+        view.armL.rotation.z = -0.1 - raise * 0.25;
+        view.armR.rotation.z = 0.1 + raise * 0.25;
+        if (z.type === "screamer") {
+          // Urlătoarea: brațele larg deschise, capul pe spate când urlă.
+          view.armL.rotation.z = -0.6 - view.attack * 0.6;
+          view.armR.rotation.z = 0.6 + view.attack * 0.6;
+          view.root.rotation.x -= view.attack * 0.35;
+        }
+        if (charging) {
+          // În năpustire: brațele pe spate, ca un taur.
+          view.armL.rotation.x = 0.9;
+          view.armR.rotation.x = 0.9;
+          view.legL.rotation.x = Math.sin(this.time * 18) * 0.9;
+          view.legR.rotation.x = -Math.sin(this.time * 18) * 0.9;
+        }
       }
 
       if (z.burning && !view.fire) this.ignite(view);
       if (view.fire) {
         for (const [i, c] of view.fire.getChildren().entries()) {
-          (c as TransformNode).scaling.y = (0.8 + Math.abs(Math.sin(this.time * 9 + i * 1.7)) * 0.7) * (view.type === "boss" ? 2 : 1);
+          (c as TransformNode).scaling.y = (0.8 + Math.abs(Math.sin(this.time * 9 + i * 1.7)) * 0.7) * Math.max(1, zSize(view.type) * 0.9);
         }
       }
       view.bar?.set(z.pos, y + (HP_BAR_Y[z.type] ?? 2), z.hp / z.maxHp);
@@ -1210,6 +1494,18 @@ export class Renderer {
       // Gheața plutește și se rotește încet; bobina Tesla vibrează.
       if (t.kind === "frost") view.head.rotation.y = this.time * 0.6;
       if (t.kind === "tesla") view.head.position.x = Math.sin(this.time * 40) * 0.01;
+      // Înghețat de vrăjitoare: crustă de gheață peste tot turnul.
+      const frozenT = (t.frozenTimer ?? 0) > 0;
+      const ice = this.towerIce.get(t.id);
+      if (frozenT && !ice) {
+        const [m] = this.iceShell.instance("towerIce", view.root);
+        m.scaling.set(2.6, 3.4, 2.6);
+        this.towerIce.set(t.id, m);
+      } else if (!frozenT && ice) {
+        ice.dispose();
+        this.towerIce.delete(t.id);
+        this.fx.burst("ice", this.at(t.pos, 1.5), null, 12, 4, 0.1);
+      }
       const hp = t.hp / t.maxHp;
       view.bar.set(t.pos, y + 3.6, hp, t.id === this.selectedId);
       // Stricat: fum de la jumătate de viață, foc mic de la un sfert.
@@ -1488,13 +1784,18 @@ export class Renderer {
   }
 
   private syncProjectiles(state: GameState): void {
-    syncMap(this.projectileViews, state.projectiles, () => {
-      const [mesh] = this.glob.instance("glob");
+    syncMap(this.projectileViews, state.projectiles, (p) => {
+      const prefab = p.kind === "boulder" ? this.boulder : p.kind === "ice" ? this.iceBolt : this.glob;
+      const [mesh] = prefab.instance("proj");
       return { mesh, trail: 0, dispose: () => mesh.dispose() };
     }, (view, p) => {
-      view.mesh.position.set(p.pos.x, terrainHeight(p.pos.x, p.pos.z) + 1.4 + Math.sin(this.time * 20) * 0.05, p.pos.z);
+      // Bolovanul zboară în arc (sus, apoi cade pe turn); țurțurul și scuipatul drept.
+      const arc = p.kind === "boulder" ? Math.sin(Math.min(1, Math.max(0, 1 - p.life / 1.8)) * Math.PI) * 4 + 1 : 1.4;
+      view.mesh.position.set(p.pos.x, terrainHeight(p.pos.x, p.pos.z) + arc + Math.sin(this.time * 20) * 0.05, p.pos.z);
+      view.mesh.rotation.y = Math.atan2(p.vel.x, p.vel.z);
+      if (p.kind === "boulder") view.mesh.rotation.x += 0.15;
       view.trail += 1;
-      if (view.trail % 3 === 0) this.fx.burst("venom", view.mesh.position, null, 1, 0.5, 0.06);
+      if (view.trail % 3 === 0) this.fx.burst(p.kind === "boulder" ? "snow" : p.kind === "ice" ? "ice" : "venom", view.mesh.position, null, 1, 0.5, 0.06);
     });
   }
 
@@ -1615,6 +1916,7 @@ export class Renderer {
     }
     for (const d of this.dying) d.view.dispose();
     this.dying = [];
+    this.towerIce.clear();
     for (const c of this.collapsing) {
       c.root.dispose();
       c.bar?.dispose();

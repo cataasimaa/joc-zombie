@@ -20,6 +20,7 @@ ce face fiecare pas / schimbare importantă.
 npm install
 npm run dev        # server de dezvoltare (accesibil și de pe telefon în aceeași rețea Wi-Fi)
 npm test           # testele logicii (src/core)
+npm run test:smoke # test lung (~1,5 min): un joc întreg de 10 nopți cu toți zombii și boșii
 npm run typecheck
 npm run build      # typecheck + build de producție în dist/
 ```
@@ -34,7 +35,7 @@ pauză automată (noaptea și păcănelele stau pe loc).
 Controale în browser: **WASD / săgeți** mișcare, **click ținut** trage spre cursor,
 **Space** trage (spre cursor sau automat), **R** reîncarcă (sau rotește zidul la plasare), **B** construcție
 (**1/2/3/4** turn / zid / mină / foc; în afara construcției 1–4 = locurile din bara rapidă), **Enter** confirmă plasarea sau începe noaptea, **Esc** pauză,
-**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **I** inventar.
+**C** magazin, **E** mănânci carne friptă, **F** pui carne crudă pe foc, **I** inventar, **L** meniul de nivel.
 Pe telefon: joystick în stânga; ții degetul oriunde pe ecran = tragi acolo; în dreapta 2 butoane —
 🔨 construcție și ✛ = **butonul principal**, care face ce face obiectul din mână: arma trage (arată
 gloanțele; ții apăsat = ochire automată, tragi cu degetul = ochești tu), târnăcopul lovește (doar
@@ -45,7 +46,9 @@ Bara de jos (stil Ark) = 4 locuri: armă, târnăcop, undiță, lanternă, mine,
 Apăsat pe loc = îl iei în mână / îl folosești (încă o dată = înapoi la armă). În 🎒 (grilă de
 iconițe) **tragi cu degetul** un obiect pe un loc din bară (sau tap pe obiect, apoi pe loc); tragi
 un loc din bară în afara ei = îl golești; între locuri = se schimbă între ele.
-HUD stânga sus: nume, nivel, viață, XP, lemn și aur. Sus: ceas zi / noapte ca în Warcraft 3 (soare
+HUD stânga sus: nume, nivel, viață, XP, lemn și aur. **Nivelul e un buton**: când ai puncte de pus,
+pulsează auriu cu „+1”; apăsat = meniul de nivel (tăiat / minerit / pescuit / tras, cu pasivele de la
+treptele 3 și 5 și ce mai deblochezi). În 🎒, în dreapta: **armura** (4 locuri, butoane Piele / Metal). Sus: ceas zi / noapte ca în Warcraft 3 (soare
 sau lună într-un inel auriu care se umple), „Ziua 2” / „Noaptea 1/10” și timpul — fără numărul de
 zombi. Animalele rănite au bară de viață deasupra.
 Meniul: 🖥 Grafică Înaltă / Medie / Mică.
@@ -75,7 +78,8 @@ src/
                    hotbar (bara rapidă: 4 locuri configurabile, armele tale, unealta din mână),
                    zombies (aggro pe turnuri, răcire/înghețare, proiectile scuipate, zburători),
                    towers (5 tipuri, niveluri, abilități, proiectile `Shell`, foc pe jos, HP),
-                   barricades, mines, shop (+ cufărul boss-ului), coins (+ cufere), physics
+                   barricades, mines, shop (+ cufărul boss-ului), coins (+ cufere), physics,
+                   progression (abilitățile de la level up, deblocări pe nivel, armuri)
   render/      Babylon.js — doar CITEȘTE starea și desenează
     ModelKit.ts    Trusa de modele: primitive → culoare pe vârfuri (uzură, zăpadă pe fețele de sus)
                    → unite într-un mesh per material. Suprafața (lemn, piatră, zăpadă, pânză, piele,
@@ -87,8 +91,9 @@ src/
     models/        gathering (lac cu copcă, tarabă, zăcăminte, târnăcop, undiță),
                    environment (brazi, pietre, case, mina de plasmă), characters (eroi cu glugă
                    și mantie + 12 skin-uri amuzante, zombi), structures (turnuri, proiectile,
-                   ziduri în 3 stări, cufăr cu capac), survival (animale, ferme, foc, obiecte,
-                   schelete de dinozaur, copaci morți)
+                   ziduri în 3 stări, cufăr cu capac, turnuri de elită nv. 4–5), survival (animale,
+                   ferme, foc, fântână, obiecte, schelete de dinozaur, copaci morți); gathering are și
+                   zăcământul de ulei și drujba; characters are armurile și cele 8 creaturi noi
     SurvivalView.ts Focuri, ferme, animale, obiecte pe jos, cufărul care se deschide
     Terrain.ts     Teren cu relief, poteci, petice de pământ înghețat (doar vizual)
     World.ts       Decorul + lumini + zi/noapte + umbre + ceață + ninsoare; Prefab (instanțe)
@@ -320,6 +325,38 @@ sau texturi din acele jocuri.
   fără ziduri) ajunge la noaptea ~4 pe Easy/Medium/Hard și ~2–3 pe Nightmare; doar cu turnuri
   cade în noaptea 3 pe Easy și în prima noapte pe Nightmare.
 - Fiecare jucător în plus: +50% zombi și +25% HP la zombi.
+
+### Progres, unelte noi, armuri, zombi și boși noi
+- **Level up** (`CONFIG.skills`, `systems/progression.ts`): la fiecare nivel primești 1 punct și alegi
+  (max 5 trepte): **Tăiat** (+12% viteză; ★3 +1 lemn pe lovitură; ★5 bradul cade de 2× mai repede),
+  **Minerit** (+12%; ★3 +50% aur; ★5 +1 ulei / fier), **Pescuit** (+10% timp, smucituri −10%; ★3
+  smucituri la jumătate; ★5 peștele +50% aur), **Tras** (+6% damage; ★3 reîncărcare −25%; ★5 15%
+  critice ×2). Nivelul dă în continuare +10% damage și viață.
+- **Deblocări cu nivelul** (`CONFIG.levelUnlocks`, `tower.tierAtHeroLevel`): nv.2 **pistol**, nv.4
+  **pușcă** + turnuri nv.3, nv.5 **drujba** (ia locul târnăcopului în bară), nv.6 turnuri nv.4
+  (elită: stâlpi cu steaguri, cristale), nv.7 **pușcă de asalt**, nv.8 turnuri nv.5 (legendare).
+- **Drujba** (`CONFIG.chainsaw`): taie la 0,22 s (brazi, animale și zombi, 22 damage), merge cu
+  **benzină** (un bidon = 25 s). **Zăcăminte de ulei** (negre, cu baltă de țiței; 25% din zăcăminte)
+  dau ulei brut; pus pe **foc** (meniul focului sau din bară) iese benzină în 12 s. Focul se poate
+  construi acum în ambele moduri. Argintul / aurul dau și **fier**.
+- **Armuri** (`CONFIG.armor`): cască, piept, pantaloni, papuci, din **piele** (de la căprioare 2, urși 4,
+  porci 1) sau **metal** (fier + puțină piele). Piele 3/6/4/2% din damage, metal 6/12/8/4%; setul
+  complet de piele: frig −30%, +5% viteză; de metal: +10% armură (−5% viteză). Se văd pe erou.
+- **Zombi noi** (`CONFIG.zombieAbilities`): **Urlătoarea** (noaptea 3+, înfurie zombii din 7 m:
+  ×1,5 viteză 4 s), **Umflatul** (2+, explodează lângă țintă sau la moarte: gaz, 34 damage în 3 m,
+  sparge și ziduri), **Săpătorul** (5+, merge pe sub zăpadă — nu poate fi lovit, trece pe sub
+  ziduri — și țâșnește lângă țintă), **Șamanul** (6+, stă în spate și vindecă zombii cu 20%).
+- **Boși** (nopțile 3, 5, 7, 9, 10; toți lasă cufăr): **Matca** (3: păianjen cu ouă, naște câte 2
+  pui la 6 s și 6 la moarte; max 120 zombi pe hartă), **Lich-ul** (5), **Yeti-ul turbat** (7: se
+  încordează 0,9 s, apoi se năpustește în linie dreaptă, sparge zidul / turnul și te aruncă),
+  **Vrăjitoarea viscolului** (9: se teleportează, aruncă țurțuri, îngheață turnurile 4 s),
+  **Colosul de gheață** (10, cu lich-ul: undă de șoc în 5 m, bolovani în turnuri, la jumătate de
+  viață se înfurie). Bara de sus arată numele boss-ului.
+- **Atacul se vede**: zombiul stă lângă tine, își ridică brațele / bâta (citit din `attackTimer`),
+  apoi izbește; pe erou apar trei zgârieturi, sânge, la cei mari o undă și camera tremură. Eroul
+  lovit se smucește, i se înmoaie genunchii și se clatină.
+- **Unelte mai fluide**: lovitura cu târnăcopul se întinde exact pe intervalul dintre lovituri
+  (izbitură, ricoșeu, ridicare, încordare); bradul se leagănă amortizat, zăcământul tresare.
 
 ## Roadmap
 

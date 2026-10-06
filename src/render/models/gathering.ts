@@ -75,7 +75,8 @@ export function buildTrader(scene: Scene, mats: Materials): { meshes: Mesh[]; la
 }
 
 /** Zăcământ: bolovan cu cristale de argint sau pepite de aur care ies din piatră. */
-export function buildOre(scene: Scene, mats: Materials, kind: "silver" | "gold"): Mesh[] {
+export function buildOre(scene: Scene, mats: Materials, kind: "silver" | "gold" | "oil"): Mesh[] {
+  if (kind === "oil") return buildOilSeep(scene, mats);
   const k = new ModelKit(scene, mats, kind === "gold" ? 4301 : 4302);
   k.ico(0.7, { p: [0, 0.3, 0], s: [1.3, 0.85, 1.1] }, { color: PAL.stoneDark, wear: 0.3, frost: 0.6 });
   k.ico(0.45, { p: [0.55, 0.2, 0.2], s: [1.1, 0.8, 1] }, { color: PAL.stone, wear: 0.3, frost: 0.6 });
@@ -91,6 +92,46 @@ export function buildOre(scene: Scene, mats: Materials, kind: "silver" | "gold")
     k.ico(0.06, { p: [Math.cos(a) * 0.66, k.rand(0.4, 0.8), Math.sin(a) * 0.58] }, { color: kind === "gold" ? hex("#ffd36a") : hex("#e6f4ff"), mat: "glow" });
   }
   return k.build(`ore_${kind}`);
+}
+
+/**
+ * Zăcământ de ulei: stâncă neagră, crăpată, din care curge țiței lucios într-o baltă
+ * neagră pe zăpadă (cu un luciu irizat), și un țăruș vechi de fier înfipt alături.
+ */
+function buildOilSeep(scene: Scene, mats: Materials): Mesh[] {
+  const k = new ModelKit(scene, mats, 4303);
+  const tar = hex("#0d0f12");
+  k.ico(0.65, { p: [0, 0.3, 0], s: [1.3, 0.8, 1.1] }, { color: hex("#24282d"), wear: 0.35, frost: 0.4 });
+  k.ico(0.4, { p: [-0.5, 0.18, 0.3], s: [1.1, 0.7, 1] }, { color: PAL.stoneDark, wear: 0.3, frost: 0.5 });
+  // Țițeiul care se prelinge pe piatră și balta de la bază.
+  for (let i = 0; i < 5; i++) {
+    const a = k.rand(-0.8, 0.8);
+    k.capsule(k.rand(0.3, 0.5), 0.06, { p: [Math.sin(a) * 0.6, 0.35, Math.cos(a) * 0.55], r: [0.4, a, 0] }, { color: tar, mat: "metal", wear: 0.02, smooth: true });
+  }
+  k.cyl(0.04, 1.8, 1.8, 18, { p: [0.2, 0.02, 0.55], s: [1, 1, 0.7] }, { color: tar, mat: "metal", wear: 0.02, smooth: true });
+  // Luciul irizat (puțin verde-violet), cum are petrolul pe apă.
+  k.cyl(0.02, 0.7, 0.7, 12, { p: [0.4, 0.05, 0.6], s: [1, 1, 0.6] }, { color: hex("#3a5a4a"), mat: "glow" });
+  k.cyl(0.02, 0.4, 0.4, 10, { p: [-0.1, 0.05, 0.7], s: [1, 1, 0.6] }, { color: hex("#4a3a6a"), mat: "glow" });
+  k.cyl(1.1, 0.04, 0.06, 5, { p: [0.75, 0.5, -0.2], r: [0.15, 0, -0.2] }, { color: PAL.rust, mat: "metal", wear: 0.4 });
+  return k.build("ore_oil");
+}
+
+/** Drujba: corp portocaliu decolorat, motor, mâner, lama lungă cu lanț. */
+export function buildChainsaw(scene: Scene, mats: Materials): Mesh[] {
+  const k = new ModelKit(scene, mats, 4700);
+  const body = hex("#c4561e");
+  k.box(0.3, 0.34, 0.55, { p: [0, 0, 0] }, { color: body, wear: 0.35, frost: 0.2 });
+  k.box(0.26, 0.2, 0.3, { p: [0, -0.02, -0.25] }, { color: PAL.iron, mat: "metal", wear: 0.3 });
+  for (let i = 0; i < 5; i++) k.box(0.31, 0.02, 0.2, { p: [0, -0.1 + i * 0.05, -0.05] }, { color: hex("#2a2e33"), mat: "metal" });
+  // Mânerul de sus (bucla) și cel din spate.
+  k.box(0.05, 0.05, 0.4, { p: [0, 0.28, 0.02] }, { color: hex("#1e2226"), wear: 0.2 });
+  k.box(0.05, 0.22, 0.05, { p: [0, 0.18, 0.2] }, { color: hex("#1e2226") });
+  k.box(0.05, 0.22, 0.05, { p: [0, 0.18, -0.16] }, { color: hex("#1e2226") });
+  // Lama cu lanțul.
+  k.box(0.04, 0.16, 0.95, { p: [0, -0.04, 0.72] }, { color: hex("#9aa4ae"), mat: "metal", wear: 0.3 });
+  k.box(0.06, 0.2, 0.97, { p: [0, -0.04, 0.72] }, { color: hex("#2c3036"), mat: "metal", wear: 0.4 });
+  k.cyl(0.06, 0.2, 0.2, 10, { p: [0, -0.04, 1.2], r: [0, 0, Math.PI / 2] }, { color: hex("#2c3036"), mat: "metal" });
+  return k.build("chainsaw");
 }
 
 /** Târnăcopul (ținut de coadă; capul de fier sus). */

@@ -2,7 +2,7 @@
 // găini și porci de la fermă), obiecte pe jos (cutii de gloanțe, carne) și inventarul.
 // Foamea și frigul contează doar în modul „Supraviețuire”; focul și obiectele merg în ambele.
 
-import { type AnimalKind, CONFIG, type ItemKind } from "../config";
+import { type AnimalKind, CONFIG, type FishKind, type ItemKind } from "../config";
 import { OBSTACLES, obstacleActive } from "../map";
 import { type Vec2, angleOf, clamp, dist, nextRandom } from "../math";
 import type { Animal, Campfire, Drop, EntityId, Farm, Well, GameEvent, GameState, Hero, PlayerId } from "../types";
@@ -11,6 +11,7 @@ import { damageHero, gunStats, heroById } from "./heroes";
 import { GAME_MAP } from "../map";
 import { resolveCollisions } from "./physics";
 import { refundFactor } from "./towers";
+import { armorCold } from "./progression";
 
 const S = CONFIG.survival;
 
@@ -25,7 +26,7 @@ export function canBuildBuilding(state: GameState, playerId: PlayerId, kind: Bui
   const player = state.players[playerId];
   if (!player) return "Jucător necunoscut";
   if (state.phase === "gameover" || state.phase === "victory") return "Jocul s-a terminat";
-  if (state.mode !== "survival") return "Doar în modul Supraviețuire";
+  if (state.mode !== "survival" && kind !== "campfire") return "Doar în modul Supraviețuire";
   const cost = buildingCost(kind);
   if (player.wood < cost) return `Ai nevoie de ${cost} lemn`;
   if (kind === "campfire" && state.campfires.filter((f) => f.ownerId === playerId).length >= S.maxCampfires) return `Cel mult ${S.maxCampfires} focuri`;
@@ -50,7 +51,7 @@ export function buildBuilding(state: GameState, playerId: PlayerId, kind: Buildi
   state.players[playerId].wood -= buildingCost(kind);
   const id = state.nextId++;
   if (kind === "campfire") {
-    state.campfires.push({ id, ownerId: playerId, pos: { ...pos }, fuel: S.campfireFuel, cooking: [] });
+    state.campfires.push({ id, ownerId: playerId, pos: { ...pos }, fuel: S.campfireFuel, cooking: [], refining: [] });
   } else if (kind === "well") {
     state.wells.push({ id, ownerId: playerId, pos: { ...pos } });
   } else {
@@ -127,6 +128,29 @@ export function demolishBuilding(state: GameState, playerId: PlayerId, id: Entit
   return true;
 }
 
+/** Pui ulei pe focul aprins de lângă tine: în câteva secunde iese un bidon de benzină. */
+export function canRefineOil(state: GameState, playerId: PlayerId, fireId?: EntityId): string | null {
+  const player = state.players[playerId];
+  const hero = player && heroById(state, player.heroId);
+  if (!player || !hero || !hero.alive) return "Erou căzut";
+  if (player.inventory.oil <= 0) return "N-ai ulei (sparge zăcăminte negre)";
+  const fire = fireId !== undefined ? state.campfires.find((f) => f.id === fireId) : litFireNear(state, hero.pos);
+  if (!fire || fire.fuel <= 0) return "Ai nevoie de un foc aprins aproape";
+  if (fire.refining.length >= 3) return "Focul e plin";
+  return null;
+}
+
+export function refineOil(state: GameState, playerId: PlayerId, events: GameEvent[], fireId?: EntityId): boolean {
+  if (canRefineOil(state, playerId, fireId) !== null) return false;
+  const player = state.players[playerId];
+  const hero = heroById(state, player.heroId)!;
+  const fire = (fireId !== undefined ? state.campfires.find((f) => f.id === fireId) : litFireNear(state, hero.pos))!;
+  player.inventory.oil--;
+  fire.refining.push(CONFIG.oil.refineTime);
+  events.push({ type: "fuelAdded", fireId: fire.id, pos: { ...fire.pos } });
+  return true;
+}
+
 export function canAddFuel(state: GameState, playerId: PlayerId, fireId: EntityId): string | null {
   const fire = state.campfires.find((f) => f.id === fireId);
   const player = state.players[playerId];
@@ -176,10 +200,12 @@ export function useItem(state: GameState, playerId: PlayerId, item: ItemKind, ev
     events.push({ type: "drank", playerId, pos: { ...hero.pos }, canteen: true });
     return true;
   }
+  if (item === "oil") return refineOil(state, playerId, events);
+  if (item === "petrol" || item === "leather" || item === "iron") return false;
   if (item !== "cookedMeat" && item !== "rawMeat") {
     // Peștele se poate și mânca (crud, dar nu te doare burta); mai bine îl vinzi la tarabă.
     player.inventory[item]--;
-    hero.hunger = Math.min(100, hero.hunger + CONFIG.gather.fish[item].food);
+    hero.hunger = Math.min(100, hero.hunger + CONFIG.gather.fish[item as FishKind].food);
     events.push({ type: "ate", playerId, cooked: true });
     return true;
   }
@@ -226,6 +252,14 @@ export function updateSurvival(state: GameState, dt: number, events: GameEvent[]
       spawnDrop(state, { x: fire.pos.x + Math.cos(a) * 1.1, z: fire.pos.z + Math.sin(a) * 1.1 }, "cookedMeat", 1);
       events.push({ type: "cooked", fireId: fire.id, pos: { ...fire.pos } });
     }
+    for (let i = fire.refining.length - 1; i >= 0; i--) {
+      fire.refining[i] -= dt;
+      if (fire.refining[i] > 0) continue;
+      fire.refining.splice(i, 1);
+      const a = nextRandom(state) * Math.PI * 2;
+      spawnDrop(state, { x: fire.pos.x + Math.cos(a) * 1.1, z: fire.pos.z + Math.sin(a) * 1.1 }, "petrol", 1);
+      events.push({ type: "refined", fireId: fire.id, pos: { ...fire.pos } });
+    }
   }
 
   if (!survival) return;
@@ -247,7 +281,7 @@ export function updateSurvival(state: GameState, dt: number, events: GameEvent[]
     else if (fire) hero.thirst = Math.min(100, hero.thirst + S.snowMeltPerSec * dt);
     else hero.thirst = Math.max(0, hero.thirst - S.thirstPerSec * dt);
     if (fire) hero.warmth = Math.min(100, hero.warmth + S.fireWarmPerSec * dt);
-    else hero.warmth = Math.max(0, hero.warmth - S.coldPerSec * weather.cold * night * dt);
+    else hero.warmth = Math.max(0, hero.warmth - S.coldPerSec * weather.cold * night * (1 - armorCold(hero)) * dt);
     // Flămând sau înghețat: pierzi viață încet.
     const hurt = (hero.hunger <= 0 ? S.starveDamage : 0) + (hero.warmth <= 0 ? S.freezeDamage : 0) + (hero.thirst <= 0 ? S.thirstDamage : 0);
     if (hurt > 0) {
@@ -391,6 +425,9 @@ export function damageAnimal(state: GameState, a: Animal, amount: number, events
   if (a.hp > 0) return;
   state.animals.splice(state.animals.indexOf(a), 1);
   spawnDrop(state, a.pos, "rawMeat", CONFIG.animals[a.kind].meat);
+  // Pielea (pentru armuri) cade lângă carne.
+  const leather = CONFIG.loot.leather[a.kind];
+  if (leather > 0) spawnDrop(state, { x: a.pos.x - 0.5, z: a.pos.z + 0.3 }, "leather", leather);
   // Vânatul sălbatic lasă și aur (blana / coarnele se vând): monede pe jos.
   const coins = CONFIG.animals[a.kind].coins;
   if (coins > 0) state.coins.push({ id: state.nextId++, pos: { x: a.pos.x + 0.4, z: a.pos.z }, value: coins, age: 0 });

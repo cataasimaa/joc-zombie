@@ -9,8 +9,11 @@
 import { CONFIG, FISH_KINDS, type FishKind } from "../config";
 import { GAME_MAP, OBSTACLES, obstacleActive, treeFelled } from "../map";
 import { type Vec2, angleOf, dist, nextRandom } from "../math";
-import type { Animal, GameEvent, GameState, Hero, Ore, Player } from "../types";
+import type { Animal, GameEvent, GameState, Hero, Ore, Player, Zombie } from "../types";
+import { heroDamageMultiplier } from "./heroes";
+import { gatherSpeed, hasPassive, rank } from "./progression";
 import { damageAnimal } from "./survival";
+import { damageZombie, targetable } from "./zombies";
 
 const G = CONFIG.gather;
 
@@ -124,8 +127,9 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
     if (nearTrader(hero) && fishCount(player) > 0) {
       let coins = 0;
       let fish = 0;
+      const price = hasPassive(hero, "fish", 5) ? CONFIG.skills.fishPrice : 1;
       for (const k of FISH_KINDS) {
-        coins += player.inventory[k] * G.fish[k].price;
+        coins += Math.round(player.inventory[k] * G.fish[k].price * price);
         fish += player.inventory[k];
         player.inventory[k] = 0;
       }
@@ -150,7 +154,7 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
         hero.tugTimer -= dt;
         if (hero.tugTimer <= 0) {
           hero.tugTimer = nextTug(state);
-          hero.reel = Math.max(0, hero.reel - f.tug);
+          hero.reel = Math.max(0, hero.reel - f.tug * fishTugFactor(hero));
           events.push({ type: "fishTug", heroId: hero.id, playerId: hero.playerId, pos: bob, reel: hero.reel });
         }
         if (press) {
@@ -188,7 +192,7 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
         hero.hooked = fish;
         hero.reel = 0;
         hero.tugTimer = nextTug(state);
-        hero.biteTimer = G.fish[fish].time;
+        hero.biteTimer = G.fish[fish].time * (1 + rank(hero, "fish") * CONFIG.skills.fishTime);
         events.push({ type: "fishBite", heroId: hero.id, pos: bob, fish });
       }
       continue;
@@ -207,35 +211,103 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
       }
     }
 
-    // 3. Târnăcopul în mână: cât ții apăsat, lovești ținta din față (sau dai în gol).
+    // 3. Drujba în mână: cât ții apăsat, taie (copaci, animale, zombi) și arde benzină.
+    if (player.tool === "chainsaw") {
+      if (!using) continue;
+      if (hero.sawFuel <= 0 && player.inventory.petrol > 0) {
+        player.inventory.petrol--;
+        hero.sawFuel = Math.min(CONFIG.chainsaw.tank, hero.sawFuel + CONFIG.chainsaw.secondsPerPetrol);
+      }
+      if (hero.sawFuel <= 0) {
+        if (press) events.push({ type: "noPetrol", heroId: hero.id });
+        continue;
+      }
+      hero.sawFuel = Math.max(0, hero.sawFuel - dt);
+      if (hero.actionTimer > 1e-6) continue;
+      hero.actionTimer = CONFIG.chainsaw.hitInterval * gatherSpeed(hero, "chop");
+      const t = sawTarget(state, hero);
+      if (!t) {
+        const f = hero.facing;
+        events.push({ type: "toolHit", heroId: hero.id, target: "air", tool: "chainsaw", pos: { x: hero.pos.x + Math.sin(f) * 1.1, z: hero.pos.z + Math.cos(f) * 1.1 } });
+        continue;
+      }
+      hero.facing = angleOf(t.pos.x - hero.pos.x, t.pos.z - hero.pos.z);
+      events.push({ type: "toolHit", heroId: hero.id, target: t.kind, tool: "chainsaw", pos: { ...t.pos } });
+      if (t.kind === "zombie") damageZombie(state, t.zombie, CONFIG.chainsaw.zombieDamage * heroDamageMultiplier(hero), events, hero.id, hero.pos);
+      else if (t.kind === "animal") damageAnimal(state, t.animal, G.animalDamage * 1.5, events, hero.pos);
+      else if (t.kind === "tree") chopTree(state, hero, player, t.index, t.pos, events);
+      continue;
+    }
+
+    // 4. Târnăcopul în mână: cât ții apăsat, lovești ținta din față (sau dai în gol).
     if (player.tool !== "pickaxe" || !using || hero.actionTimer > 1e-6) continue;
     const target = toolTarget(state, hero);
     if (!target) {
       hero.actionTimer = G.missInterval;
       const f = hero.facing;
-      events.push({ type: "toolHit", heroId: hero.id, target: "air", pos: { x: hero.pos.x + Math.sin(f) * 1.2, z: hero.pos.z + Math.cos(f) * 1.2 } });
+      events.push({ type: "toolHit", heroId: hero.id, target: "air", tool: "pickaxe", pos: { x: hero.pos.x + Math.sin(f) * 1.2, z: hero.pos.z + Math.cos(f) * 1.2 } });
       continue;
     }
-    hero.actionTimer = G.hitInterval[target.kind];
+    const speed = target.kind === "tree" ? gatherSpeed(hero, "chop") : target.kind === "ore" ? gatherSpeed(hero, "mine") : 1;
+    hero.actionTimer = G.hitInterval[target.kind] * speed;
     hero.facing = angleOf(target.pos.x - hero.pos.x, target.pos.z - hero.pos.z);
-    events.push({ type: "toolHit", heroId: hero.id, target: target.kind, pos: { ...target.pos } });
+    events.push({ type: "toolHit", heroId: hero.id, target: target.kind, tool: "pickaxe", pos: { ...target.pos } });
     if (target.kind === "animal") {
       damageAnimal(state, target.animal, G.animalDamage, events, hero.pos);
     } else if (target.kind === "ore") {
       const ore = target.ore;
       ore.hits--;
       if (ore.hits <= 0) {
-        const coins = G.ore[ore.kind].coins;
+        // Argint / aur: monede (+50% cu „Ochi de aur”) și fier; uleiul: bidoane de ulei brut.
+        const coins = Math.round(G.ore[ore.kind].coins * (hasPassive(hero, "mine", 3) ? 1 + CONFIG.skills.goldBonus : 1));
+        const extra = hasPassive(hero, "mine", 5) ? 1 : 0;
         player.coins += coins;
+        if (ore.kind === "oil") player.inventory.oil += CONFIG.oil.amount + extra;
+        else player.inventory.iron += CONFIG.loot.iron[ore.kind] + extra;
         state.ores.splice(state.ores.indexOf(ore), 1);
         events.push({ type: "oreMined", id: ore.id, kind: ore.kind, pos: { ...ore.pos }, playerId: hero.playerId, coins });
       }
     } else {
-      state.treeHits[target.index] = (state.treeHits[target.index] ?? 0) + 1;
-      player.wood += G.woodPerHit;
-      if (treeFelled(state, target.index)) events.push({ type: "treeFelled", index: target.index, pos: { ...target.pos } });
+      chopTree(state, hero, player, target.index, target.pos, events);
     }
   }
+}
+
+/** O lovitură în brad: lemn (+1 cu „Tăietor”), iar cu „Pădurar” bradul cade de 2× mai repede. */
+function chopTree(state: GameState, hero: Hero, player: Player, index: number, pos: Vec2, events: GameEvent[]): void {
+  state.treeHits[index] = (state.treeHits[index] ?? 0) + (hasPassive(hero, "chop", 5) ? 2 : 1);
+  player.wood += G.woodPerHit + (hasPassive(hero, "chop", 3) ? 1 : 0);
+  if (treeFelled(state, index)) events.push({ type: "treeFelled", index, pos: { ...pos } });
+}
+
+/** Cât de tare te smucește peștele (mai puțin cu abilitatea de pescuit). */
+function fishTugFactor(hero: Hero): number {
+  return Math.max(0.2, 1 - rank(hero, "fish") * CONFIG.skills.fishTug) * (hasPassive(hero, "fish", 3) ? 0.5 : 1);
+}
+
+type SawTarget = { kind: "zombie"; zombie: Zombie; pos: Vec2 } | { kind: "animal"; animal: Animal; pos: Vec2 } | { kind: "tree"; index: number; pos: Vec2 };
+
+/** Ținta drujbei: zombii din față au prioritate, apoi animalele, apoi brazii. */
+function sawTarget(state: GameState, hero: Hero): SawTarget | null {
+  const reach = CONFIG.chainsaw.reach;
+  let best: SawTarget | null = null;
+  let bestScore = Infinity;
+  const consider = (t: SawTarget, edge: number, prio: number) => {
+    const d = dist(hero.pos, t.pos) - edge;
+    if (d > reach) return;
+    const score = prio * 100 + d;
+    if (score < bestScore) {
+      bestScore = score;
+      best = t;
+    }
+  };
+  for (const z of state.zombies) if (targetable(z)) consider({ kind: "zombie", zombie: z, pos: z.pos }, CONFIG.zombies[z.type].radius, 0);
+  for (const a of state.animals) consider({ kind: "animal", animal: a, pos: a.pos }, CONFIG.animals[a.kind].radius, 1);
+  for (const o of OBSTACLES) {
+    if (o.tree === undefined || !obstacleActive(state, o)) continue;
+    consider({ kind: "tree", index: o.tree, pos: o.pos }, o.radius, 2);
+  }
+  return best;
 }
 
 /** Ziua apar câteva zăcăminte noi de argint sau aur, în locuri libere de pe hartă. */
@@ -243,7 +315,8 @@ export function spawnDayOres(state: GameState, events: GameEvent[]): void {
   for (let n = 0; n < G.orePerDay && state.ores.length < G.oreMax; n++) {
     const pos = freeSpot(state);
     if (!pos) return;
-    const kind: Ore["kind"] = nextRandom(state) < G.goldChance ? "gold" : "silver";
+    const roll = nextRandom(state);
+    const kind: Ore["kind"] = roll < CONFIG.oil.chance ? "oil" : roll < CONFIG.oil.chance + G.goldChance ? "gold" : "silver";
     const ore: Ore = { id: state.nextId++, kind, pos, hits: G.ore[kind].hits };
     state.ores.push(ore);
     events.push({ type: "oreSpawned", id: ore.id, kind, pos: { ...pos } });
