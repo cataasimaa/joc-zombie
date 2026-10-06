@@ -168,3 +168,138 @@ if __name__ == "__main__":
     save("hurt1", voice(0.28, [(0, 150), (0.4, 165), (1, 120)], [(0, "e"), (0.5, "e"), (1, "u")], growl=0.2, breath=0.35, amp_pts=[(0, 0), (0.08, 1), (0.45, 0.6), (1, 0)]))
     save("hurt2", voice(0.32, [(0, 165), (0.3, 180), (1, 130)], [(0, "a"), (1, "e")], growl=0.15, breath=0.4, amp_pts=[(0, 0), (0.06, 1), (0.5, 0.5), (1, 0)]))
     save("hurt3", voice(0.24, [(0, 140), (1, 115)], [(0, "u"), (1, "e")], growl=0.25, breath=0.45, amp_pts=[(0, 0), (0.1, 1), (0.4, 0.7), (1, 0)]))
+
+
+# ---------------------------------------------------------------------------------------------
+# Vocile zombilor noi și ale boșilor: fiecare are „gâtul” lui (rulează după cele de mai sus, deci
+# fișierele vechi ies identice — același seed).
+
+VOWELS.update({
+    "i": (300, 2200, 2950),   # „iii” (țipăt subțire)
+    "ae": (660, 1700, 2400),  # „ea” deschis
+})
+
+
+def wail(dur, f_lo, f_hi, vib=6.0, depth=0.04, vowels=None, breath=0.5, growl=0.25):
+    """Țipăt de strigoaică (urlătoarea): voce subțire, care urcă, cu tremolo (vibrato)."""
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    base = track([(0, f_lo), (0.25, f_hi), (0.8, f_hi * 0.92), (1, f_lo * 1.1)], n)
+    f0 = base * (1 + depth * np.sin(2 * np.pi * vib * tt))
+    pts = [(t, f) for t, f in zip(np.linspace(0, 1, 40), f0[:: max(1, n // 39)][:40])]
+    return voice(dur, pts, vowels or [(0, "e"), (0.3, "i"), (0.8, "ae"), (1, "e")], growl=growl, breath=breath, size=0.78,
+                 amp_pts=[(0, 0), (0.08, 1), (0.85, 0.8), (1, 0)])
+
+
+def clicks(dur, rate, freq=2400, q=0.004):
+    """Țăcănit de insectă (mandibule): pocnituri scurte și rezonante, la intervale neregulate."""
+    n = int(dur * SR)
+    out = np.zeros(n)
+    t = 0.0
+    while t < dur - 0.02:
+        i = int(t * SR)
+        g = int(q * SR)
+        burst = rng.standard_normal(g) * np.hanning(g)
+        out[i:i + g] += burst * rng.uniform(0.5, 1)
+        t += rng.uniform(0.5, 1.5) / rate
+    b, a = butter(2, [freq * 0.6 / (SR / 2), min(0.95, freq * 1.6 / (SR / 2))], "bandpass")
+    return lfilter(b, a, out)
+
+
+def layer(*parts):
+    """Suprapune mai multe sunete (cu câștig) și normalizează."""
+    n = max(len(p[0]) for p in parts)
+    out = np.zeros(n)
+    for x, g in parts:
+        out[: len(x)] += x * g
+    return out / (np.max(np.abs(out)) + 1e-9) * 0.9
+
+
+def hiss(dur, lo=2500, hi=7000, env=None):
+    n = int(dur * SR)
+    x = rng.standard_normal(n)
+    b, a = butter(2, [lo / (SR / 2), min(0.95, hi / (SR / 2))], "bandpass")
+    x = lfilter(b, a, x)
+    return x * track(env or [(0, 0), (0.1, 1), (0.7, 0.7), (1, 0)], n)
+
+
+def rumble(dur, f=45):
+    """Huruit de piatră care se freacă (colosul): zgomot foarte jos, cu bufnituri."""
+    n = int(dur * SR)
+    x = rng.standard_normal(n)
+    b, a = butter(2, f * 3 / (SR / 2), "low")
+    x = lfilter(b, a, x) * 6
+    grind = rng.standard_normal(n)
+    b, a = butter(2, [300 / (SR / 2), 1400 / (SR / 2)], "bandpass")
+    grind = lfilter(b, a, grind) * (0.5 + 0.5 * smooth_noise(n, 12)) * 0.4
+    return np.tanh((x + grind) * track([(0, 0), (0.15, 1), (0.75, 0.8), (1, 0)], n))
+
+
+def make_new_voices():
+    # Fugarul (târâtorul): șuierat-mârâit scurt, ca o pisică uriașă.
+    save("runner_attack", layer((voice(0.45, [(0, j(210)), (0.4, j(260)), (1, j(170))], [(0, "ae"), (0.5, "a"), (1, "r")], growl=0.9, breath=0.85, size=0.85), 1),
+                                (hiss(0.45, 2500, 7000), 0.35)))
+    # Scuipătorul: horcăie și scuipă.
+    save("spit", layer((voice(0.5, [(0, j(110)), (1, j(95))], [(0, "r"), (0.6, "o"), (1, "e")], growl=0.9, breath=0.7, gurgle=0.9), 1),
+                       (hiss(0.5, 900, 3500, [(0, 0), (0.55, 0.2), (0.62, 1), (1, 0)]), 0.6)))
+    # Zburătorul: țipăt de pasăre de pradă, ascuțit.
+    save("flyer_screech", wail(0.55, 520, 880, vib=11, depth=0.06, breath=0.6, growl=0.5))
+    # Urlătoarea: bocet lung, subțire, care îngheață sângele.
+    save("scream1", wail(1.4, 380, 820, vib=6.5, depth=0.05))
+    save("scream2", wail(1.1, 450, 950, vib=7.5, depth=0.07, vowels=[(0, "i"), (0.5, "ae"), (1, "i")]))
+    save("screamer_moan", wail(1.6, 260, 340, vib=4, depth=0.03, breath=0.7, vowels=[(0, "u"), (0.5, "o"), (1, "u")]))
+    # Umflatul: râgâit ud, jos, cu bulbuci.
+    save("bloater_moan", voice(1.6, [(0, j(70)), (0.5, j(62)), (1, j(55))], [(0, "o"), (0.4, "u"), (1, "o")], growl=0.8, breath=0.4, size=1.25, gurgle=1.0))
+    save("bloater_attack", voice(0.8, [(0, j(85)), (0.3, j(105)), (1, j(60))], [(0, "e"), (0.3, "a"), (1, "o")], growl=0.9, breath=0.5, size=1.2, gurgle=0.9))
+    # Săpătorul: țăcănit de mandibule + șuierat; la atac un țipăt scurt peste țăcănit.
+    save("burrower_chitter", layer((clicks(1.0, 22, 2200), 1), (hiss(1.0, 3000, 8000, [(0, 0), (0.2, 0.5), (0.8, 0.4), (1, 0)]), 0.35)))
+    save("burrower_attack", layer((clicks(0.6, 40, 2600), 0.8), (wail(0.6, 330, 520, vib=14, depth=0.08, breath=0.8, growl=0.7), 0.8)))
+    # Șamanul: incantație gâtuită (cânt diftonic): voce joasă cu o rezonanță care alunecă.
+    save("shaman_chant", voice(2.4, [(0, 88), (0.5, 92), (1, 86)], [(0, "u"), (0.25, "o"), (0.5, "u"), (0.75, "o"), (1, "m")], growl=0.35, breath=0.3, size=1.05, bw_scale=0.45,
+                               amp_pts=[(0, 0), (0.15, 0.9), (0.5, 1), (0.85, 0.9), (1, 0)]))
+    save("shaman_cast", layer((voice(0.9, [(0, 120), (0.4, 160), (1, 100)], [(0, "o"), (0.4, "a"), (1, "u")], growl=0.5, breath=0.5), 1), (hiss(0.9, 3500, 9000), 0.25)))
+    # Matca: șuierat de păianjen uriaș + țipăt de insectă.
+    save("brood_hiss", layer((hiss(1.5, 1800, 6500), 1), (clicks(1.5, 16, 1500), 0.7)))
+    save("brood_screech", layer((wail(1.0, 600, 1100, vib=18, depth=0.09, breath=0.9, growl=0.9), 0.9), (clicks(1.0, 30, 1800), 0.6)))
+    # Yeti-ul: răget uriaș (gât imens), apoi mormăit.
+    save("yeti_roar1", voice(1.6, [(0, j(70)), (0.2, j(120)), (0.6, j(110)), (1, j(65))], [(0, "o"), (0.2, "a"), (0.7, "a"), (1, "r")], growl=1.0, breath=0.5, size=1.7, bw_scale=1.4,
+                             amp_pts=[(0, 0), (0.06, 1), (0.7, 0.95), (1, 0)]))
+    save("yeti_roar2", voice(1.3, [(0, j(80)), (0.3, j(135)), (1, j(70))], [(0, "a"), (0.5, "ae"), (1, "r")], growl=1.0, breath=0.45, size=1.6, bw_scale=1.3))
+    save("yeti_grunt", voice(0.6, [(0, j(75)), (1, j(60))], [(0, "u"), (1, "o")], growl=0.9, breath=0.4, size=1.6))
+    # Vrăjitoarea: râs cârâit („ha-ha-ha”) și șoaptă.
+    syl = []
+    for k in range(6):
+        syl.append(voice(0.14, [(0, j(380 - k * 18)), (1, j(330 - k * 18))], [(0, "ae"), (1, "a")], growl=0.6, breath=0.6, size=0.8,
+                         amp_pts=[(0, 0), (0.15, 1), (0.6, 0.7), (1, 0)]))
+    cackle = np.zeros(int(1.3 * SR))
+    for k, s_ in enumerate(syl):
+        i = int((0.04 + k * 0.19) * SR)
+        cackle[i:i + len(s_)] += s_ * (1 - k * 0.08)
+    save("witch_cackle", cackle)
+    save("witch_whisper", hiss(1.2, 1500, 5000, [(0, 0), (0.2, 1), (0.4, 0.5), (0.6, 1), (1, 0)]) * 0.9)
+    save("witch_cast", layer((wail(0.8, 300, 600, vib=5, depth=0.05, breath=0.8, growl=0.3, vowels=[(0, "a"), (1, "i")]), 1), (hiss(0.8, 4000, 10000), 0.3)))
+    # Colosul: huruit de piatră și un geamăt adânc, ca un munte care se mișcă.
+    save("colossus_groan", layer((rumble(2.2, 40), 1), (voice(2.2, [(0, 45), (0.5, 52), (1, 40)], [(0, "o"), (0.5, "u"), (1, "o")], growl=0.9, breath=0.3, size=2.2, bw_scale=1.5), 0.6)))
+    save("colossus_roar", layer((rumble(1.6, 55), 0.8), (voice(1.6, [(0, 50), (0.3, 75), (1, 45)], [(0, "o"), (0.3, "a"), (1, "r")], growl=1.0, breath=0.4, size=2.0, bw_scale=1.4), 1)))
+    # Lich-ul: voce de schelet — șuierătoare și joasă în același timp.
+    save("lich_roar", layer((voice(1.5, [(0, 75), (0.3, 105), (1, 65)], [(0, "o"), (0.3, "a"), (1, "u")], growl=0.95, breath=0.7, size=1.45), 1),
+                            (hiss(1.5, 2500, 7000), 0.3)))
+    # Regele Iernii: două voci (una foarte joasă, una o octavă mai sus) + șoaptă: „corul morților”.
+    low = voice(2.0, [(0, 52), (0.3, 70), (0.7, 64), (1, 48)], [(0, "o"), (0.3, "a"), (0.75, "a"), (1, "u")], growl=0.9, breath=0.4, size=1.9, bw_scale=1.3)
+    high = voice(2.0, [(0, 104), (0.3, 140), (0.7, 128), (1, 96)], [(0, "o"), (0.3, "a"), (0.75, "e"), (1, "u")], growl=0.6, breath=0.5, size=1.2)
+    save("king_roar", layer((low, 1), (high, 0.45), (hiss(2.0, 3000, 8000), 0.18)))
+    laugh = np.zeros(int(1.8 * SR))
+    for k in range(5):
+        s_ = voice(0.22, [(0, 95 - k * 4), (1, 80 - k * 4)], [(0, "o"), (1, "a")], growl=0.8, breath=0.4, size=1.7, amp_pts=[(0, 0), (0.15, 1), (0.6, 0.7), (1, 0)])
+        i = int((0.05 + k * 0.32) * SR)
+        laugh[i:i + len(s_)] += s_
+    save("king_laugh", laugh)
+    save("king_moan", layer((voice(2.4, [(0, 55), (0.5, 62), (1, 46)], [(0, "m"), (0.3, "o"), (1, "u")], growl=0.8, breath=0.4, size=1.8), 1),
+                            (voice(2.4, [(0, 110), (0.5, 124), (1, 92)], [(0, "m"), (0.3, "o"), (1, "u")], growl=0.5, breath=0.5, size=1.2), 0.4)))
+    # Brută: încă un atac și moartea (cade ca un copac).
+    save("brute_attack2", voice(0.9, [(0, j(70)), (0.25, j(95)), (1, j(60))], [(0, "a"), (0.5, "a"), (1, "r")], growl=0.95, breath=0.35, size=1.4, bw_scale=1.2))
+    save("brute_death", voice(1.6, [(0, j(80)), (0.4, j(60)), (1, j(38))], [(0, "a"), (0.5, "o"), (1, "u")], growl=0.9, breath=0.55, size=1.4))
+
+
+if __name__ == "__main__":
+    make_new_voices()

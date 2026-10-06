@@ -86,7 +86,11 @@ src/
                    ace) se ghicește după culoare și primește o hartă de relief CC0 reală; formele
                    organice au umbrire netedă (pietrele deformate cu zgomot), lemnul și fierul plate
   assets/normals/  Hărți de relief CC0 din `@pmndrs/assets` (vezi README-ul din folder)
-  assets/sfx/      Vocile zombilor și ale eroului (MP3), generate de `tools/zombie_voices.py`
+  assets/sfx/      Vocile zombilor / boșilor / eroului (`tools/zombie_voices.py`) și efectele
+                   „realiste” (`tools/sfx_synth.py`): arme, reîncărcare, tuburi, târnăcop, drujbă,
+                   pescuit, gheare / bâte / mușcături, explozii, pași (MP3)
+  assets/music/    8 piese stereo generate de `tools/music_synth.py` (meniu, zi A/B, noapte în 2
+                   straturi, boss, Regele Iernii, val fără sfârșit)
     palette.ts     Paleta „Northrend survival”
     models/        gathering (lac cu copcă, tarabă, zăcăminte, târnăcop, undiță),
                    environment (brazi, pietre, case, mina de plasmă), characters (eroi cu glugă
@@ -106,13 +110,20 @@ src/
                  „ugh” când ești lovit): împușcături pe armă, sunet pe tip de turn,
                  explozii, dărâmare, pași, reîncărcare, atac zombi, păcănele (clopote, sirenă,
                  monede), vânt, foc
-  audio/Music.ts Muzică procedurală: temă eroică în meniu (cor, alămuri, tobe de război);
+  audio/MusicTracks.ts  Piesele din assets/music pe stări: meniu → zi (calmă, A/B pe rând) →
+                 noapte (baza + stratul de luptă, sincrone; lupta urcă cu pericolul) → boss (Regele
+                 Iernii are piesa lui) → val fără sfârșit; fade între ele, decodare la nevoie (max 4)
+  audio/Music.ts Rezervă până se încarcă piesele — muzică procedurală: temă eroică în meniu (cor, alămuri, tobe de război);
                  în joc 2 straturi fără melodie (nu acoperă arbaleta): între valuri drone de vânt +
                  acord rar; în val puls jos și energic (tobă mare, bas în optimi/șaisprezecimi,
                  tom-uri, „BRAAM”); tobă rară când o brută lovește un zid; boss = vântul tace +
                  notă ținută; victorie / game over = stinger, apoi liniște
 tools/zombie_voices.py  Sintetizator de voce (formanți, ca Klatt): puls de glotă cu jitter, horcăit,
-                 respirație, 5 rezonatoare care se mută între vocale → MP3 (numpy, scipy, ffmpeg)
+                 respirație, 5 rezonatoare care se mută între vocale → MP3 (numpy, scipy, ffmpeg);
+                 câte o voce pe fiecare tip de zombi și boss (țipete, chicoteli, răgete, incantații)
+tools/sfx_synth.py      Efecte: rezonanțe modale, zgomot filtrat, granule, reverb de exterior
+tools/music_synth.py    Muzică: coarde, alămuri, cor din formanți, harpă, pian, clopote, taiko,
+                 reverb de sală; buclele se închid fără cusătură (`python3 tools/music_synth.py [nume]`)
   input/       Tastatură, joystick virtual (mișcare), FireStick (buton de tras + ochire) → comenzi
   ui/Hud.ts    HUD + ecrane (meniu, pauză, alegere erou, magazin, clasament, final) în HTML/CSS
   ui/leaderboard.ts  Clasamentul (localStorage): cei mai buni 5 și ultimele 5, pe mod și dificultate
@@ -296,6 +307,17 @@ sau texturi din acele jocuri.
   formanți: gemete „mmm-uuu-aaa”, răgete „AAARGH”, brute cu gât uriaș, țipete de fugar, bolborosit de
   scuipător, horcăit de moarte); la atac + șuieratul ghearelor / bâtei + lovitură surdă. Gem tot mai
   des și mai tare cu cât se apropie. Dacă fișierele nu s-au încărcat, cântă vocea sintetizată din cod.
+  Fiecare tip are vocea lui (fugarul țipă, umflatul bolborosește, săpătorul țăcăne, șamanul
+  incantează, Matca șuieră, Yeti-ul răcnește, Vrăjitoarea chicotește, Colosul geme ca piatra,
+  Regele Iernii râde) și lovitura lui (gheare, bâtă, mușcătură, zid). Fiecare boss se anunță cu vocea lui.
+- **Sunete realiste** (MP3 din `tools/sfx_synth.py`, cu rezervă din cod): fiecare armă are împușcătura
+  ei (pistol, pușcă, asalt, alice, arc, lance), reîncărcare în 2–3 timpi, tub care cade pe zăpadă;
+  târnăcopul sună diferit în lemn / piatră / zăpadă / carne; bradul care cade, zăcământul spart,
+  drujba; pescuit: aruncare, mușcătură, mulineta, smucitură, prins / scăpat.
+- **Muzică pe stări** (`MusicTracks.ts`): meniu eroic; ziua calmă (harpă și flaut sau cutie muzicală
+  și pian); noaptea cu tobe taiko și coarde care cresc cu pericolul; boss = piesă rapidă și grea
+  (Regele Iernii: clopot, orgă, cor); valul fără sfârșit = cea mai rapidă. În asalt, pauza dintre
+  boși păstrează muzica de boss.
 - **Arme** (`items.ts`): țeava ruginită → pușcă de vânătoare / flintă cu alice (rar) →
   mitralieră din țevi / arbaletă de os (epic) → lancea de gheață (legendar, încetinește).
   Armele câștigate se păstrează toate (`player.weapons`); schimbi între ele din bara rapidă.

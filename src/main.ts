@@ -685,12 +685,22 @@ function aimCommand(state: GameState): Command | null {
   return { type: "aim", playerId: LOCAL_PLAYER, x: hero.aim.x, z: hero.aim.z, firing: false, auto: true };
 }
 
+/** Tipul celui mai apropiat zombi (gemetele au vocea lui) — completat de nearestZombie(). */
+let nearestType: ZombieType = "walker";
 /** Cât de periculos e momentul (0..1) — muzica trece de la liniște la teroare. */
 /** Distanța de la eroul local la cel mai apropiat zombi (pentru gemetele care se apropie). */
 function nearestZombie(state: GameState): number {
   const hero = localHero(state);
   let best = Infinity;
-  for (const z of state.zombies) if (!z.burning) best = Math.min(best, Math.hypot(z.pos.x - hero.pos.x, z.pos.z - hero.pos.z));
+  nearestType = "walker";
+  for (const z of state.zombies) {
+    if (z.burning) continue;
+    const d = Math.hypot(z.pos.x - hero.pos.x, z.pos.z - hero.pos.z);
+    if (d < best) {
+      best = d;
+      nearestType = z.type;
+    }
+  }
   return best;
 }
 
@@ -821,6 +831,10 @@ renderer.engine.runRenderLoop(() => {
       dt,
       boss: state.phase === "night" && state.zombies.some((z) => isBoss(z.type) && !z.burning),
       nearestZombie: nearestZombie(state),
+      nearestType,
+      stage: state.stage,
+      phase: state.phase,
+      bossType: state.phase === "night" ? (state.zombies.find((z) => isBoss(z.type) && !z.burning)?.type ?? null) : null,
       running: state.phase === "day" || state.phase === "night",
     });
     if (placing) refreshPlacing();
