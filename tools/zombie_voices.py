@@ -19,9 +19,9 @@ import subprocess
 import wave
 
 import numpy as np
-from scipy.signal import butter, lfilter
+from scipy.signal import butter, fftconvolve, lfilter, lfilter_zi, sosfilt
 
-SR = 22050
+SR = 44100
 OUT = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "sfx")
 rng = np.random.default_rng(7)
 
@@ -72,54 +72,120 @@ def glottal(f0, growl, breath):
     return src + asp
 
 
-def resonator(x, freq, bw):
-    """Rezonator Klatt (filtru cu 2 poli) cu frecvență și lățime care variază în timp."""
-    y = np.zeros_like(x)
-    y1 = y2 = 0.0
-    for i in range(len(x)):
-        r = np.exp(-np.pi * bw[i] / SR)
+def resonator(x, freq, bw, block=64):
+    """Rezonator Klatt (2 poli) cu frecvență și lățime care variază în timp (pe blocuri scurte)."""
+    y = np.empty_like(x)
+    zi = np.zeros(2)
+    for s0 in range(0, len(x), block):
+        m = min(len(x), s0 + block) - s0
+        k = s0 + m // 2
+        r = np.exp(-np.pi * bw[k] / SR)
         c = -r * r
-        b = 2 * r * np.cos(2 * np.pi * freq[i] / SR)
+        b = 2 * r * np.cos(2 * np.pi * freq[k] / SR)
         a = 1 - b - c
-        yi = a * x[i] + b * y1 + c * y2
-        y[i] = yi
-        y2, y1 = y1, yi
+        y[s0:s0 + m], zi = lfilter([a], [1, -b, -c], x[s0:s0 + m], zi=zi)
     return y
+
+
+def room(x, wet=0.16, tail=0.9):
+    """Reverb scurt de exterior (ecou de la case / brazi), ca vocea să stea „în lume”."""
+    n = int(tail * SR)
+    ir = rng.standard_normal(n) * np.exp(-np.arange(n) / SR / (tail / 5))
+    b, a = butter(2, 2800 / (SR / 2), "low")
+    ir = lfilter(b, a, ir)
+    ir[: int(0.012 * SR)] *= np.linspace(0, 1, int(0.012 * SR))
+    ir *= np.sqrt(0.1 / np.sum(ir ** 2))
+    w = fftconvolve(x, ir)[: len(x) + int(0.4 * tail * SR)]
+    dry = np.concatenate([x, np.zeros(len(w) - len(x))])
+    out = dry + w * wet * 3
+    out[-int(0.05 * SR):] *= np.linspace(1, 0, int(0.05 * SR))
+    return out
+
+
+def tract(src, vowels, n, size, bw_scale):
+    """Gâtul și gura: rezonanța gâtului + 5 formanți care se mută între vocale."""
+    out = resonator(src, np.full(n, 190 / size), np.full(n, 160.0)) * 0.35 + src
+    formants = [track([(t, VOWELS[v][k] / size) for t, v in vowels], n) for k in range(3)]
+    formants += [np.full(n, 3300 / size), np.full(n, 3850 / size)]
+    bws = [110, 140, 200, 280, 360]
+    for k in range(5):
+        fr = formants[k] * (1 + 0.025 * smooth_noise(n, 7))
+        out = resonator(out, fr, np.full(n, bws[k] * bw_scale))
+    return out
 
 
 def voice(dur, f0_pts, vowels, growl=0.4, breath=0.3, size=1.0, amp_pts=None, gurgle=0.0, bw_scale=1.0):
     """
-    O vocalizare: `f0_pts` = conturul vocii [(t, Hz)], `vowels` = [(t, "a")...],
-    `size` > 1 = gât mai mare (formanți mai jos: brută, boss), `gurgle` = bolborosit (scuipător).
+    O vocalizare de zombi, făcută ca un „growl” adevărat (cum mârâie cântăreții de death metal):
+      - corzile vocale (f0, cu tremur neregulat de la un puls la altul);
+      - corzile false din gât vibrează la jumătate de frecvență (subarmonica) = mârâitul gros;
+      - „hârâitul” (gâtul plin): volumul pâlpâie neregulat la 20–50 Hz;
+      - respirația / aerul care trece prin gât (mult, la zombi);
+      - un al doilea gât, o octavă mai jos și mai mare, amestecat dedesubt (corp, greutate);
+      - plescăit de salivă la început, saturație asimetrică, egalizare și puțin ecou.
+    `f0_pts` = conturul vocii [(t, Hz)], `vowels` = [(t, "a")...], `size` > 1 = gât mai mare,
+    `gurgle` = bolborosit.
     """
     n = int(dur * SR)
     f0 = track(f0_pts, n)
-    f0 *= 1 + 0.035 * smooth_noise(n, 18) + 0.012 * smooth_noise(n, 90)  # jitter
+    # Jitter: lent (intonație) + rapid (de la un puls la altul) — vocea „se rupe”, ca la un gât bolnav.
+    f0 *= 1 + 0.04 * smooth_noise(n, 14) + (0.02 + 0.05 * growl) * smooth_noise(n, 140)
     src = glottal(f0, growl, breath)
-    out = src
-    formants = []
-    for k in range(3):
-        formants.append(track([(t, VOWELS[v][k] / size) for t, v in vowels], n))
-    formants.append(np.full(n, 3300 / size))
-    formants.append(np.full(n, 3850 / size))
-    bws = [90, 120, 170, 250, 320]
-    for k in range(5):
-        fr = formants[k] * (1 + 0.02 * smooth_noise(n, 6))
-        out = resonator(out, fr, np.full(n, bws[k] * bw_scale))
-    # Anvelopa: atac moale, final care se stinge; plus „gura care se deschide”.
+    # Corzile false: puls la f0/2, puternic la mârâit.
+    sub = glottal(f0 * 0.5, min(1.0, growl + 0.2), breath * 0.5)
+    src = src + sub * (0.25 + 0.75 * growl)
+    # Hârâitul gâtului: modulare neregulată de amplitudine.
+    rattle_rate = 22 + 26 * (0.5 + 0.5 * smooth_noise(n, 3))
+    rattle = 0.5 + 0.5 * np.sign(np.sin(2 * np.pi * np.cumsum(rattle_rate) / SR)) * (0.5 + 0.5 * smooth_noise(n, 40))
+    src *= 1 - growl * 0.55 * (1 - rattle)
+    # Aer prin gât: zgomot care urmează vocea, mult mai prezent decât la un om sănătos.
+    air = rng.standard_normal(n) * (0.25 + breath * 0.9) * 0.35
+    src = src + air
+    out = tract(src, vowels, n, size, bw_scale)
+    # Al doilea gât: o octavă mai jos, mai mare (dă greutate), dedesubt.
+    if growl > 0.3:
+        low = tract(glottal(f0 * 0.5, growl, breath) + air * 0.5, vowels, n, size * 1.3, bw_scale * 1.2)
+        out = out / (np.max(np.abs(out)) + 1e-9) + low / (np.max(np.abs(low)) + 1e-9) * (0.15 + 0.25 * growl)
+    # Radiația gurii: vocea iese prin buze → acutele cresc (+6 dB/octavă), altfel sună „prin pernă”.
+    out = lfilter([1, -0.95], [1], out)
+    out = lfilter([1, -0.6], [1], out)
+    # Hârșâitul aerului prin gâtul uscat (acutele „aspre” ale unui mârâit adevărat), care urmează vocea.
+    follow = np.sqrt(np.convolve(out ** 2, np.ones(int(0.015 * SR)) / int(0.015 * SR), mode="same"))
+    rasp = sosfilt(butter(2, [2200 / (SR / 2), 6500 / (SR / 2)], "bandpass", output="sos"), rng.standard_normal(n))
+    rasp *= follow / (np.max(follow) + 1e-9) * (0.5 + 0.5 * rattle)
+    out = out / (np.max(np.abs(out)) + 1e-9) + rasp / (np.max(np.abs(rasp)) + 1e-9) * (0.06 + 0.22 * growl * (0.5 + breath))
     env = track(amp_pts or [(0, 0), (0.08, 1), (0.75, 0.85), (1, 0)], n)
     if gurgle > 0:
-        env *= 1 - gurgle * 0.5 * (1 + np.sin(2 * np.pi * np.cumsum(28 + 8 * smooth_noise(n, 5)) / SR))
-    out *= env
-    # Saturație (gât răgușit) + filtre: fără bâzâit sub 70 Hz, fără șuierat peste 6 kHz.
+        bub = 28 + 10 * smooth_noise(n, 5)
+        env *= 1 - gurgle * 0.55 * (0.5 + 0.5 * np.sin(2 * np.pi * np.cumsum(bub) / SR)) * (0.6 + 0.4 * smooth_noise(n, 20))
+    out = out * env
+    # Plescăit de salivă când se deschide gura (2–3 pocnituri scurte, umede).
+    for _ in range(int(rng.integers(1, 4))):
+        at = int(rng.uniform(0.0, 0.12) * dur * SR)
+        g = int(rng.uniform(0.003, 0.009) * SR)
+        if at + g < n:
+            burst = rng.standard_normal(g) * np.hanning(g)
+            bb, ba = butter(2, [rng.uniform(1200, 2200) / (SR / 2), rng.uniform(3500, 6000) / (SR / 2)], "bandpass")
+            out[at:at + g] += lfilter(bb, ba, burst) * np.max(np.abs(out)) * rng.uniform(0.15, 0.35)
+    # Saturație asimetrică (gât răgușit, nu „bâzâit” de aparat).
     out /= np.max(np.abs(out)) + 1e-9
-    out = np.tanh(out * (1.6 + growl * 1.5))
-    b, a = butter(2, 70 / (SR / 2), "high")
-    out = lfilter(b, a, out)
-    b, a = butter(2, 6000 / (SR / 2), "low")
-    out = lfilter(b, a, out)
-    # Fade foarte scurt la capete (fără clicuri).
-    fade = int(0.01 * SR)
+    drive = 1.8 + growl * 2.2
+    out = np.tanh(out * drive + 0.25) - np.tanh(0.25)
+    # Egalizare: fără bâzâit sub 60 Hz, corp la 150–350 Hz, mai puțin „nazal” pe la 1 kHz,
+    # fără șuierat de aparat peste 7 kHz.
+    sos = butter(2, 60 / (SR / 2), "high", output="sos")
+    out = sosfilt(sos, out)
+    body = sosfilt(butter(2, [140 / (SR / 2), 360 / (SR / 2)], "bandpass", output="sos"), out)
+    honk = sosfilt(butter(2, [800 / (SR / 2), 1300 / (SR / 2)], "bandpass", output="sos"), out)
+    edge = sosfilt(butter(2, [1800 / (SR / 2), 3400 / (SR / 2)], "bandpass", output="sos"), out)
+    out = out + body * 0.3 - honk * 0.25 + edge * 0.5
+    out = sosfilt(butter(3, 8000 / (SR / 2), "low", output="sos"), out)
+    # Compresie simplă (vocea „în față”, ca într-un joc), apoi ecou scurt.
+    rms = np.sqrt(np.convolve(out ** 2, np.ones(int(0.02 * SR)) / int(0.02 * SR), mode="same")) + 1e-4
+    gain = np.minimum(1.0, (rms / (np.max(rms) * 0.35)) ** -0.45)
+    out = out * gain
+    out = room(out, wet=0.12 + 0.08 * min(size, 2) / 2)
+    fade = int(0.008 * SR)
     out[:fade] *= np.linspace(0, 1, fade)
     out[-fade:] *= np.linspace(1, 0, fade)
     return out / (np.max(np.abs(out)) + 1e-9) * 0.9
@@ -134,7 +200,7 @@ def save(name, data):
         w.setframerate(SR)
         w.writeframes((np.clip(data, -1, 1) * 32767).astype(np.int16).tobytes())
     mp3 = os.path.join(OUT, name + ".mp3")
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-ac", "1", "-b:a", "48k", mp3], check=True)
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-ac", "1", "-b:a", "64k", mp3], check=True)
     os.remove(wav)
     print("✓", name, f"{os.path.getsize(mp3) // 1024} KB")
 
@@ -271,7 +337,7 @@ def make_new_voices():
     for k in range(6):
         syl.append(voice(0.14, [(0, j(380 - k * 18)), (1, j(330 - k * 18))], [(0, "ae"), (1, "a")], growl=0.6, breath=0.6, size=0.8,
                          amp_pts=[(0, 0), (0.15, 1), (0.6, 0.7), (1, 0)]))
-    cackle = np.zeros(int(1.3 * SR))
+    cackle = np.zeros(int(1.8 * SR))
     for k, s_ in enumerate(syl):
         i = int((0.04 + k * 0.19) * SR)
         cackle[i:i + len(s_)] += s_ * (1 - k * 0.08)
@@ -288,7 +354,7 @@ def make_new_voices():
     low = voice(2.0, [(0, 52), (0.3, 70), (0.7, 64), (1, 48)], [(0, "o"), (0.3, "a"), (0.75, "a"), (1, "u")], growl=0.9, breath=0.4, size=1.9, bw_scale=1.3)
     high = voice(2.0, [(0, 104), (0.3, 140), (0.7, 128), (1, 96)], [(0, "o"), (0.3, "a"), (0.75, "e"), (1, "u")], growl=0.6, breath=0.5, size=1.2)
     save("king_roar", layer((low, 1), (high, 0.45), (hiss(2.0, 3000, 8000), 0.18)))
-    laugh = np.zeros(int(1.8 * SR))
+    laugh = np.zeros(int(2.4 * SR))
     for k in range(5):
         s_ = voice(0.22, [(0, 95 - k * 4), (1, 80 - k * 4)], [(0, "o"), (1, "a")], growl=0.8, breath=0.4, size=1.7, amp_pts=[(0, 0), (0.15, 1), (0.6, 0.7), (1, 0)])
         i = int((0.05 + k * 0.32) * SR)
@@ -301,5 +367,25 @@ def make_new_voices():
     save("brute_death", voice(1.6, [(0, j(80)), (0.4, j(60)), (1, j(38))], [(0, "a"), (0.5, "o"), (1, "u")], growl=0.9, breath=0.55, size=1.4))
 
 
+def make_variants():
+    """Mai multe variante de geamăt / atac / moarte, ca hoarda să nu repete același sunet."""
+    vw = ["m", "u", "o", "a", "e", "r"]
+    for k in range(5, 9):
+        f = rng.uniform(78, 118)
+        seq = [vw[int(i)] for i in rng.integers(0, len(vw), 4)]
+        save(f"moan{k}", voice(rng.uniform(1.4, 2.4), [(0, f), (0.3, f * rng.uniform(1.0, 1.2)), (0.7, f * rng.uniform(0.85, 1.05)), (1, f * 0.75)],
+                               [(0, "m"), (0.2, seq[1]), (0.55, seq[2]), (1, seq[3])], growl=rng.uniform(0.4, 0.65), breath=rng.uniform(0.3, 0.5)))
+    for k in range(4, 7):
+        f = rng.uniform(115, 150)
+        save(f"attack{k}", voice(rng.uniform(0.55, 0.85), [(0, f), (0.25, f * rng.uniform(1.3, 1.5)), (0.7, f * 1.2), (1, f * 0.8)],
+                                 [(0, "e"), (0.2, "a"), (0.7, "r"), (1, "r")], growl=rng.uniform(0.7, 0.9), breath=0.4,
+                                 amp_pts=[(0, 0), (0.05, 1), (0.65, 0.85), (1, 0)]))
+    for k in range(3, 5):
+        f = rng.uniform(100, 130)
+        save(f"death{k}", voice(rng.uniform(0.9, 1.3), [(0, f), (0.4, f * 0.8), (1, f * 0.45)], [(0, "a"), (0.45, "o"), (1, "u")],
+                                growl=0.85, breath=0.55, gurgle=rng.uniform(0.2, 0.6), amp_pts=[(0, 0), (0.05, 1), (0.5, 0.65), (1, 0)]))
+
+
 if __name__ == "__main__":
     make_new_voices()
+    make_variants()

@@ -16,14 +16,14 @@ const VOICE_URLS = import.meta.glob("../assets/sfx/*.mp3", { eager: true, query:
 // Efectele „realiste” (generate de tools/sfx_synth.py): împușcături pe armă, unelte, pescuit,
 // atacuri, explozii, pași. Dacă un fișier nu s-a încărcat, se cântă varianta făcută din cod.
 const VOICE_GROUPS = {
-  moan: ["moan1", "moan2", "moan3", "moan4"],
-  attack: ["attack1", "attack2", "attack3"],
+  moan: ["moan1", "moan2", "moan3", "moan4", "moan5", "moan6", "moan7", "moan8"],
+  attack: ["attack1", "attack2", "attack3", "attack4", "attack5", "attack6"],
   bruteAttack: ["brute_attack", "brute_attack2"],
   bruteMoan: ["brute_moan"],
   bruteDeath: ["brute_death"],
   shriek: ["shriek"],
   gurgle: ["gurgle"],
-  death: ["death1", "death2"],
+  death: ["death1", "death2", "death3", "death4"],
   hurt: ["hurt1", "hurt2", "hurt3"],
   // Vocile fiecărui tip de zombi și ale boșilor.
   runnerAttack: ["runner_attack", "shriek"],
