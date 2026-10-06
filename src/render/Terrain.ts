@@ -69,6 +69,13 @@ export function createTerrain(scene: Scene, mats: Materials): Mesh {
     const dirtNoise = fbm(x * 0.11 + 40, z * 0.11 - 12, 3);
     const dirt = smoothstep(0.66, 0.74, dirtNoise) * smoothstep(8, 12, Math.hypot(x, z));
     c = mix(c, mix(PAL.dirt, PAL.snowShadow, 0.35), dirt * 0.85);
+    // Zăpadă călcată în jurul minei (unde stau și se bat toți): gri-albăstruie, cu dâre de pași.
+    const r = Math.hypot(x, z);
+    const trampled = smoothstep(11, 5, r) * (0.55 + noise2(x * 0.9, z * 0.9) * 0.45);
+    const streaks = noise2(x * 2.6 + z * 0.8, z * 2.6 - x * 0.8);
+    c = mix(c, mix(PAL.snowShadow, PAL.path, 0.25 + streaks * 0.3), trampled * 0.55);
+    // Spre margini zăpada e neatinsă și mai luminoasă (acolo începe ceața).
+    c = mix(c, PAL.snow, smoothstep(HALF - 14, HALF - 2, Math.max(Math.abs(x), Math.abs(z))) * 0.5);
     const path = pathAmount(x, z) * smoothstep(HALF + 4, HALF - 4, Math.max(Math.abs(x), Math.abs(z)));
     c = mix(c, mix(PAL.path, PAL.dirt, 0.15 + noise2(x * 0.7, z * 0.7) * 0.2), path * 0.85);
     const j = i / 3;

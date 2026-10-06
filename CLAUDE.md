@@ -27,7 +27,7 @@ npm run build      # typecheck + build de producție în dist/
 Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică): nume, mod de joc,
 dificultate Easy/Medium/Hard/Nightmare, sunet, muzică, 🏆 clasament; apoi alegerea eroului.
 Sunetul se schimbă doar din meniu (☰ / Esc = pauză; sunet oprit = o linie roșie peste ☰). Tap / clic
-scurt pe o construcție de-a ta (turn, zid, foc, fermă) o **selectează** (inel + bara de viață);
+scurt pe o construcție de-a ta (turn, zid, foc, fermă) o **selectează** (inel + contur auriu + bara de viață);
 **apăsare lungă** (~0,45 s) sau al doilea tap pe ea = meniul ei. Tap pe zăpadă = deselectezi.
 Degetul de pe joystick nu deschide niciodată meniuri. Telefonul sună / aplicația trece în fundal =
 pauză automată (noaptea și păcănelele stau pe loc).
@@ -243,6 +243,8 @@ sau texturi din acele jocuri.
   mină și sparg zidurile din drum. Turnurile se repară doar ziua. Nimeni nu trece prin ele.
   Construcțiile distruse se prăbușesc: scândurile se desprind, praful stă ~1 s, bara de viață
   rămâne la zero până cade. Turnurile au cu 40% mai puțină viață decât înainte.
+- **Decor**: zăpadă călcată, gri-albăstruie, în jurul minei; neatinsă și luminoasă spre margini (unde e
+  ceața); brazii au zăpadă doar pe crengile de sus.
 - **Mina cade**: crapă, plasma pâlpâie și se stinge, capacul de fier se trântește; ecranul final
   apare după 3 s (sunet: plasma care se stinge, apoi un singur trosnet). Victorie: scârțâit de
   capac care se deschide, apoi liniște.

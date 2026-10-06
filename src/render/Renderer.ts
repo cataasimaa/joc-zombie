@@ -11,7 +11,7 @@ import {
   type Mesh,
   MeshBuilder,
   Scene,
-  type StandardMaterial,
+  StandardMaterial,
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
@@ -221,8 +221,11 @@ export class Renderer {
   private footWall: Mesh;
   private rangeRing: Mesh;
   private selectRing: Mesh;
-  /** Construcția selectată (inel + bara de viață mereu vizibilă). */
+  /** Construcția selectată (inel + contur + bara de viață mereu vizibilă). */
   selectedId: EntityId | null = null;
+  /** Conturul: copii puțin mai mari ale pieselor, din care se văd doar fețele din spate. */
+  private outline: { id: EntityId; parts: InstancedMesh[]; hulls: Mesh[] } | null = null;
+  private outlineMat: StandardMaterial | null = null;
   private m: Record<string, StandardMaterial> = {};
 
   constructor(canvas: HTMLCanvasElement) {
@@ -360,6 +363,7 @@ export class Renderer {
       if (!alive) this.setSelection(null);
     }
     if (this.selectRing.isEnabled()) this.selectRing.rotation.y = this.time * 0.8;
+    this.syncOutline();
     this.updateDying(dt);
     this.updateCollapsing(dt);
     this.fx.update(dt);
@@ -1333,6 +1337,50 @@ export class Renderer {
 
   hideGhost(): void {
     this.setGhost(null, "tower", false);
+  }
+
+  /**
+   * Contur auriu pe construcția selectată (tehnica „inverted hull”): fiecare piesă e copiată,
+   * mărită puțin și desenată doar cu fețele din spate, într-o culoare plată → apare ca o margine.
+   */
+  private syncOutline(): void {
+    const id = this.selectedId;
+    const view = id === null ? undefined : (this.towerViews.get(id) ?? this.barricadeViews.get(id));
+    const parts = view ? view.root.getChildMeshes(false).filter((m): m is InstancedMesh => "sourceMesh" in m) : [];
+    const stale = !this.outline || this.outline.id !== id || this.outline.parts.length !== parts.length ||
+      this.outline.parts.some((p, i) => p !== parts[i] || p.isDisposed());
+    if (!stale) {
+      const pulse = 0.75 + Math.sin(this.time * 5) * 0.25;
+      this.outlineMat!.emissiveColor = PAL.gold.scale(pulse);
+      return;
+    }
+    for (const h of this.outline?.hulls ?? []) h.dispose();
+    this.outline = null;
+    if (id === null || parts.length === 0) return;
+    if (!this.outlineMat) {
+      const m = new StandardMaterial("outlineMat", this.scene);
+      m.disableLighting = true;
+      m.emissiveColor = PAL.gold.clone();
+      m.cullBackFaces = false; // doar fețele din spate
+      m.fogEnabled = false;
+      this.outlineMat = m;
+    }
+    const hulls = parts.map((p) => {
+      const h = p.sourceMesh.clone("outline", null, true, false);
+      h.parent = p.parent;
+      h.position.copyFrom(p.position);
+      if (p.rotationQuaternion) h.rotationQuaternion = p.rotationQuaternion.clone();
+      else h.rotation.copyFrom(p.rotation);
+      h.scaling.copyFrom(p.scaling).multiplyInPlace(new Vector3(1.1, 1.04, 1.1));
+      h.material = this.outlineMat;
+      h.useVertexColors = false;
+      h.isPickable = false;
+      h.receiveShadows = false;
+      h.isVisible = true;
+      h.setEnabled(true);
+      return h;
+    });
+    this.outline = { id, parts, hulls };
   }
 
   /** Inel auriu sub construcția selectată (pentru editare). */

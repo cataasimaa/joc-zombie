@@ -35,8 +35,8 @@ export function buildPine(scene: Scene, mats: Materials, seed: number): Mesh[] {
         p: [Math.cos(a) * dx, y + dy, -Math.sin(a) * dx],
         r: [0, a, -(Math.PI / 2 + droop)],
       }, { color: green, wear: 0.18, smooth: true });
-      // Bulgăre de zăpadă pe partea de sus a crengii.
-      if (k.rand() < 0.65) {
+      // Bulgăre de zăpadă doar pe crengile de sus (jos, sub coroană, zăpada nu ajunge).
+      if (i >= levels - 3 && k.rand() < 0.75) {
         k.sphere(1, 5, {
           p: [Math.cos(a) * dx * 0.9, y + dy + thick * 0.32, -Math.sin(a) * dx * 0.9],
           r: [0, a, -droop * 0.8],
@@ -45,8 +45,8 @@ export function buildPine(scene: Scene, mats: Materials, seed: number): Mesh[] {
       }
     }
   }
-  // Vârful.
-  k.cyl(0.9, 0, 0.35, 5, { p: [0, H + 0.15, 0] }, { color: PAL.pine, wear: 0.15, frost: 0.6, frostNormal: 0.5 });
+  // Vârful, cu o căciulă de zăpadă.
+  k.cyl(0.9, 0, 0.35, 5, { p: [0, H + 0.15, 0] }, { color: PAL.pine, wear: 0.15, frost: 0.9, frostNormal: 0.3 });
   return k.build(`pine${seed}`);
 }
 
@@ -63,7 +63,8 @@ export function buildTree(scene: Scene, mats: Materials, seed: number): Mesh[] {
     k.cyl(h, 0.12, d, 7, { p: [k.rand(-0.05, 0.05), y + h / 2, k.rand(-0.05, 0.05)], r: [0, k.rand(0, 3), 0] }, {
       color,
       wear: 0.12,
-      frost: 0.95,
+      // Zăpada stă doar pe treptele de sus; cele de jos rămân verzi-închise.
+      frost: i >= tiers - 2 ? 0.95 : 0.15,
       frostAbove: y + h * 0.62,
       frostNormal: 0.2,
       smooth: true,
