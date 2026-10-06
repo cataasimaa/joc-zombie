@@ -47,7 +47,8 @@ export function spawnZombie(state: GameState, type: ZombieType, near: Vec2 | nul
     frozenTimer: 0,
     freezeImmune: 0,
     abilityTimer: firstAbility(state, type),
-    ability2Timer: type === "witch" ? A.towerFreezeEvery : type === "colossus" ? A.boulderEvery : type === "frostKing" ? A.kingVolleyEvery : 0,
+    ability2Timer:
+      type === "witch" ? A.towerFreezeEvery : type === "colossus" ? A.boulderEvery : type === "frostKing" ? A.kingVolleyEvery : type === "boss" ? A.lichBoltEvery : 0,
     charge: null,
     burrowed: type === "burrower",
     rageTimer: 0,
@@ -63,7 +64,7 @@ const A = CONFIG.zombieAbilities;
 function firstAbility(state: GameState, type: ZombieType): number {
   const every: Partial<Record<ZombieType, number>> = {
     screamer: A.screamEvery, shaman: A.healEvery, broodmother: A.broodEvery, yeti: A.chargeEvery, witch: A.blinkEvery, colossus: A.stompEvery,
-    frostKing: A.kingStompEvery,
+    frostKing: A.kingStompEvery, boss: A.lichSummonEvery,
   };
   return (every[type] ?? 0) * (0.5 + nextRandom(state) * 0.5);
 }
@@ -260,9 +261,43 @@ function useAbilities(state: GameState, z: Zombie, dt: number, events: GameEvent
       return;
     }
     case "broodmother": {
+      // Matca rănită (sub jumătate) se înfurie: mai rapidă și naște mai des.
+      enrageAtHalf(z, events);
       if (z.abilityTimer > 0) return;
-      z.abilityTimer = A.broodEvery;
+      z.abilityTimer = A.broodEvery * (z.enraged ? A.broodEnragedEvery : 1);
       spawnBrood(state, z, A.broodCount, events);
+      return;
+    }
+    case "boss": {
+      // Lich-ul: ridică morții (strigoi în jurul lui), aruncă salve de țurțuri spre eroul cel mai
+      // apropiat (sau spre un turn), iar la jumătate de viață se înfurie: mai rapid, de 2× mai mulți morți.
+      enrageAtHalf(z, events);
+      if (z.abilityTimer <= 0) {
+        z.abilityTimer = A.lichSummonEvery * (z.enraged ? 0.75 : 1);
+        const n = Math.min(A.lichSummon * (z.enraged ? 2 : 1), Math.max(0, A.broodCap - state.zombies.length));
+        for (let i = 0; i < n; i++) {
+          const a = (i / Math.max(1, n)) * Math.PI * 2;
+          spawnZombie(state, nextRandom(state) < 0.35 ? "runner" : "walker", { x: z.pos.x + Math.cos(a) * 2.5, z: z.pos.z + Math.sin(a) * 2.5 });
+        }
+        if (n > 0) events.push({ type: "broodSpawn", id: z.id, pos: { ...z.pos }, count: n });
+      }
+      if (z.ability2Timer <= 0) {
+        const hero = nearestLivingHero(state, z.pos, A.lichBoltRange);
+        let target: Vec2 | null = hero ? hero.pos : null;
+        if (!target) {
+          for (const t of state.towers) if (dist(t.pos, z.pos) <= A.lichBoltRange) target = t.pos;
+        }
+        if (target) {
+          z.ability2Timer = A.lichBoltEvery * (z.enraged ? 0.6 : 1);
+          const d = dist(target, z.pos) || 1;
+          const base = Math.atan2(target.x - z.pos.x, target.z - z.pos.z);
+          const bolts = A.lichBolts + (z.enraged ? 2 : 0);
+          for (let i = 0; i < bolts; i++) {
+            const a = base + (i - (bolts - 1) / 2) * 0.2;
+            throwAt(state, z, { x: z.pos.x + Math.sin(a) * d, z: z.pos.z + Math.cos(a) * d }, A.lichBoltDamage * difficultyDamage, "ice", events);
+          }
+        }
+      }
       return;
     }
     case "yeti": {
@@ -386,6 +421,13 @@ function useAbilities(state: GameState, z: Zombie, dt: number, events: GameEvent
       return;
     }
   }
+}
+
+/** Boșii care se înfurie sub jumătate de viață (Matca, Lich-ul). */
+function enrageAtHalf(z: Zombie, events: GameEvent[]): void {
+  if (z.enraged || z.hp > z.maxHp * A.enrageAt) return;
+  z.enraged = true;
+  events.push({ type: "bossEnraged", id: z.id, pos: { ...z.pos } });
 }
 
 /** Yeti-ul: se încordează pe loc, apoi se năpustește în linie dreaptă. */

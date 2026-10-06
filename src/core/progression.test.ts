@@ -7,6 +7,7 @@ import { GameSimulation } from "./Game";
 import { GAME_MAP, OBSTACLES } from "./map";
 import type { GameEvent, Tower } from "./types";
 import { giveXp, gunStats, xpToNextLevel } from "./systems/heroes";
+import { giveWeapon } from "./systems/hotbar";
 import { armorReduction } from "./systems/progression";
 import { waveComposition } from "./systems/waves";
 import { spawnZombie } from "./systems/zombies";
@@ -90,6 +91,84 @@ describe("deblocări cu nivelul", () => {
     levelTo(sim, 8);
     expect(p.weapons).toContain("assaultRifle");
     expect(p.towerTier).toBe(5);
+  });
+});
+
+describe("armele câștigate / deblocate nu dispar", () => {
+  it("pistolul și pușca rămân în 🎒 și în bară după alte niveluri și zile; locul armei trece prin ele", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const p = s.players.p1;
+    levelTo(sim, 2);
+    // Pistolul e mai bun decât țeava: îl ai în mână și îi ia locul în bară (țeava rămâne în 🎒).
+    expect(p.weapon).toBe("pistol");
+    expect(p.hotbar).toContain("weapon:pistol");
+    expect(p.weapons).toEqual(expect.arrayContaining(["rusty", "pistol"]));
+    levelTo(sim, 4);
+    expect(p.weapon).toBe("rifle");
+    expect(p.hotbar).toContain("weapon:rifle");
+    // Mai multe niveluri și câteva zile / nopți: nimic nu dispare.
+    levelTo(sim, 6);
+    for (let n = 0; n < 2; n++) {
+      sim.enqueue({ type: "startNightNow", playerId: "p1" });
+      sim.step(DT);
+      s.spawnQueue = [];
+      s.phaseTimer = 0.01;
+      run(sim, 0.5);
+    }
+    expect(p.weapons).toEqual(expect.arrayContaining(["rusty", "pistol", "rifle"]));
+    expect(p.hotbar).toContain("weapon:rifle");
+    // Apăsat iar pe locul armei din mână: treci prin celelalte arme pe care le ai.
+    const slot = p.hotbar.indexOf("weapon:rifle");
+    const seen = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      sim.enqueue({ type: "useSlot", playerId: "p1", slot });
+      sim.step(DT);
+      seen.add(p.weapon);
+      expect(p.hotbar[slot]).toBe(`weapon:${p.weapon}`);
+    }
+    expect(seen).toEqual(new Set(["rusty", "pistol", "rifle"]));
+  });
+
+  it("o armă câștigată la magazin nu e înlocuită de una de același rang primită la nivel", () => {
+    const sim = newGame();
+    const p = sim.state.players.p1;
+    levelTo(sim, 2);
+    giveWeapon(sim.state, p, "scattergun");
+    expect(p.weapon).toBe("scattergun");
+    expect(p.hotbar).toContain("weapon:scattergun");
+    levelTo(sim, 4); // pușca (nv. 4) are același rang: nu-ți ia flinta din mână / din bară
+    expect(p.weapon).toBe("scattergun");
+    expect(p.hotbar).toContain("weapon:scattergun");
+    expect(p.weapons).toContain("rifle");
+    levelTo(sim, 8); // pușca de asalt e mai bună: o iei în mână
+    expect(p.weapon).toBe("assaultRifle");
+    expect(p.weapons).toEqual(expect.arrayContaining(["rusty", "pistol", "scattergun", "rifle", "assaultRifle"]));
+  });
+
+  it("armele chiar diferă: pistol rapid / slab, pușca lentă / grea / departe, flinta cu alice de aproape, asaltul cu încărcător mare", () => {
+    const sim = newGame();
+    const s = sim.state;
+    const p = s.players.p1;
+    const h = s.heroes[0];
+    const stats = (w: typeof p.weapon) => {
+      p.weapon = w;
+      return gunStats(s, h);
+    };
+    const rusty = stats("rusty");
+    const pistol = stats("pistol");
+    const rifle = stats("rifle");
+    const shotgun = stats("scattergun");
+    const assault = stats("assaultRifle");
+    expect(pistol.damage).toBeLessThan(rusty.damage);
+    expect(pistol.reloadTime).toBeLessThan(rusty.reloadTime * 0.6);
+    expect(rifle.damage).toBeGreaterThan(rusty.damage * 2);
+    expect(rifle.interval).toBeGreaterThan(rusty.interval * 2);
+    expect(rifle.range).toBeGreaterThan(rusty.range + 4);
+    expect(shotgun.pellets).toBeGreaterThanOrEqual(5);
+    expect(shotgun.range).toBeLessThan(rusty.range - 3);
+    expect(assault.magazine).toBeGreaterThan(rusty.magazine * 2);
+    expect(assault.interval).toBeLessThan(rusty.interval * 0.5);
   });
 });
 
@@ -402,6 +481,36 @@ describe("runda de 30 de minute", () => {
     const ev = sim.drainEvents();
     expect(ev.some((e) => e.type === "broodSpawn")).toBe(true);
     expect(ev.filter((e) => e.type === "throw").length).toBe(CONFIG.zombieAbilities.kingVolley);
+  });
+});
+
+describe("lich-ul și matca nu mai sunt ușori", () => {
+  it("lich-ul ridică morții, aruncă salve de țurțuri și se înfurie la jumătate", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: 20, z: -20 };
+    const l = dummy(sim, "boss", 20, -30, 1000);
+    l.abilityTimer = 0;
+    l.ability2Timer = 0;
+    sim.drainEvents();
+    sim.step(DT);
+    let ev = sim.drainEvents();
+    expect(ev.some((e) => e.type === "broodSpawn")).toBe(true);
+    expect(ev.filter((e) => e.type === "throw").length).toBe(CONFIG.zombieAbilities.lichBolts);
+    l.hp = 400;
+    sim.step(DT);
+    ev = sim.drainEvents();
+    expect(l.enraged).toBe(true);
+    expect(ev.some((e) => e.type === "bossEnraged")).toBe(true);
+    expect(CONFIG.zombies.boss.hp).toBeGreaterThanOrEqual(2 * 1700);
+  });
+
+  it("matca se înfurie sub jumătate de viață", () => {
+    const sim = newGame();
+    const m = dummy(sim, "broodmother", 25, 25, 1000);
+    m.hp = 400;
+    sim.step(DT);
+    expect(m.enraged).toBe(true);
   });
 });
 

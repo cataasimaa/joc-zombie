@@ -1,4 +1,4 @@
-// Ziua și noaptea. Ziua (60 s) construiești; noaptea atacă zombii.
+// Ziua și noaptea. Ziua (120 s) construiești; noaptea atacă zombii (noaptea cu boss ține cât trăiește boss-ul).
 // Fiecare noapte e mai lungă decât precedenta. În zori, zombii rămași iau foc și mor încet.
 
 import { CONFIG, type Difficulty, type GameMode, isBoss, type Weather, type ZombieType } from "../config";
@@ -126,9 +126,11 @@ export function updateWaves(state: GameState, dt: number, events: GameEvent[]): 
   if (state.stage === "bossRush") return updateBossRush(state, dt, events);
   if (state.stage === "endless") return updateEndless(state, dt, events);
 
-  // Campania: ceasul mare de 30 de minute. Când ajunge la zero, începe asaltul boșilor.
+  // Campania: ceasul mare de 30 de minute. Când ajunge la zero, începe asaltul boșilor —
+  // dar nu în mijlocul unei nopți cu boss: întâi trebuie omorât boss-ul campaniei (Matca / Lich-ul).
+  const bossNight = state.phase === "night" && campaignBossAlive(state);
   state.runTimer = Math.max(0, state.runTimer - dt);
-  if (state.runTimer <= 0) return startBossRush(state, events);
+  if (state.runTimer <= 0 && !bossNight) return startBossRush(state, events);
 
   if (state.phase === "day") {
     if (state.phaseTimer <= 0) startNight(state, events);
@@ -137,9 +139,20 @@ export function updateWaves(state: GameState, dt: number, events: GameEvent[]): 
   if (state.phase !== "night") return;
   spawnFromQueue(state, dt);
 
+  // Noaptea cu boss nu se termină cât trăiește boss-ul: ceasul nopții stă la 0 până îl omori
+  // (boss-ul nu mai arde în zori). Când moare, zorii vin imediat.
+  if (state.phaseTimer <= 0 && bossNight) {
+    state.phaseTimer = 0;
+    return;
+  }
   // Zorii vin când se termină noaptea, sau mai devreme dacă ai omorât tot ce a venit.
   const allDead = state.spawnQueue.length === 0 && state.zombies.every((z) => z.burning);
   if (state.phaseTimer <= 0 || allDead) startDay(state, events);
+}
+
+/** Mai e în viață (sau încă pe drum, în coadă) un boss al nopții? */
+export function campaignBossAlive(state: GameState): boolean {
+  return state.spawnQueue.some((t) => isBoss(t)) || state.zombies.some((z) => isBoss(z.type) && !z.burning);
 }
 
 /** Zombii din coadă apar în hoarde: primul alege locul, ceilalți apar în jurul lui. */

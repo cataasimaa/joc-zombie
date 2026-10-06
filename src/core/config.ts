@@ -297,8 +297,9 @@ export const CONFIG = {
     bloater: { hp: 70, speed: 1.7, radius: 0.8, damage: 0, attackInterval: 1, coinChance: 0.25, coins: 6, xp: 7, rangedRange: 0, flying: false },
     burrower: { hp: 55, speed: 4.2, radius: 0.6, damage: 14, attackInterval: 0.9, coinChance: 0.3, coins: 7, xp: 9, rangedRange: 0, flying: false },
     shaman: { hp: 60, speed: 2.0, radius: 0.6, damage: 8, attackInterval: 1.2, coinChance: 0.4, coins: 9, xp: 12, rangedRange: 8, flying: false },
-    boss: { hp: 1700, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 100, rangedRange: 0, flying: false },
-    broodmother: { hp: 1100, speed: 1.6, radius: 1.4, damage: 40, attackInterval: 1.3, coinChance: 1, coins: 50, xp: 90, rangedRange: 0, flying: false },
+    // Lich-ul (campania): era bătut prea ușor — viață ×2,35 (1700 → 4000) + abilități (vezi zombieAbilities).
+    boss: { hp: 4000, speed: 1.4, radius: 1.5, damage: 75, attackInterval: 1.6, coinChance: 1, coins: 50, xp: 100, rangedRange: 0, flying: false },
+    broodmother: { hp: 1600, speed: 1.6, radius: 1.4, damage: 40, attackInterval: 1.3, coinChance: 1, coins: 50, xp: 90, rangedRange: 0, flying: false },
     yeti: { hp: 1500, speed: 2.2, radius: 1.3, damage: 55, attackInterval: 1.2, coinChance: 1, coins: 50, xp: 110, rangedRange: 0, flying: false },
     witch: { hp: 1250, speed: 2.0, radius: 1.0, damage: 30, attackInterval: 1.4, coinChance: 1, coins: 50, xp: 120, rangedRange: 11, flying: false },
     colossus: { hp: 3200, speed: 1.0, radius: 2.0, damage: 90, attackInterval: 2.0, coinChance: 1, coins: 80, xp: 160, rangedRange: 0, flying: false },
@@ -323,8 +324,10 @@ export const CONFIG = {
     healRadius: 6,
     healPct: 0.2,
     /** Matca: naște pui (târâtori) și la moarte îi scapă pe toți. */
-    broodEvery: 6,
-    broodCount: 2,
+    broodEvery: 5,
+    broodCount: 3,
+    /** Matca înfuriată (sub jumătate de viață) naște mai des: intervalul × atât. */
+    broodEnragedEvery: 0.6,
     broodOnDeath: 6,
     /** Nu mai naște dacă pe hartă sunt deja atâția zombi (să nu facă lag pe telefon). */
     broodCap: 120,
@@ -364,6 +367,17 @@ export const CONFIG = {
     kingVolleyDamage: 24,
     kingVolleyRange: 16,
     kingStompEvery: 7,
+    /**
+     * Lich-ul (boss-ul campaniei): ridică morții (strigoi / târâtori în jur) și aruncă salve de
+     * țurțuri spre eroul cel mai apropiat (sau spre un turn). Sub jumătate de viață se înfurie:
+     * merge mai repede, cheamă de 2× mai mulți, salve mai dese și cu 2 țurțuri în plus.
+     */
+    lichSummonEvery: 10,
+    lichSummon: 4,
+    lichBoltEvery: 3.5,
+    lichBolts: 3,
+    lichBoltDamage: 20,
+    lichBoltRange: 14,
   },
 
   zombieCommon: {
@@ -470,7 +484,8 @@ export const CONFIG = {
     woodIncomeBase: 30,
     woodIncomePerWave: 10,
     startTowerSlots: 3,
-    startBarricadeSlots: 8,
+    /** Ziduri: ~50 de la început (ca să poți înconjura mina și baza fără să rămâi fără sloturi). */
+    startBarricadeSlots: 50,
     /** La fiecare N nopți: +1 slot de turn și +4 sloturi de zid. */
     slotEveryWaves: 3,
     barricadeSlotsPerStep: 4,
@@ -481,12 +496,15 @@ export const CONFIG = {
     /** Cât de departe ajungi cu târnăcopul și cât de des lovești cât ții apăsat. */
     reach: 2.3,
     /** Secunde între lovituri (cât ții apăsat): lemnul și piatra merg greu. */
-    hitInterval: { tree: 0.7, ore: 1.0, animal: 0.6 },
+    // Bradul: 0,7 → 0,63 s (−10%), tăiatul la început mergea prea greu.
+    hitInterval: { tree: 0.63, ore: 1.0, animal: 0.6, zombie: 0.6 },
     /** Un brad cade după atâtea lovituri; fiecare lovitură dă atâta lemn. */
     treeHits: 50,
     woodPerHit: 1,
     /** Damage-ul târnăcopului în animale (o găină moare dintr-o lovitură, un porc din două). */
     animalDamage: 16,
+    /** Damage-ul târnăcopului în zombi (× nivelul eroului, ca armele). Zombii din rază au prioritate. */
+    zombieDamage: 18,
     /** Minereuri: apar ziua, aleator. Câte lovituri țin și câte monede (aur) dau. */
     ore: {
       silver: { hits: 8, coins: 18 },
@@ -643,12 +661,16 @@ export const CONFIG = {
   },
 
   waves: {
-    /** Câte nopți încap (cam) în cele 30 de minute ale campaniei — doar pentru afișare / teste. */
-    count: 8,
-    /** Prima zi (secunde) — scurtă, ca să intri repede în acțiune. */
-    firstDay: 30,
-    /** Ziua: timp de construit. */
-    day: 45,
+    /**
+     * Câte nopți încap în cele 30 de minute ale campaniei — doar pentru afișare / teste.
+     * Cu zile de 120 s: 6 × 120 + nopțile 1–6 (150…175 s, 975 s) = 1695 s < 1800 s; a 7-a zi nu mai încape.
+     * (Nopțile cu boss țin cât trăiește boss-ul, iar o noapte curățată devreme aduce zorii mai repede.)
+     */
+    count: 6,
+    /** Prima zi (secunde): la fel de lungă ca celelalte (120 s) — ai timp să tai lemne și să construiești. */
+    firstDay: 120,
+    /** Ziua: timp de construit (120 s în toate modurile). */
+    day: 120,
     /** Noaptea: atacă zombii. Devine puțin mai lungă cu fiecare noapte. */
     nightBase: 150,
     nightPerWave: 5,

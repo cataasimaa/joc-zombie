@@ -1,9 +1,9 @@
 // Bara rapidă: 4 locuri pe care le aranjezi cum vrei (din inventar).
 // Într-un loc poate sta: o armă pe care o ai, târnăcopul, lanterna, minele, mâncare sau pește.
-// Apăsat: arma / târnăcopul îl iei în mână, lanterna o aprinzi / stingi, mina o pui, mâncarea o mănânci.
+// Apăsat: arma / târnăcopul îl iei în mână (pe arma din mână: următoarea armă pe care o ai), lanterna o aprinzi / stingi, mina o pui, mâncarea o mănânci.
 
 import { FISH_KINDS, type GameMode, type ItemKind } from "../config";
-import type { WeaponId } from "../items";
+import { WEAPONS, type WeaponId } from "../items";
 import type { GameEvent, GameState, Hero, Player, PlayerId, SlotItem } from "../types";
 import { gunStats, heroById } from "./heroes";
 import { placeMine } from "./mines";
@@ -55,7 +55,13 @@ export function useSlot(state: GameState, playerId: PlayerId, slot: number, even
   const hero = player && heroById(state, player.heroId);
   if (!player || !item || !hero || !hero.alive) return false;
   if (item.startsWith("weapon:")) {
-    equipWeapon(state, player, hero, item.slice(7) as WeaponId);
+    const weapon = item.slice(7) as WeaponId;
+    // Încă o apăsare pe arma din mână = următoarea armă (pistol → pușcă → ...).
+    if (player.tool === "gun" && player.weapon === weapon && cycleWeapon(state, player, hero, slot, weapon)) {
+      events.push({ type: "equipped", playerId, item: player.hotbar[slot]! });
+      return true;
+    }
+    equipWeapon(state, player, hero, weapon);
   } else if (item === "pickaxe" || item === "chainsaw" || item === "rod" || item === "lantern") {
     if (item === "chainsaw" && !player.chainsaw) return false;
     // Unealta în mână (butonul ✛ o folosește); încă o apăsare pe același loc = înapoi la armă.
@@ -70,13 +76,63 @@ export function useSlot(state: GameState, playerId: PlayerId, slot: number, even
   return true;
 }
 
-/** O armă nouă (din magazin / cufăr): o ai în inventar, o iei în mână și ocupă un loc liber din bară. */
-export function giveWeapon(state: GameState, player: Player, weapon: WeaponId): void {
+/**
+ * O armă nouă (din magazin / cufăr / nivel): rămâne pentru totdeauna în `player.weapons` (🎒).
+ * BUG vechi: bara are 4 locuri pline de la start, deci arma nouă nu încăpea în bară, dar era luată
+ * în mână; prima apăsare pe locul armei (țeava) o schimba înapoi și arma nouă „dispărea”.
+ * Acum: dacă e cel puțin la fel de bună ca arma din mână, o iei în mână și îi ia locul în bară
+ * (cea veche rămâne în 🎒 și o găsești apăsând din nou pe locul armei); dacă e mai slabă, intră
+ * doar într-un loc liber (sau rămâne în 🎒) și nu-ți schimbă arma din mână.
+ */
+export function giveWeapon(state: GameState, player: Player, weapon: WeaponId, source: "won" | "level" = "won"): void {
   if (!player.weapons.includes(weapon)) player.weapons.push(weapon);
-  equipWeapon(state, player, heroById(state, player.heroId), weapon);
   const key: SlotItem = `weapon:${weapon}`;
-  if (player.hotbar.includes(key)) return;
-  const empty = player.hotbar.indexOf(null);
-  if (empty >= 0) player.hotbar[empty] = key;
+  // O armă câștigată (magazin / cufăr) o iei în mână dacă e cel puțin la fel de bună; una primită
+  // la nivel doar dacă e strict mai bună (pușca de la nv. 4 nu-ți ia din mână flinta câștigată).
+  const r = WEAPONS[weapon].rank;
+  const cur = WEAPONS[player.weapon].rank;
+  const better = source === "won" ? r >= cur : r > cur;
+  if (!player.hotbar.includes(key)) {
+    const current = player.hotbar.indexOf(`weapon:${player.weapon}`);
+    const empty = player.hotbar.indexOf(null);
+    if (better && current >= 0) player.hotbar[current] = key;
+    else if (empty >= 0) player.hotbar[empty] = key;
+    else if (better) {
+      // Arma din mână nu era în bară: luăm locul celei mai slabe arme din bară (dacă există).
+      const worst = weakestWeaponSlot(player);
+      if (worst >= 0) player.hotbar[worst] = key;
+    }
+  }
+  if (better) equipWeapon(state, player, heroById(state, player.heroId), weapon);
 }
 
+function weakestWeaponSlot(player: Player): number {
+  let best = -1;
+  let bestRank = Infinity;
+  player.hotbar.forEach((item, i) => {
+    if (!item?.startsWith("weapon:")) return;
+    const r = WEAPONS[item.slice(7) as WeaponId].rank;
+    if (r < bestRank) {
+      bestRank = r;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/**
+ * Apăsat pe locul armei când o ai deja în mână: treci la următoarea armă pe care o ai (și care nu
+ * stă deja în alt loc din bară); locul din bară arată acum arma nouă. Așa nu se pierde nicio armă.
+ */
+function cycleWeapon(state: GameState, player: Player, hero: Hero, slot: number, current: WeaponId): boolean {
+  const n = player.weapons.length;
+  const start = player.weapons.indexOf(current);
+  for (let i = 1; i < n; i++) {
+    const next = player.weapons[(start + i + n) % n];
+    if (player.hotbar.includes(`weapon:${next}`)) continue;
+    player.hotbar[slot] = `weapon:${next}`;
+    equipWeapon(state, player, hero, next);
+    return true;
+  }
+  return false;
+}

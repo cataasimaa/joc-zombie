@@ -41,7 +41,7 @@ export function gunStats(state: GameState, hero: Hero): GunStats {
     magazine: Math.max(1, Math.round(c.magazine * w.magazine)),
     reloadTime: c.reloadTime * w.reload * skill.reload,
     pellets,
-    spread: pellets > 1 ? Math.max(c.spread, 0.2) : 0,
+    spread: pellets > 1 ? Math.max(c.spread, w.spread ?? 0.2) : 0,
     pierce: c.pierce + w.pierce,
     slow: w.slow,
   };

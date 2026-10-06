@@ -62,7 +62,7 @@ export function onLevelUp(state: GameState, hero: Hero, events: GameEvent[]): vo
   const U = CONFIG.levelUnlocks;
   const weapon = (id: "pistol" | "rifle" | "assaultRifle", at: number) => {
     if (hero.level >= at && !player.weapons.includes(id)) {
-      giveWeapon(state, player, id);
+      giveWeapon(state, player, id, "level");
       events.push({ type: "unlocked", playerId: player.id, what: id });
     }
   };

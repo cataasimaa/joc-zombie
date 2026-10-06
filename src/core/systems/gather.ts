@@ -2,8 +2,8 @@
 //  - pe malul bălții (ziua): arunci undița; când se agață un pește, tragi de mai multe ori
 //    (biban 2, păstrăv 3, știucă 5, somn 8) până nu-ți scapă;
 //  - la taraba negustorului: vinzi tot peștele pe aur (fiecare specie are prețul ei);
-//  - altfel, cât ții apăsat, lovești cu târnăcopul ce e cel mai aproape: un animal (găină, porc,
-//    căprioară, urs), un zăcământ de argint / aur sau un brad (+1 lemn; la 50 de lovituri cade).
+//  - altfel, cât ții apăsat, lovești cu târnăcopul ce e cel mai aproape: un zombie (întâi!), un animal
+//    (găină, porc, căprioară, urs), un zăcământ de argint / aur sau un brad (+1 lemn; la 50 de lovituri cade).
 // Zăcămintele apar ziua, aleator, pe hartă.
 
 import { CONFIG, FISH_KINDS, type FishKind } from "../config";
@@ -44,14 +44,15 @@ export function fishCount(player: Player): number {
   return FISH_KINDS.reduce((a, k) => a + player.inventory[k], 0);
 }
 
-type Target = { kind: "animal"; animal: Animal; pos: Vec2 } | { kind: "ore"; ore: Ore; pos: Vec2 } | { kind: "tree"; index: number; pos: Vec2 };
+type Target = { kind: "zombie"; zombie: Zombie; pos: Vec2 } | { kind: "animal"; animal: Animal; pos: Vec2 } | { kind: "ore"; ore: Ore; pos: Vec2 } | { kind: "tree"; index: number; pos: Vec2 };
 
 /**
- * Ținta târnăcopului din raza brațului. Animalele au prioritate (fug!), apoi zăcămintele,
- * apoi brazii; între ținte de același fel, cea mai apropiată.
+ * Ținta târnăcopului din raza brațului. Zombii au prioritate (te apări!), apoi animalele (fug!),
+ * apoi zăcămintele, apoi brazii; între ținte de același fel, cea mai apropiată.
+ * (Înainte zombii nu erau luați deloc în seamă, așa că târnăcopul nu le făcea nimic.)
  */
 export function toolTarget(state: GameState, hero: Hero): Target | null {
-  const PRIORITY = { animal: 0, ore: 1, tree: 2 } as const;
+  const PRIORITY = { zombie: 0, animal: 1, ore: 2, tree: 3 } as const;
   let best: Target | null = null;
   let bestScore = Infinity;
   const consider = (t: Target, edge: number) => {
@@ -62,6 +63,8 @@ export function toolTarget(state: GameState, hero: Hero): Target | null {
       best = t;
     }
   };
+  // Săpătorul sub zăpadă nu poate fi lovit.
+  for (const z of state.zombies) if (targetable(z)) consider({ kind: "zombie", zombie: z, pos: z.pos }, CONFIG.zombies[z.type].radius);
   for (const a of state.animals) consider({ kind: "animal", animal: a, pos: a.pos }, CONFIG.animals[a.kind].radius);
   for (const o of state.ores) consider({ kind: "ore", ore: o, pos: o.pos }, 0.6);
   for (const o of OBSTACLES) {
@@ -252,7 +255,10 @@ export function updateGather(state: GameState, dt: number, events: GameEvent[]):
     hero.actionTimer = G.hitInterval[target.kind] * speed;
     hero.facing = angleOf(target.pos.x - hero.pos.x, target.pos.z - hero.pos.z);
     events.push({ type: "toolHit", heroId: hero.id, target: target.kind, tool: "pickaxe", pos: { ...target.pos } });
-    if (target.kind === "animal") {
+    if (target.kind === "zombie") {
+      // Târnăcopul lovește și zombii (damage-ul crește cu nivelul, ca la arme): sânge, XP, monede.
+      damageZombie(state, target.zombie, G.zombieDamage * heroDamageMultiplier(hero), events, hero.id, hero.pos);
+    } else if (target.kind === "animal") {
       damageAnimal(state, target.animal, G.animalDamage, events, hero.pos);
     } else if (target.kind === "ore") {
       const ore = target.ore;

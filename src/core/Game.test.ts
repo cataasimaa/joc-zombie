@@ -10,7 +10,7 @@ import { gunStats } from "./systems/heroes";
 import { rollRarity } from "./systems/shop";
 import { canBuildTower, effectiveTowerStats, towerRefund, towerSlots, towerStats } from "./systems/towers";
 import { nightDuration, waveComposition } from "./systems/waves";
-import { spawnZombie } from "./systems/zombies";
+import { damageZombie, spawnZombie } from "./systems/zombies";
 
 const DT = 1 / CONFIG.tickRate;
 
@@ -64,7 +64,7 @@ describe("zi și noapte", () => {
     sim.enqueue({ type: "startNightNow", playerId: "p1" });
     sim.step(DT);
     s.spawnQueue = [];
-    const z = dummy(sim, "boss", 20, 20, 1000);
+    const z = dummy(sim, "brute", 20, 20, 1000);
     s.phaseTimer = 0.01;
     sim.step(DT);
     expect(s.phase).toBe("day");
@@ -75,6 +75,48 @@ describe("zi și noapte", () => {
     run(sim, 15);
     expect(s.zombies.length).toBe(0);
     expect(s.coins.length).toBe(0);
+  });
+
+  it("noaptea cu boss nu se termină cât trăiește boss-ul; când moare, vin zorii și rămâne cufărul", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    sim.enqueue({ type: "startNightNow", playerId: "p1" });
+    sim.step(DT);
+    s.spawnQueue = [];
+    const boss = dummy(sim, "boss", 30, 30, 1000);
+    s.phaseTimer = 0.01;
+    run(sim, 5);
+    // Timpul nopții a expirat, dar boss-ul trăiește: tot noapte, boss-ul nu arde.
+    expect(s.phase).toBe("night");
+    expect(s.phaseTimer).toBe(0);
+    expect(boss.burning).toBe(false);
+    expect(s.zombies.includes(boss)).toBe(true);
+    // Moare boss-ul (lovit de erou): zorii vin imediat, cufărul rămâne pe jos.
+    sim.drainEvents();
+    damageZombie(s, boss, 1e6, [], s.heroes[0].id);
+    sim.step(DT);
+    expect(s.zombies.includes(boss)).toBe(false);
+    expect(s.chests.length).toBe(1);
+    expect(s.phase).toBe("day");
+  });
+
+  it("dacă cele 30 de minute se termină într-o noapte cu boss, asaltul începe după ce moare boss-ul", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: -38, z: -38 };
+    sim.enqueue({ type: "startNightNow", playerId: "p1" });
+    sim.step(DT);
+    s.spawnQueue = [];
+    const boss = dummy(sim, "broodmother", 30, 30, 1000);
+    s.runTimer = 0.01;
+    s.phaseTimer = 0.01;
+    run(sim, 2);
+    expect(s.stage).toBe("campaign");
+    expect(s.phase).toBe("night");
+    s.zombies.splice(s.zombies.indexOf(boss), 1);
+    sim.step(DT);
+    expect(s.stage).toBe("bossRush");
   });
 });
 
@@ -642,6 +684,24 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     sim.state.players.p1.tool = tool;
   };
 
+  it("târnăcopul lovește zombii din raza brațului (au prioritate), dar nu pe săpătorul îngropat", () => {
+    const sim = newGame();
+    const s = sim.state;
+    s.heroes[0].pos = { x: 20, z: 20 };
+    hold(sim, "pickaxe");
+    const z = dummy(sim, "walker", 21.5, 20, 1000);
+    const deep = dummy(sim, "burrower", 20, 21.4, 1000);
+    expect(deep.burrowed).toBe(true);
+    sim.drainEvents();
+    sim.enqueue({ type: "action", playerId: "p1", on: true });
+    sim.step(DT);
+    const ev = sim.drainEvents();
+    expect(z.hp).toBeCloseTo(1000 - CONFIG.gather.zombieDamage, 3);
+    expect(deep.hp).toBe(1000);
+    expect(ev.some((e) => e.type === "zombieHit" && e.id === z.id)).toBe(true);
+    expect(ev.some((e) => e.type === "toolHit" && e.target === "zombie")).toBe(true);
+  });
+
   it("lovești un brad cu târnăcopul: +1 lemn pe lovitură, cade după 50", () => {
     const sim = newGame();
     const s = sim.state;
@@ -650,8 +710,8 @@ describe("unelte: târnăcop, pescuit, vânzare", () => {
     hold(sim, "pickaxe");
     const wood = s.players.p1.wood;
     sim.enqueue({ type: "action", playerId: "p1", on: true });
-    // Lovituri la 0,7 s: în 2,05 s = 3 lovituri (la 0; 0,7; 1,4).
-    run(sim, 2.05);
+    // Lovituri la 0,63 s: în 1,8 s = 3 lovituri (la 0; 0,63; 1,26).
+    run(sim, 1.8);
     expect(s.treeHits[0]).toBe(3);
     expect(s.players.p1.wood).toBe(wood + 3);
     s.treeHits[0] = 49;

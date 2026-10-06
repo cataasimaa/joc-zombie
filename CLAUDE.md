@@ -53,7 +53,8 @@ iconița, fără gloanțe), undița aruncă / trage peștele („TRAGE 2/5”), 
 (arată bateria; cercul din jur se golește). Nu mai există buton separat de acțiune; peștele se
 vinde singur când ajungi la tarabă.
 Bara de jos (stil Ark) = 4 locuri: armă, târnăcop, undiță, lanternă, mine, mâncare, pește.
-Apăsat pe loc = îl iei în mână / îl folosești (încă o dată = înapoi la armă). În 🎒 (grilă de
+Apăsat pe loc = îl iei în mână / îl folosești (încă o dată = înapoi la armă; pe arma din mână =
+următoarea armă pe care o ai, iar locul o arată pe ea). În 🎒 (grilă de
 iconițe) **tragi cu degetul** un obiect pe un loc din bară (sau tap pe obiect, apoi pe loc); tragi
 un loc din bară în afara ei = îl golești; între locuri = se schimbă între ele.
 HUD stânga sus: nume, nivel, viață, XP, lemn și aur. **Nivelul e un buton**: când ai puncte de pus,
@@ -231,12 +232,17 @@ sau texturi din acele jocuri.
 
 - **Runda** (`CONFIG.run`, `systems/waves.ts`, `state.stage`), după ideea lui Andrei (Survival din Warframe):
   1. **Campania — 30 de minute**: timpul de lângă ceasul de sus („29:12”) numără invers; între timp zi și
-     noapte ca înainte: ziua 45 s (prima 30 s) construiești, noaptea 150 s + 5 s pe noapte (~8 nopți
-     încap). Zombii vin în **hoarde** (3 + noapte/2) în primele 75% din noapte; în zori ard.
-     Boșii campaniei: Matca (noaptea 3), Lich-ul (noaptea 6). Sub un minut, ceasul clipește roșu.
+     noapte ca înainte: ziua **120 s** (și prima zi; în ambele moduri) construiești, noaptea 150 s + 5 s
+     pe noapte (6 × 120 s + nopțile 1–6 = 1695 s → **~6 nopți încap**). Zombii vin în **hoarde**
+     (3 + noapte/2) în primele 75% din noapte; în zori ard. Boșii campaniei: Matca (noaptea 3),
+     Lich-ul (noaptea 6, începe la ~25:20). **Noaptea cu boss nu se termină cât trăiește boss-ul**:
+     ceasul nopții stă la 0 până îl omori (boss-ul nu mai arde în zori, deci lasă mereu cufărul), apoi
+     zorii vin imediat. Dacă cele 30 de minute expiră într-o noapte cu boss, asaltul începe după ce
+     moare boss-ul. Sub un minut, ceasul clipește roșu.
   2. **Asaltul boșilor — fără limită de timp**: la 0:00 se face noapte și boșii vin unul după altul
      (Yeti → Vrăjitoarea → Colosul → **Regele Iernii**, cel mai greu), fiecare cu escortă și zombi
-     care tot vin cât trăiește. Între boși: 25 s de pauză (zi scurtă: lemn, gloanțe, reparat).
+     care tot vin cât trăiește. Între boși: 25 s de pauză (zi scurtă: lemn, gloanțe, reparat — rămâne
+     scurtă, nu 120 s).
      Lângă ceas: „☠ 2/4” (boși învinși).
   3. **Valul fără sfârșit**: după ultimul boss, un val nou la 35 s, tot mai mare și mai puternic,
      cu un boss la întâmplare la fiecare 5 valuri. Ceasul arată ♾ și „4:37” — cât reziști. Nu mai există
@@ -270,8 +276,8 @@ sau texturi din acele jocuri.
 - **Animale sălbatice** (ambele moduri, ziua, la 16–34 m de mină, departe de eroi): căprioare (fug,
   12 aur), urși (atacă, max 2, 40 aur). Aurul cade pe jos ca monede, plus carne.
 - **Unelte** (`CONFIG.gather`, unealta în mână + ✛): târnăcopul (ținut cu ambele mâini) lovește
-  ținta din raza brațului (animal > zăcământ > brad) la 0,7 s (brad), 1 s (piatră), 0,6 s (animal),
-  sau în gol la 0,8 s; îl ridică peste umăr, izbește, corpul se apleacă odată cu lovitura.
+  ținta din raza brațului (**zombi** > animal > zăcământ > brad) la 0,63 s (brad), 1 s (piatră),
+  0,6 s (animal / zombi: 18 damage × nivelul, ca armele; săpătorul îngropat nu), sau în gol la 0,8 s; îl ridică peste umăr, izbește, corpul se apleacă odată cu lovitura.
   Lanterna: bateria ține ~6 min aprinsă, se reîncarcă în ~4 min stinsă. Brad: +1 lemn pe lovitură, cade după 50 și dispare.
   Zăcăminte de argint (8 lovituri, 18 aur) și aur (12 lovituri, 45 aur) apar ziua aleator (3 pe zi,
   max 6); se micșorează la fiecare lovitură și se sparg. Cu târnăcopul / undița în mână nu tragi.
@@ -301,7 +307,7 @@ sau texturi din acele jocuri.
   premiile mari: arme, nivelul 3 al turnurilor, loc de turn, câștig în monede (75 / 150 / 400).
   Fiecare recompensă (în afară de nimic/lemn/mine/monede) se câștigă **o singură dată pe rundă**.
   Rolele se opresc pe rând în ~3 s; sunete de cazino (clicuri, clopote, sirenă la jackpot).
-- **Cufărul boss-ului**: lich-ul învins (nu ars în zori) lasă un cufăr de lemn ars legat cu fier, pe
+- **Cufărul boss-ului**: lich-ul învins lasă un cufăr de lemn ars legat cu fier, pe
   jumătate îngropat, cu balama de os; îl **împuști** (60 HP) ca să se deschidă: ceva epic/legendar
   (`CHEST_POOL`) + 60 lemn + 3 încărcătoare + 3 carne friptă. Lumina e chihlimbar, nu aur.
 - **Ziduri în 3 stări** (aceeași piesă, din țăruși, scânduri și zăpadă — fără piatră): întreg,
@@ -320,6 +326,9 @@ sau texturi din acele jocuri.
   Fiecare tip are vocea lui (fugarul țipă, umflatul bolborosește, săpătorul țăcăne, șamanul
   incantează, Matca șuieră, Yeti-ul răcnește, Vrăjitoarea chicotește, Colosul geme ca piatra,
   Regele Iernii râde) și lovitura lui (gheare, bâtă, mușcătură, zid). Fiecare boss se anunță cu vocea lui.
+  Motorul (44,1 kHz): pe lângă corzile vocale vibrează și corzile false la f0/2 (mârâitul gros),
+  hârâit neregulat, aer aspru prin gât, un al doilea gât o octavă mai jos, plescăit de salivă,
+  radiația gurii (acute), egalizare, compresie și ecou scurt. 8 gemete, 6 atacuri, 4 morți.
 - **Sunete realiste** (MP3 din `tools/sfx_synth.py`, cu rezervă din cod): fiecare armă are împușcătura
   ei (pistol, pușcă, asalt, alice, arc, lance), reîncărcare în 2–3 timpi, tub care cade pe zăpadă;
   târnăcopul sună diferit în lemn / piatră / zăpadă / carne; bradul care cade, zăcământul spart,
@@ -328,9 +337,18 @@ sau texturi din acele jocuri.
   și pian); noaptea cu tobe taiko și coarde care cresc cu pericolul; boss = piesă rapidă și grea
   (Regele Iernii: clopot, orgă, cor); valul fără sfârșit = cea mai rapidă. În asalt, pauza dintre
   boși păstrează muzica de boss.
-- **Arme** (`items.ts`): țeava ruginită → pușcă de vânătoare / flintă cu alice (rar) →
-  mitralieră din țevi / arbaletă de os (epic) → lancea de gheață (legendar, încetinește).
-  Armele câștigate se păstrează toate (`player.weapons`); schimbi între ele din bara rapidă.
+- **Arme** (`items.ts`): țeava ruginită → pistol (nv.2) / pușcă (nv.4) / pușcă de asalt (nv.7) →
+  pușcă de vânătoare / flintă cu alice (rar) → mitralieră din țevi / arbaletă de os (epic) → lancea
+  de gheață (legendar, încetinește). Multiplicatori față de arma clasei, ca să se simtă diferit:
+  **pistol** damage ×0,9, foc la ×0,75, încărcător ×0,5, reîncărcare ×0,45, rază −2; **pușca** ×2,7
+  damage, foc la ×2,1, rază +6, trece prin 2; **flinta** +5 alice ×0,6, larg (0,32 rad), rază −5;
+  **asaltul** ×0,8 damage, foc la ×0,45, încărcător ×2,2. Fiecare armă are siluetă proprie
+  (`gun()` în `models/characters.ts`: pușca cu baionetă și închizător, vânătoarea cu lunetă mare,
+  flinta scurtă cu două țevi groase). Armele câștigate se păstrează toate (`player.weapons`, 🎒).
+  O armă nouă (`rank` în `items.ts`) mai bună decât cea din mână o iei în mână și îi ia locul în
+  bară; una primită la nivel trebuie să fie strict mai bună (nu-ți ia din mână flinta câștigată),
+  altfel intră într-un loc liber sau rămâne în 🎒. Apăsat iar pe locul armei = următoarea armă.
+  (Bug reparat: bara era plină, arma nouă nu intra în ea și „dispărea” la prima apăsare pe țeavă.)
 - **Beta fără abilități**: doar 2 butoane (construcție + tragere). Fiecare clasă are o pasivă
   (Healer: aură de vindecare; Sniper: critice + străpunge; Tank: armură, pușcă cu alice, repară ×3).
 - **Tragere**: ochești tu (drag pe buton / mouse) sau automat (ții apăsat); gloanțele se opresc
@@ -364,11 +382,11 @@ sau texturi din acele jocuri.
   eroii. Demolarea dă înapoi 70% din lemn ziua, jumătate din asta noaptea. Zombii sparg zidul din drumul lor; eroii din
   apropiere îl repară automat (Tank ×3, plus bonusul din magazin).
 - **Mine**: din magazin; le pui unde stai (M / 💣); explodează când trece un zombie.
-- **Sloturi**: 3 turnuri + 8 ziduri; la fiecare 3 nopți +1 turn și +4 ziduri.
+- **Sloturi**: 3 turnuri + **50 ziduri**; la fiecare 3 nopți +1 turn și +4 ziduri.
 - **Zombi**: walker, runner (rapid, din noaptea 2), spitter (scuipă de la distanță, din noaptea 3),
-  flyer (zboară peste ziduri, din noaptea 4), brute (din noaptea 4), boss la nopțile 5 și 10.
+  flyer (zboară peste ziduri, din noaptea 4), brute (din noaptea 4), boșii campaniei la nopțile 3 (Matca) și 6 (Lich-ul).
   Navighează cu flow field; un zombie blocat > 2 s poate trece prin obstacole.
-- **Zori**: zombii rămași iau foc și mor încet (fără monede), inclusiv boss-ul.
+- **Zori**: zombii rămași iau foc și mor încet (fără monede). Boss-ul nu: noaptea lui ține până moare.
 - **Monede**: cad doar uneori (șansă pe tip de zombie) și dispar după 30 s (clipesc la final).
 - Zombii: +22% HP pe noapte, 50 + 10/noapte (×dificultate); mina are 3000 HP. Zombii gem tot mai
   des și mai tare cu cât se apropie de tine și mârâie când atacă. Botul de test (stă lângă mină,
@@ -396,8 +414,11 @@ sau texturi din acele jocuri.
   ×1,5 viteză 4 s), **Umflatul** (2+, explodează lângă țintă sau la moarte: gaz, 34 damage în 3 m,
   sparge și ziduri), **Săpătorul** (5+, merge pe sub zăpadă — nu poate fi lovit, trece pe sub
   ziduri — și țâșnește lângă țintă), **Șamanul** (6+, stă în spate și vindecă zombii cu 20%).
-- **Boși** (toți lasă cufăr): **Matca** (campania, noaptea 3: păianjen cu ouă, naște câte 2 pui la
-  6 s și 6 la moarte; max 120 zombi pe hartă), **Lich-ul** (noaptea 6), apoi în asalt: **Yeti-ul
+- **Boși** (toți lasă cufăr): **Matca** (campania, noaptea 3, 1600 HP: păianjen cu ouă, naște câte
+  3 pui la 5 s și 6 la moarte; sub jumătate de viață se înfurie: mai rapidă, naște la 3 s; max 120
+  zombi pe hartă), **Lich-ul** (noaptea 6, 4000 HP — era bătut prea ușor: ridică 4 morți la 10 s,
+  aruncă salve de 3 țurțuri (20 damage, 14 m) la 3,5 s spre erou sau turn; la jumătate se înfurie:
+  mai rapid, 8 morți, 5 țurțuri, salve mai dese), apoi în asalt: **Yeti-ul
   turbat** (se încordează 0,9 s, apoi se năpustește în linie dreaptă, sparge zidul / turnul și te
   aruncă), **Vrăjitoarea viscolului** (se teleportează, aruncă țurțuri, îngheață turnurile 4 s),
   **Colosul de gheață** (undă de șoc în 5 m, bolovani în turnuri, la jumătate de viață se înfurie)

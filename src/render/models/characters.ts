@@ -361,13 +361,18 @@ function gun(k: ModelKit, weapon: WeaponId, sniper: boolean): [number, number, n
       barrel(0.25, 1.1, 0.06, STEEL_DARK);
       return [x, y + 0.05, 1.25];
     case "rifle":
-      // Pușca: patul de lemn lung, mecanism de oțel, lunetă mică, curea.
+      // Pușca (nv. 4): armă militară cu încărcare manuală — foarte lungă, fără lunetă, cu
+      // închizătorul (mânerul) ieșit în lateral și baionetă lungă în vârf. Silueta: o lance.
       stock(0.8, mix(PAL.oldWood, LEATHER, 0.3));
-      k.box(0.12, 0.13, 0.95, { p: [x, y, 0.8] }, { color: mix(PAL.oldWood, LEATHER, 0.3), wear: 0.2 });
-      barrel(1.4, 1.15, 0.075, STEEL_DARK);
-      k.cyl(0.38, 0.08, 0.08, 10, { p: [x, y + 0.17, 0.72], r: [Math.PI / 2, 0, 0] }, { color: STEEL_DARK, mat: "metal", smooth: true });
+      k.box(0.12, 0.13, 1.05, { p: [x, y, 0.85] }, { color: mix(PAL.oldWood, LEATHER, 0.3), wear: 0.2 });
+      barrel(1.5, 1.2, 0.07, STEEL_DARK);
+      // Închizătorul: o bilă pe un braț scurt, în dreapta.
+      k.box(0.18, 0.03, 0.03, { p: [x + 0.13, y + 0.06, 0.55] }, { color: STEEL_DARK, mat: "metal" });
+      k.sphere(0.09, 6, { p: [x + 0.23, y + 0.03, 0.55] }, { color: STEEL_DARK, mat: "metal" });
+      // Baioneta: lamă subțire care trece de țeavă.
+      k.box(0.025, 0.06, 0.5, { p: [x, y - 0.03, 2.08] }, { color: mix(STEEL_DARK, PAL.snow, 0.35), mat: "metal", wear: 0.1 });
       k.box(0.03, 0.04, 0.9, { p: [x - 0.08, y - 0.1, 0.55] }, { color: LEATHER_DARK });
-      return [x, y + 0.05, 1.86];
+      return [x, y + 0.05, 1.95];
     case "assaultRifle":
       // Pușca de asalt: corp negru de oțel, încărcător curbat, pat rabatabil, mâner în față.
       k.box(0.13, 0.2, 0.55, { p: [x, y - 0.02, 0.15] }, { color: hex("#2c3238"), mat: "metal", wear: 0.3 });
@@ -378,16 +383,24 @@ function gun(k: ModelKit, weapon: WeaponId, sniper: boolean): [number, number, n
       k.box(0.05, 0.08, 0.3, { p: [x, y + 0.15, 0.7] }, { color: hex("#22272c"), mat: "metal" });
       return [x, y + 0.05, 1.8];
     case "hunting":
-      stock(0.75);
-      k.box(0.11, 0.11, 0.9, { p: [x, y, 0.75] }, { color: PAL.oldWood, wear: 0.2 });
-      barrel(1.3, 1.1);
-      k.cyl(0.4, 0.09, 0.09, 10, { p: [x, y + 0.17, 0.75], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal", smooth: true });
-      return [x, y + 0.05, 1.76];
+      // Pușca de vânătoare: lemn deschis, pat gros, lunetă MARE (cu capace) — silueta cu „cocoașă”.
+      stock(0.75, mix(PAL.oldWood, PAL.bone, 0.15));
+      k.box(0.12, 0.12, 0.85, { p: [x, y, 0.75] }, { color: mix(PAL.oldWood, PAL.bone, 0.15), wear: 0.2 });
+      barrel(1.2, 1.05);
+      k.cyl(0.55, 0.12, 0.12, 12, { p: [x, y + 0.22, 0.72], r: [Math.PI / 2, 0, 0] }, { color: PAL.iron, mat: "metal", smooth: true });
+      for (const z of [0.42, 1.0]) k.cyl(0.07, 0.16, 0.16, 12, { p: [x, y + 0.22, z], r: [Math.PI / 2, 0, 0] }, { color: STEEL_DARK, mat: "metal", smooth: true });
+      for (const z of [0.6, 0.85]) k.box(0.04, 0.12, 0.04, { p: [x, y + 0.12, z] }, { color: STEEL_DARK, mat: "metal" });
+      return [x, y + 0.05, 1.66];
     case "scattergun":
-      stock(0.6, PAL.darkWood);
-      barrel(1.0, 0.95, 0.09, PAL.iron, -0.05);
-      barrel(1.0, 0.95, 0.09, PAL.iron, 0.05);
-      return [x, y + 0.05, 1.45];
+      // Flinta cu alice: scurtă și GROASĂ — două țevi late una lângă alta, gura evazată, pat retezat,
+      // cartușe roșii prinse pe pat. Silueta: un trabuc dublu, lat.
+      stock(0.45, PAL.darkWood);
+      barrel(0.8, 0.85, 0.12, PAL.iron, -0.07);
+      barrel(0.8, 0.85, 0.12, PAL.iron, 0.07);
+      for (const dx of [-0.07, 0.07]) k.cyl(0.1, 0.16, 0.13, 10, { p: [x + dx, y + 0.05, 1.27], r: [Math.PI / 2, 0, 0] }, { color: STEEL_DARK, mat: "metal", smooth: true });
+      k.box(0.3, 0.14, 0.26, { p: [x, y - 0.06, 0.82] }, { color: PAL.darkWood, wear: 0.25 });
+      for (const z of [0.1, 0.2, 0.3]) k.cyl(0.07, 0.035, 0.035, 6, { p: [x + 0.09, y - 0.03, z], r: [0, 0, Math.PI / 2] }, { color: hex("#8a2a22") });
+      return [x, y + 0.05, 1.35];
     case "pipeGun":
       stock(0.5);
       for (const [dx, dy] of [[-0.06, 0.02], [0.06, 0.02], [0, 0.11]] as const) barrel(1.2, 0.95, 0.075, mix(PAL.iron, PAL.rust, 0.3), dx, dy);

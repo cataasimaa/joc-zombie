@@ -9,6 +9,8 @@ export interface WeaponDef {
   name: string;
   /** "level" = o primești singur când crește nivelul eroului. */
   rarity: Rarity | "start" | "level";
+  /** Cât de bună e (0 = țeava de start … 4 = legendară): decide dacă o armă nouă o înlocuiește pe cea din mână. */
+  rank: number;
   /** Multiplicatori față de arma de bază a clasei. */
   damage: number;
   interval: number;
@@ -23,52 +25,58 @@ export interface WeaponDef {
   reload: number;
   /** Încetinește zombiul lovit (secunde). */
   slow: number;
+  /** Cât de larg se împrăștie alicele (radiani); implicit 0,2. */
+  spread?: number;
   description: string;
 }
 
+// Armele trebuie să se simtă clar diferit (proprietarul nu simțea diferența dintre țeavă și pistol):
+// pistolul trage des, cu damage mic și încărcător mic; pușca e lentă, grea și bate departe;
+// flinta e un nor larg de alice de aproape; pușca de asalt toarnă gloanțe dintr-un încărcător mare.
+// `rank` = cât de „bună” e arma (o armă nouă mai bună o iei în mână și îi ia locul celei slabe din bară).
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
   rusty: {
-    id: "rusty", name: "Țeava ruginită", rarity: "start",
+    id: "rusty", name: "Țeava ruginită", rarity: "start", rank: 0,
     damage: 1, interval: 1, range: 0, pellets: 0, pierce: 0, magazine: 1, reload: 1, slow: 0,
     description: "Arma cu care ai pornit.",
   },
   pistol: {
-    id: "pistol", name: "Pistol", rarity: "level",
-    damage: 1.2, interval: 0.85, range: -1, pellets: 0, pierce: 0, magazine: 0.7, reload: 0.6, slow: 0,
-    description: "Ușor și precis, se reîncarcă foarte repede. (Nivelul 2)",
+    id: "pistol", name: "Pistol", rarity: "level", rank: 1,
+    damage: 0.9, interval: 0.75, range: -2, pellets: 0, pierce: 0, magazine: 0.5, reload: 0.45, slow: 0,
+    description: "Ușor: trage des și se reîncarcă într-o clipă, dar glonțul e mic și încărcătorul scurt. (Nivelul 2)",
   },
   rifle: {
-    id: "rifle", name: "Pușcă", rarity: "level",
-    damage: 1.65, interval: 1.2, range: 4, pellets: 0, pierce: 1, magazine: 0.55, reload: 1, slow: 0,
-    description: "Arma normală de luptă: lovituri grele, bate departe, trece prin doi zombi. (Nivelul 4)",
+    id: "rifle", name: "Pușcă", rarity: "level", rank: 2,
+    damage: 2.7, interval: 2.1, range: 6, pellets: 0, pierce: 1, magazine: 0.4, reload: 1.15, slow: 0,
+    description: "Lentă, dar fiecare glonț e greu, bate foarte departe și trece prin doi zombi. (Nivelul 4)",
   },
   assaultRifle: {
-    id: "assaultRifle", name: "Pușcă de asalt", rarity: "level",
-    damage: 1.05, interval: 0.55, range: 2, pellets: 0, pierce: 0, magazine: 1.5, reload: 1.05, slow: 0,
-    description: "Rafale rapide, încărcător mare. (Nivelul 7)",
+    id: "assaultRifle", name: "Pușcă de asalt", rarity: "level", rank: 3,
+    damage: 0.8, interval: 0.45, range: 1, pellets: 0, pierce: 0, magazine: 2.2, reload: 1.2, slow: 0,
+    description: "Rafale foarte rapide, încărcător uriaș. (Nivelul 7)",
   },
   hunting: {
-    id: "hunting", name: "Pușcă de vânătoare", rarity: "rare",
-    damage: 1.25, interval: 1.1, range: 3, pellets: 0, pierce: 1, magazine: 0.6, reload: 1, slow: 0,
-    description: "Damage mare, glonțul trece prin doi zombi.",
+    id: "hunting", name: "Pușcă de vânătoare", rarity: "rare", rank: 2,
+    damage: 2.2, interval: 1.8, range: 5, pellets: 0, pierce: 1, magazine: 0.5, reload: 1, slow: 0,
+    description: "Lunetă mare: damage mare, bate departe, glonțul trece prin doi zombi.",
   },
   scattergun: {
-    id: "scattergun", name: "Flintă cu alice", rarity: "rare",
-    damage: 0.7, interval: 1.3, range: -3, pellets: 4, pierce: 0, magazine: 0.4, reload: 1.2, slow: 0,
-    description: "Un nor de alice: devastatoare de aproape.",
+    id: "scattergun", name: "Flintă cu alice", rarity: "rare", rank: 2,
+    damage: 0.6, interval: 2.0, range: -5, pellets: 5, pierce: 0, magazine: 0.3, reload: 1.3, slow: 0, spread: 0.32,
+    description: "Un nor larg de alice: devastatoare de aproape, inutilă de departe.",
   },
   pipeGun: {
-    id: "pipeGun", name: "Mitralieră din țevi", rarity: "epic",
-    damage: 0.85, interval: 0.65, range: 0, pellets: 0, pierce: 0, magazine: 1.6, reload: 1.3, slow: 0,
+    id: "pipeGun", name: "Mitralieră din țevi", rarity: "epic", rank: 3,
+    damage: 0.8, interval: 0.5, range: 0, pellets: 0, pierce: 0, magazine: 1.8, reload: 1.3, slow: 0,
     description: "Trage foarte des, încărcător mare.",
   },
   boneBow: {
-    id: "boneBow", name: "Arbaletă de os", rarity: "epic",
+    id: "boneBow", name: "Arbaletă de os", rarity: "epic", rank: 3,
     damage: 1.9, interval: 1.4, range: 4, pellets: 0, pierce: 2, magazine: 0.35, reload: 0.8, slow: 0,
     description: "Săgeți grele care trec prin trei zombi.",
   },
   iceLance: {
-    id: "iceLance", name: "Lancea de gheață", rarity: "legendary",
+    id: "iceLance", name: "Lancea de gheață", rarity: "legendary", rank: 4,
     damage: 1.7, interval: 0.95, range: 3, pellets: 0, pierce: 1, magazine: 1, reload: 0.9, slow: 1.2,
     description: "Damage uriaș și îngheață ce lovește.",
   },
