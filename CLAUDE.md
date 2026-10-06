@@ -28,7 +28,11 @@ npm run build      # typecheck + build de producție în dist/
 Jocul pornește cu **meniul principal** (scena 3D de noapte în fundal, muzică eroică, fulgi): logo de
 gheață în stânga sus, în dreapta un panou de sticlă cu nume, mod de joc (carduri), dificultate
 Easy/Medium/Hard/Nightmare (verde → roșu) și butonul auriu JOACĂ; jos: 🏆 clasament, sunet, muzică,
-grafică, ❔ Cum se joacă; apoi alegerea eroului.
+grafică, ❔ Cum se joacă; apoi alegerea eroului („ALEGE-ȚI EROUL”: 4 carduri în culoarea clasei, cu
+emblemă, rol, bare Viață / Damage / Rază / Viteză și pasiva într-un rând; tap = intri în joc).
+Meniul de nivel: un rând pe abilitate (iconiță, 5 trepte, ce dă următorul punct, ★3 / ★5 la tap, +).
+Păcănelele: „Ce ai în plus” e o grilă de bonusuri (verzi = câștigate), cu derulare în ea.
+Volume: zombii ×0,5 (`ZOMBIE_VOLUME`), muzica 0,8 (`MUSIC_VOLUME`) în `audio/Sfx.ts`.
 Sunetul se schimbă doar din meniu (☰ / Esc = pauză; sunet oprit = o linie roșie peste ☰). Tap / clic
 scurt pe o construcție de-a ta (turn, zid, foc, fermă) o **selectează** (inel + contur auriu + bara de viață);
 **apăsare lungă** (~0,45 s) sau al doilea tap pe ea = meniul ei. Tap pe zăpadă = deselectezi.

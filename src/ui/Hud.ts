@@ -10,7 +10,6 @@ import {
   type Player,
   type SlotItem,
   type WeaponId,
-  DEFAULT_SKIN_COLOR,
   actionHint,
   type Difficulty,
   type GameMode,
@@ -198,6 +197,17 @@ const MODE_SHORT: Record<GameMode, string> = {
   defend: "Ține zombii departe de mină",
   survival: "Foame, frig, foc și vânătoare",
 };
+/**
+ * Cum arată fiecare clasă pe ecranul de alegere (doar afișare): culoarea, pasiva pe scurt
+ * și „bulinele” de statistici (0–5), ca în jocurile de mobil. Numerele reale stau în config.
+ */
+const HERO_LOOK: Record<HeroClass, { color: string; perk: string; stats: [number, number, number, number] }> = {
+  assault: { color: "#ffad5a", perk: "Gloanțele trec prin 2 zombi", stats: [3, 4, 3, 4] },
+  sniper: { color: "#7ec8ff", perk: "20% critice ×2,5 · străpunge 3", stats: [2, 5, 5, 3] },
+  tank: { color: "#ff6b5a", perk: "−25% damage primit · repară ×3", stats: [5, 3, 1, 2] },
+  healer: { color: "#6ee0a0", perk: "Aură care vindecă echipa", stats: [3, 2, 3, 4] },
+};
+const HERO_STAT_NAMES = ["Viață", "Damage", "Rază", "Viteză"];
 const SPIN_TIME = 3000;
 const REEL_STOPS = [1500, 2250, 3000];
 
@@ -488,17 +498,27 @@ export class Hud {
     this.el.heroCards.innerHTML = "";
     for (const [cls, def] of Object.entries(HERO_DEFS) as [HeroClass, (typeof HERO_DEFS)[HeroClass]][]) {
       const stats = CONFIG.heroes[cls];
-      const [r, g, b] = DEFAULT_SKIN_COLOR[cls].map((v) => Math.round(Math.min(255, v * 255 * 1.6)));
+      const look = HERO_LOOK[cls];
       const card = document.createElement("button");
-      card.className = "hero-card";
+      card.className = `hero-card hc-${cls}`;
+      card.style.setProperty("--hc", look.color);
+      // Textul lung (descriere + pasiva întreagă + numerele) stă în tooltip; pe card doar esențialul.
+      card.title = `${def.description}\n★ ${def.passive}\n❤ ${stats.maxHp} · 🎯 ${stats.range} m · 🔫 ${stats.magazine} gloanțe`;
+      const bars = HERO_STAT_NAMES.map(
+        (n, i) =>
+          `<span class="hc-stat"><small>${n}</small><span class="hc-pips">${Array.from(
+            { length: 5 },
+            (_, k) => `<i class="${k < look.stats[i] ? "on" : ""}"></i>`,
+          ).join("")}</span></span>`,
+      ).join("");
       card.innerHTML = `
-        <div class="hc-head">
-          <div class="hc-icon" style="background: rgb(${r},${g},${b})">${def.icon}</div>
-          <div><div class="hc-name">${def.name}</div><div class="hc-role">${def.role}</div></div>
-        </div>
-        <div class="hc-desc">${def.description}</div>
-        <div class="hc-passive">★ ${def.passive}</div>
-        <div class="hc-stats">❤ ${stats.maxHp} · 🎯 ${stats.range} m · 🔫 ${stats.magazine} gloanțe</div>`;
+        <span class="hc-glow"></span>
+        <span class="hc-emblem"><span class="hc-ico">${def.icon}</span></span>
+        <span class="hc-role">${def.role}</span>
+        <span class="hc-name">${def.name}</span>
+        <span class="hc-stats">${bars}</span>
+        <span class="hc-passive"><b>★</b> ${look.perk}</span>
+        <span class="hc-cta">Alege ▸</span>`;
       card.addEventListener("click", () => this.cb.onPickHero(cls));
       this.el.heroCards.appendChild(card);
     }
@@ -508,7 +528,12 @@ export class Hud {
     this.el.mainMenu.classList.add("hidden");
     this.el.heroSelect.classList.remove("hidden");
     const d = CONFIG.difficulty[this.difficulty].name;
-    this.el.heroSubtitle.textContent = `${name ? `${name}, alege` : "Alege"}-ți eroul · dificultate ${d}`;
+    // Sub titlu: cine joacă, modul și dificultatea, ca niște etichete mici.
+    const m = CONFIG.modes[this.mode];
+    this.el.heroSubtitle.innerHTML =
+      (name ? `<span class="hs-chip">👤 ${escapeHtml(name)}</span>` : "") +
+      `<span class="hs-chip">${m.icon} ${m.name}</span>` +
+      `<span class="hs-chip diff-${this.difficulty}">${d}</span>`;
     this.el.hud.classList.add("hidden");
     this.el.endScreen.classList.add("hidden");
     clearTimeout(this.endTimer);
@@ -887,22 +912,23 @@ export class Hud {
     }
 
     const gun = gunStats(state, hero);
-    const stats = [
-      ["🔫", "Armă", WEAPONS[player.weapon].name],
-      ["🎯", "Încărcător", `${gun.magazine} gloanțe`],
-      ["❤️", "Viață", `+${pct(player.maxHpBonus)}`],
-      ["👟", "Viteză", `+${pct(player.speedBonus)}`],
-      ["✚", "Regenerare", `${player.regenPerSec} HP/s`],
-      ["🔧", "Reparat", `+${pct(player.repairBonus)}`],
-      ["💣", "Mine", `${player.mines}`],
-      ["🏰", "Turnuri", `până la nivel ${player.towerTier}`],
-      ["🗼", "Locuri turn", `+${player.extraTowerSlots}`],
+    // [iconiță, nume scurt, valoare, câștigat?] — armele și încărcătorul sunt „de bază”, nu bonusuri.
+    const stats: [string, string, string, boolean | null][] = [
+      ["🔫", "Armă", WEAPONS[player.weapon].name, null],
+      ["🎯", "Încărcător", `${gun.magazine}`, null],
+      ["❤️", "Viață", `+${pct(player.maxHpBonus)}`, player.maxHpBonus > 0],
+      ["👟", "Viteză", `+${pct(player.speedBonus)}`, player.speedBonus > 0],
+      ["✚", "Regenerare", `${player.regenPerSec}/s`, player.regenPerSec > 0],
+      ["🔧", "Reparat", `+${pct(player.repairBonus)}`, player.repairBonus > 0],
+      ["💣", "Mine", `${player.mines}`, player.mines > 0],
+      ["🏰", "Turnuri", `nv. ${player.towerTier}`, player.towerTier > 2],
+      ["🗼", "Locuri turn", `+${player.extraTowerSlots}`, player.extraTowerSlots > 0],
     ];
-    // Ce ai câștigat iese în evidență; ce e încă la zero e estompat.
+    // Ce ai câștigat iese în evidență (verde); ce e încă la zero e estompat. Fiecare = un „cip” mic.
     const statsHtml = stats
-      .map(([i, l, v]) => {
-        const zero = /^\+?0(%| HP\/s)?$/.test(v) || v === "0";
-        return `<div class="stat${zero ? " zero" : " gained"}"><span>${i} ${l}</span><b>${v}</b></div>`;
+      .map(([i, l, v, got]) => {
+        const cls = got === null ? "base" : got ? "gained" : "zero";
+        return `<div class="shop-stat ${cls}${l === "Armă" ? " wide" : ""}" title="${escapeHtml(`${l}: ${v}`)}"><span class="ss-ico">${i}</span><span class="ss-txt"><small>${l}</small><b>${escapeHtml(v)}</b></span></div>`;
       })
       .join("");
     if (force || this.cache.get(this.el.shopStats) !== statsHtml) {
@@ -1320,28 +1346,50 @@ export class Hud {
     if (key === this.levelKey) return;
     this.levelKey = key;
     const max = CONFIG.skills.maxRank;
+    // Câte un rând pe abilitate: iconiță, nume, bulinele 0–5, ce aduce punctul următor, ★3/★5, „+”.
+    // Textul lung al pasivelor stă în tooltip (sau apare pe rând când apeși pe ★).
     const rows = SKILL_IDS.map((id) => {
       const info = SKILL_INFO[id];
       const r = rank(hero, id);
       const pips = Array.from({ length: max }, (_, i) => `<i class="pip ${i < r ? "on" : ""} ${i === 2 || i === 4 ? "star" : ""}"></i>`).join("");
       const can = hero.skillPoints > 0 && r < max;
+      const nextStar = r + 1 === 3 ? info.passive3 : r + 1 === 5 ? info.passive5 : "";
+      const next = r >= max ? "Maxim · toate bonusurile active" : `+1: ${info.perRank}${nextStar ? ` · ★ ${nextStar.split(":")[0]}` : ""}`;
+      const star = (at: 3 | 5, text: string) =>
+        `<button class="skill-star ${r >= at ? "on" : ""}" data-text="${escapeHtml(`★${at} ${text}`)}" title="${escapeHtml(text)}">★${at}</button>`;
       return `<div class="skill ${r >= max ? "maxed" : ""}">
         <span class="skill-ico">${info.icon}</span>
-        <div class="skill-txt"><b>${info.name}</b><small>${info.perRank}</small>
-          <div class="pips">${pips}</div>
-          <small class="passive ${r >= 3 ? "on" : ""}">★3 ${info.passive3}</small>
-          <small class="passive ${r >= 5 ? "on" : ""}">★5 ${info.passive5}</small>
+        <div class="skill-txt">
+          <div class="skill-top"><b>${info.name}</b><span class="pips">${pips}</span></div>
+          <small class="skill-next" data-text="${escapeHtml(next)}">${escapeHtml(next)}</small>
         </div>
+        <span class="skill-stars">${star(3, info.passive3)}${star(5, info.passive5)}</span>
         <button class="skill-up" data-skill="${id}" ${can ? "" : "disabled"}>+</button>
       </div>`;
     }).join("");
-    const road = LEVEL_ROAD.map(([lvl, what]) => `<span class="${hero.level >= lvl ? "got" : ""}">nv.${lvl} ${what}</span>`).join("");
+    // Un singur rând: ce deblochezi la următorul nivel (din „drumul” nivelurilor).
+    const nextLvl = LEVEL_ROAD.map(([lvl]) => lvl).filter((lvl) => lvl > hero.level).sort((a, b) => a - b)[0];
+    const road = nextLvl
+      ? `<span class="lvl-road-k">La nv. ${nextLvl}</span> ${LEVEL_ROAD.filter(([lvl]) => lvl === nextLvl).map(([, what]) => what).join(" · ")}`
+      : `<span class="lvl-road-k">✓</span> Ai deblocat tot`;
+    const pts = hero.skillPoints;
     $("level-menu").innerHTML =
-      `<div class="lvl-head"><span>NIVELUL ${hero.level}</span><span class="lvl-pts">${hero.skillPoints > 0 ? `${hero.skillPoints} ${hero.skillPoints === 1 ? "punct" : "puncte"} de pus` : "Fără puncte · crește în nivel"}</span><button class="lvl-close">✕</button></div>` +
-      `<div class="skills">${rows}</div><div class="lvl-road">${road}</div>`;
+      `<div class="lvl-head"><span class="lvl-title">Nivelul ${hero.level}</span>` +
+      `<span class="lvl-pts ${pts > 0 ? "has" : ""}">${pts > 0 ? `+${pts} ${pts === 1 ? "punct" : "puncte"}` : "0 puncte"}</span>` +
+      `<button class="lvl-close" aria-label="Închide">✕</button></div>` +
+      `<div class="skills">${rows}</div><div class="lvl-road" title="Ce mai deblochezi cu nivelul">${road}</div>`;
     $("level-menu").querySelector(".lvl-close")!.addEventListener("click", () => this.toggleLevelMenu(false));
     for (const b of $("level-menu").querySelectorAll<HTMLButtonElement>(".skill-up")) {
       b.addEventListener("click", () => this.cb.onLearnSkill(b.dataset.skill as SkillId));
+    }
+    // Pe telefon nu există tooltip: apăsarea pe ★ arată pasiva pe rândul abilității (încă o dată = înapoi).
+    for (const b of $("level-menu").querySelectorAll<HTMLButtonElement>(".skill-star")) {
+      b.addEventListener("click", () => {
+        const line = b.closest(".skill")!.querySelector<HTMLElement>(".skill-next")!;
+        const showing = line.textContent === b.dataset.text;
+        line.textContent = showing ? line.dataset.text! : b.dataset.text!;
+        line.classList.toggle("star-text", !showing);
+      });
     }
   }
 

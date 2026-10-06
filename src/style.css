@@ -392,94 +392,6 @@ button {
   color: #ccc;
 }
 
-.hero-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 200px));
-  gap: 12px;
-  max-width: 100%;
-}
-
-.hero-card {
-  background: var(--panel-strong);
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  border-radius: 14px;
-  padding: 12px;
-  text-align: left;
-  color: var(--text);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.hero-card:hover,
-.hero-card:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.hero-card .hc-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero-card .hc-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  flex: none;
-}
-
-.hero-card .hc-name {
-  font-weight: 800;
-  font-size: 16px;
-}
-
-.hero-card .hc-role {
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.hero-card .hc-desc {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.35;
-}
-
-.hero-card .hc-abilities {
-  display: flex;
-  gap: 4px;
-  font-size: 16px;
-}
-
-.hero-card .hc-abilities span {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hero-card .hc-abilities span.ult {
-  box-shadow: inset 0 0 0 2px var(--legendary);
-}
-
-.hero-card .hc-stats {
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
 .modal {
   position: relative;
   background: var(--panel-strong);
@@ -588,13 +500,6 @@ button {
     margin-bottom: 8px;
     font-size: 13px;
   }
-  .hero-card {
-    padding: 8px;
-    gap: 4px;
-  }
-  .hero-card .hc-desc {
-    font-size: 11px;
-  }
   .round-btn {
     width: 38px;
     height: 38px;
@@ -602,11 +507,6 @@ button {
   }
 }
 
-@media (max-width: 700px) {
-  .hero-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 
 @media (max-height: 450px) {
@@ -840,14 +740,6 @@ button {
   background: radial-gradient(ellipse at center, rgba(107, 29, 36, 0) 45%, rgba(140, 16, 24, 0.75) 100%);
 }
 
-/* ---------- Alegerea eroului ---------- */
-
-.hero-card .hc-passive {
-  font-size: 11px;
-  color: #ffd27a;
-  line-height: 1.3;
-}
-
 /* ---------- Magazinul norocului ---------- */
 
 .modal.shop {
@@ -1052,30 +944,6 @@ button {
 
 .chip.done {
   color: var(--good);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 12px;
-}
-
-.stat {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 12px;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.stat span {
-  color: var(--muted);
-}
-
-.stat b {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 @media (max-height: 450px) {
@@ -1372,15 +1240,6 @@ button {
 }
 
 /* ---------- Magazin: accent pe ce ai câștigat ---------- */
-
-.stat.zero {
-  opacity: 0.45;
-}
-
-.stat.gained {
-  background: rgba(59, 179, 107, 0.22);
-  border-color: rgba(59, 179, 107, 0.6);
-}
 
 .shop-details {
   margin-top: 8px;
@@ -2394,104 +2253,147 @@ i.coin {
   left: max(12px, env(safe-area-inset-left));
   top: 108px;
   z-index: 20;
-  width: min(380px, 92vw);
+  width: min(372px, 92vw);
   max-height: calc(100% - 120px);
   overflow-y: auto;
-  padding: 8px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(14, 36, 48, 0.94), rgba(6, 18, 26, 0.96));
-  border: 1px solid rgba(255, 211, 74, 0.6);
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(255, 211, 74, 0.08);
+  padding: 9px 10px 8px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(28, 44, 64, 0.94), rgba(10, 16, 26, 0.95));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 211, 106, 0.45);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   color: #e8f6fb;
   pointer-events: auto;
+  animation: lvlIn 0.18s ease-out both;
+}
+
+@keyframes lvlIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
 }
 
 .lvl-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 7px;
+}
+
+.lvl-title {
+  flex: 1;
+  font-family: Cinzel, "Trajan Pro", Georgia, serif;
+  font-size: 15px;
   font-weight: 900;
-  letter-spacing: 1px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: #ffd36a;
-  font-size: 14px;
-  margin-bottom: 6px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
 .lvl-pts {
-  flex: 1;
-  text-align: right;
+  padding: 2px 9px;
+  border-radius: 999px;
   font-size: 11px;
-  letter-spacing: 0;
-  color: #8cf07a;
+  font-weight: 800;
+  color: #8ea6bb;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(126, 200, 255, 0.2);
+}
+
+.lvl-pts.has {
+  color: #2a1206;
+  background: linear-gradient(180deg, #ffe397, #ffbf4f 50%, #f08a2c);
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(255, 190, 80, 0.5);
 }
 
 .lvl-close {
   border: none;
   background: transparent;
-  color: #ffd36a;
-  font-size: 16px;
-  padding: 0 4px;
+  color: #9fb4c8;
+  font-size: 15px;
+  padding: 0 2px 0 4px;
 }
 
 .skills {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .skill {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(90, 170, 200, 0.3);
-  background: rgba(8, 22, 30, 0.6);
+  padding: 5px 6px 5px 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(126, 200, 255, 0.16);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .skill.maxed {
-  border-color: rgba(255, 211, 74, 0.6);
+  border-color: rgba(255, 211, 106, 0.55);
+  background: linear-gradient(90deg, rgba(255, 211, 106, 0.12), rgba(0, 0, 0, 0.25));
 }
 
 .skill-ico {
-  font-size: 24px;
-  width: 30px;
-  text-align: center;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 19px;
+  background: rgba(126, 200, 255, 0.1);
+  border: 1px solid rgba(126, 200, 255, 0.22);
 }
 
 .skill-txt {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  font-size: 12px;
+  gap: 2px;
 }
 
-.skill-txt small {
+.skill-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.skill-top b {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-next {
   font-size: 10px;
   color: #9fd8ec;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.skill-txt .passive {
-  color: #6c8a96;
-}
-
-.skill-txt .passive.on {
+.skill-next.star-text {
   color: #ffd36a;
 }
 
 .pips {
+  flex: none;
   display: flex;
-  gap: 3px;
-  margin: 2px 0;
+  gap: 2px;
 }
 
 .pip {
-  width: 14px;
-  height: 6px;
+  width: 9px;
+  height: 5px;
   border-radius: 2px;
-  background: rgba(127, 227, 255, 0.18);
-  border: 1px solid rgba(127, 227, 255, 0.35);
+  background: rgba(127, 227, 255, 0.14);
+  border: 1px solid rgba(127, 227, 255, 0.3);
 }
 
 .pip.star {
@@ -2506,33 +2408,82 @@ i.coin {
   background: #ffd36a;
 }
 
+/* ★3 / ★5: pasivele, mici; aurii când sunt active. Apăsate = textul lor pe rând. */
+.skill-stars {
+  flex: none;
+  display: flex;
+  gap: 3px;
+}
+
+.skill-star {
+  padding: 2px 4px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #6c8a96;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(108, 138, 150, 0.35);
+}
+
+.skill-star.on {
+  color: #2a1a02;
+  background: #ffd36a;
+  border-color: #ffd36a;
+  box-shadow: 0 0 6px rgba(255, 211, 106, 0.5);
+}
+
 .skill-up {
-  width: 34px;
-  height: 34px;
+  flex: none;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid #ffd36a;
-  background: linear-gradient(180deg, #ffd34a, #c9961a);
+  background: linear-gradient(180deg, #ffe397, #ffbf4f 50%, #e08a2c);
   color: #2a1a02;
   font-size: 20px;
   font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 3px 0 #8f4312, 0 0 10px rgba(255, 190, 80, 0.35);
+}
+
+.skill-up:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #8f4312;
 }
 
 .skill-up:disabled {
-  opacity: 0.25;
+  opacity: 0.2;
   filter: grayscale(1);
+  box-shadow: none;
 }
 
 .lvl-road {
   margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 8px;
-  font-size: 10px;
-  color: #6c8a96;
+  font-size: 10.5px;
+  color: #b8c8d6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.lvl-road .got {
-  color: #8cf07a;
+.lvl-road-k {
+  margin-right: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fd8ec;
+  background: rgba(126, 200, 255, 0.12);
+  border: 1px solid rgba(126, 200, 255, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .level-menu {
+    animation: none;
+  }
 }
 
 /* ---------- Inventar: grila + armura alături ---------- */
@@ -3640,5 +3591,638 @@ i.coin {
   #main-menu *,
   #main-menu *::after {
     animation: none !important;
+  }
+}
+
+/* =====================================================================
+   Alegerea eroului („alegerea campionilor”): titlu de gheață, 4 carduri cu
+   embleme mari în culoarea clasei, bulinele de statistici, intrare pe rând.
+   Același limbaj ca meniul principal (sticlă înghețată, Cinzel, auriu / gheață).
+   ===================================================================== */
+
+#hero-select {
+  --hs-gold: #ffd36a;
+  --hs-ice: #7ec8ff;
+  justify-content: center;
+  gap: clamp(8px, 2.4vh, 22px);
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 42%, rgba(30, 60, 96, 0.35), rgba(4, 8, 16, 0) 70%),
+    radial-gradient(ellipse at 50% 100%, rgba(4, 8, 16, 0.9), rgba(4, 8, 16, 0.55) 70%);
+}
+
+#hero-select .hs-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: mmFadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+#hero-select .hs-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--hs-gold);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+#hero-select .hs-kicker span {
+  width: 26px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hs-gold));
+}
+
+#hero-select .hs-kicker span:last-child {
+  background: linear-gradient(90deg, var(--hs-gold), transparent);
+}
+
+#hero-select .hs-title {
+  margin: 2px 0 0;
+  font-family: Cinzel, "Trajan Pro", "Palatino Linotype", Georgia, serif;
+  font-size: clamp(24px, min(4.4vw, 8vh), 46px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e3f4ff;
+  background: linear-gradient(180deg, #ffffff 0%, #eaf7ff 40%, #a6dbff 68%, #5d9ad0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 12px rgba(126, 200, 255, 0.45)) drop-shadow(0 2px 0 #132339)
+    drop-shadow(0 5px 8px rgba(0, 0, 0, 0.7));
+}
+
+#hero-select .hs-sub {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 0;
+}
+
+#hero-select .hs-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #dbe8f3;
+  background: rgba(14, 22, 34, 0.7);
+  border: 1px solid rgba(126, 200, 255, 0.26);
+  white-space: nowrap;
+}
+
+#hero-select .hs-chip.diff-easy { color: #5fd08e; border-color: rgba(95, 208, 142, 0.5); }
+#hero-select .hs-chip.diff-medium { color: #f2c14e; border-color: rgba(242, 193, 78, 0.5); }
+#hero-select .hs-chip.diff-hard { color: #f07a45; border-color: rgba(240, 122, 69, 0.5); }
+#hero-select .hs-chip.diff-nightmare { color: #ff4f6d; border-color: rgba(255, 79, 109, 0.55); }
+
+#hero-select .hero-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 200px));
+  gap: clamp(8px, 1.6vw, 18px);
+  max-width: 100%;
+}
+
+/* ---------- Cardul ---------- */
+
+#hero-select .hero-card {
+  --hc: #7ec8ff;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 12px 12px;
+  border-radius: 18px;
+  text-align: center;
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--hc) 35%, transparent);
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 0%, color-mix(in srgb, var(--hc) 30%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(28, 44, 64, 0.82), rgba(10, 16, 26, 0.9));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s, box-shadow 0.2s;
+  animation: hsCardIn 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+#hero-select .hero-card:nth-child(1) { animation-delay: 0.08s; }
+#hero-select .hero-card:nth-child(2) { animation-delay: 0.16s; }
+#hero-select .hero-card:nth-child(3) { animation-delay: 0.24s; }
+#hero-select .hero-card:nth-child(4) { animation-delay: 0.32s; }
+
+/* Muchia de sus: o linie în culoarea clasei. */
+#hero-select .hero-card::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--hc), transparent);
+}
+
+/* Iconița mare, estompată, în fundalul cardului (ca o ilustrație). */
+#hero-select .hc-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--hc) 22%, transparent), transparent 55%);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+#hero-select .hero-card:hover,
+#hero-select .hero-card:focus-visible {
+  outline: none;
+  transform: translateY(-5px);
+  border-color: var(--hc);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55), 0 0 22px color-mix(in srgb, var(--hc) 45%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+#hero-select .hero-card:hover .hc-glow,
+#hero-select .hero-card:focus-visible .hc-glow {
+  opacity: 1;
+}
+
+#hero-select .hero-card:active {
+  transform: translateY(-2px) scale(0.97);
+}
+
+/* Emblema: un romb cu iconița clasei, cu halou în culoarea ei. */
+#hero-select .hc-emblem {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 2px 0 6px;
+}
+
+#hero-select .hc-emblem::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  transform: rotate(45deg);
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--hc) 55%, #0c1622), #0c1622 85%);
+  border: 1.5px solid var(--hc);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--hc) 50%, transparent), inset 0 0 10px rgba(0, 0, 0, 0.5);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+#hero-select .hero-card:hover .hc-emblem::before,
+#hero-select .hero-card:focus-visible .hc-emblem::before {
+  transform: rotate(135deg);
+}
+
+#hero-select .hc-ico {
+  position: relative;
+  font-size: 26px;
+  line-height: 1;
+  color: #fff;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+}
+
+#hero-select .hc-role {
+  position: relative;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+#hero-select .hc-name {
+  position: relative;
+  font-family: Cinzel, "Trajan Pro", Georgia, serif;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Statisticile: eticheta în stânga, 5 buline în dreapta. */
+#hero-select .hc-stats {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#hero-select .hc-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+#hero-select .hc-stat small {
+  font-size: 10px;
+  font-weight: 700;
+  color: #a9bccd;
+}
+
+#hero-select .hc-pips {
+  display: flex;
+  gap: 2px;
+}
+
+#hero-select .hc-pips i {
+  width: 11px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#hero-select .hc-pips i.on {
+  background: var(--hc);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--hc) 60%, transparent);
+}
+
+#hero-select .hc-passive {
+  position: relative;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #ffe3a3;
+  align-self: stretch;
+  height: 2.5em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+#hero-select .hc-passive b {
+  color: var(--hs-gold);
+  margin-right: 3px;
+}
+
+/* „Alege ▸”: butonul din josul cardului (tot cardul e apăsabil). */
+#hero-select .hc-cta {
+  position: relative;
+  align-self: stretch;
+  margin-top: 4px;
+  padding: 5px 0;
+  border-radius: 9px;
+  font-family: Cinzel, "Trajan Pro", Georgia, serif;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hc);
+  border: 1px solid color-mix(in srgb, var(--hc) 45%, transparent);
+  background: color-mix(in srgb, var(--hc) 10%, transparent);
+  transition: background 0.2s, color 0.2s;
+}
+
+#hero-select .hero-card:hover .hc-cta,
+#hero-select .hero-card:focus-visible .hc-cta {
+  color: #1b1206;
+  background: linear-gradient(180deg, #ffe397, #ffbf4f 50%, #f08a2c);
+  border-color: transparent;
+}
+
+@keyframes hsCardIn {
+  from { opacity: 0; transform: translateY(26px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Telefon în landscape: totul mai strâns ca să încapă fără scroll. */
+@media (max-height: 450px) {
+  #hero-select {
+    gap: 8px;
+  }
+  #hero-select .hs-kicker {
+    font-size: 8.5px;
+  }
+  #hero-select .hs-chip {
+    font-size: 10px;
+    padding: 1px 8px;
+  }
+  #hero-select .hs-sub {
+    margin-top: 4px;
+  }
+  #hero-select .hero-card {
+    padding: 10px 9px 9px;
+    gap: 2px;
+    border-radius: 15px;
+  }
+  #hero-select .hc-emblem {
+    width: 46px;
+    height: 46px;
+    margin: 0 0 4px;
+  }
+  #hero-select .hc-ico {
+    font-size: 21px;
+  }
+  #hero-select .hc-name {
+    font-size: 15px;
+  }
+  #hero-select .hc-stats {
+    margin-top: 4px;
+    padding: 5px 7px;
+    gap: 2px;
+  }
+  #hero-select .hc-passive {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+  #hero-select .hc-cta {
+    padding: 4px 0;
+    font-size: 11px;
+  }
+}
+
+/* Telefon mic în landscape (ex. 667 px): bulinele mai mici. */
+@media (max-width: 760px) and (min-width: 561px) {
+  #hero-select .hc-pips i {
+    width: 8px;
+  }
+  #hero-select .hc-stat small {
+    font-size: 9px;
+  }
+  #hero-select .hc-role {
+    letter-spacing: 0.08em;
+    font-size: 8.5px;
+  }
+}
+
+/* Ecran mare: carduri mai late și mai aerisite. */
+@media (min-width: 1000px) and (min-height: 620px) {
+  #hero-select .hero-cards {
+    grid-template-columns: repeat(4, minmax(0, 230px));
+  }
+  #hero-select .hero-card {
+    padding: 20px 16px 16px;
+    gap: 6px;
+  }
+  #hero-select .hc-emblem {
+    width: 78px;
+    height: 78px;
+  }
+  #hero-select .hc-ico {
+    font-size: 34px;
+  }
+  #hero-select .hc-name {
+    font-size: 21px;
+  }
+  #hero-select .hc-stat small {
+    font-size: 11px;
+  }
+  #hero-select .hc-pips i {
+    width: 14px;
+    height: 6px;
+  }
+  #hero-select .hc-passive {
+    font-size: 12px;
+  }
+  #hero-select .hc-cta {
+    font-size: 14px;
+    padding: 8px 0;
+  }
+  #hero-select .hs-kicker {
+    font-size: 12px;
+  }
+  #hero-select .hs-chip {
+    font-size: 12.5px;
+  }
+}
+
+/* Ecran îngust (portret): 2 × 2. */
+@media (max-width: 560px) {
+  #hero-select {
+    justify-content: flex-start;
+  }
+  #hero-select .hero-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hero-select *,
+  #hero-select *::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* =====================================================================
+   Magazinul norocului — coloana din dreapta („Ce ai în plus”): cipuri mici
+   (iconiță + nume + valoare) într-o grilă care nu se suprapune niciodată;
+   dacă sunt multe, cutia lor are scroll propriu.
+   ===================================================================== */
+
+#shop-modal .modal.shop {
+  max-height: calc(100% - 4px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(126, 200, 255, 0.26);
+  background: linear-gradient(180deg, rgba(28, 44, 64, 0.94), rgba(12, 18, 28, 0.96));
+}
+
+#shop-modal .shop-body {
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+#shop-modal .shop-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+#shop-modal .shop-info h3 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #9fb4c8;
+}
+
+#shop-modal .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 5px;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1px 2px 1px 0;
+  overscroll-behavior: contain;
+}
+
+#shop-modal .shop-stat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 8px 5px 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(126, 200, 255, 0.14);
+}
+
+#shop-modal .ss-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#shop-modal .ss-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+#shop-modal .ss-txt small {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #9fb4c8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#shop-modal .ss-txt b {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Câștigat: verde, cu un mic halou. */
+#shop-modal .shop-stat.wide {
+  grid-column: span 2;
+}
+
+#shop-modal .shop-stat.gained {
+  background: linear-gradient(180deg, rgba(59, 179, 107, 0.26), rgba(59, 179, 107, 0.12));
+  border-color: rgba(95, 208, 142, 0.6);
+  box-shadow: 0 0 10px rgba(59, 179, 107, 0.2);
+}
+
+#shop-modal .shop-stat.gained .ss-txt b {
+  color: #9af0bd;
+}
+
+/* Încă la zero: estompat (nu atrage privirea). */
+#shop-modal .shop-stat.zero {
+  opacity: 0.42;
+  border-style: dashed;
+}
+
+#shop-modal .shop-details {
+  flex: none;
+  margin-top: 0;
+}
+
+/* Când deschizi „Șanse”, ele iau locul grilei (nu împing panoul în afara ecranului). */
+#shop-modal .shop-info:has(.shop-details[open]) .stats-grid {
+  max-height: 30%;
+}
+
+#shop-modal .shop-details[open] {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+#shop-modal #shop-roll {
+  white-space: nowrap;
+}
+
+/* Telefon în landscape: totul mai strâns. */
+@media (max-height: 450px) {
+  #shop-modal .modal.shop {
+    padding: 10px 12px;
+  }
+  #shop-modal .shop-head {
+    margin-bottom: 6px;
+  }
+  #shop-modal .shop-head h2 {
+    font-size: 17px;
+  }
+  #shop-modal .shop-body {
+    gap: 12px;
+  }
+  #shop-modal .stats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 4px;
+  }
+  #shop-modal .shop-stat {
+    padding: 3px 6px 3px 3px;
+    gap: 5px;
+  }
+  #shop-modal .ss-ico {
+    width: 22px;
+    height: 22px;
+    font-size: 13px;
+  }
+  #shop-modal .ss-txt b {
+    font-size: 11.5px;
+  }
+  #shop-modal #shop-roll {
+    margin-top: 6px;
+    padding: 10px 16px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  #shop-modal .stats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  #shop-modal .ss-txt small {
+    letter-spacing: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  #shop-modal .shop-body {
+    grid-template-rows: auto minmax(0, 1fr);
   }
 }
